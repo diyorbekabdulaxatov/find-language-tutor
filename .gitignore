@@ -1,0 +1,15 @@
+# OS
+.DS_Store
+
+# IDEs
+.idea/
+.vscode/
+
+# Claude Code — keep shared skills, ignore machine-local settings
+.claude/settings.local.json
+
+# Node (backend and frontend keep their own too)
+node_modules/
+
+# Build output
+*.tsbuildinfo
