@@ -1,0 +1,310 @@
+openapi: 3.1.0
+info:
+  title: findtutor API
+  version: 0.1.0
+  description: >
+    Contract for the findtutor language-tutoring marketplace (Uzbekistan).
+    Hand-written and treated as the source of truth: the Go backend renders
+    responses to match it, and the Next.js frontend generates its typed client
+    from it (openapi-typescript + openapi-fetch).
+
+    Money is always an integer amount in MINOR units (tiyin for UZS, cents for
+    USD) plus a currency code — never a float.
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: teachers
+    description: Teacher search and profiles
+  - name: system
+
+paths:
+  /healthz:
+    get:
+      tags: [system]
+      summary: Liveness and dependency health
+      operationId: getHealth
+      responses:
+        "200":
+          description: All backing services reachable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: One or more backing services are unreachable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /v1/teachers:
+    get:
+      tags: [teachers]
+      summary: Search teachers
+      operationId: listTeachers
+      parameters:
+        - name: language
+          in: query
+          description: Filter to teachers who teach this language (ISO 639-1 code, e.g. `en`).
+          schema: { type: string }
+        - name: kind
+          in: query
+          schema: { $ref: "#/components/schemas/TeacherKind" }
+        - name: max_price_minor
+          in: query
+          description: Only teachers whose hourly price is at or below this amount (minor units).
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: q
+          in: query
+          description: Case-insensitive substring match across name, headline, and focus tags.
+          schema: { type: string }
+        - name: sort
+          in: query
+          schema:
+            $ref: "#/components/schemas/TeacherSort"
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: A page of matching teachers plus catalog-wide facets.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeacherListResult" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /v1/teachers/{slug}:
+    get:
+      tags: [teachers]
+      summary: Get one teacher profile
+      operationId: getTeacherBySlug
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The full teacher profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeacherProfile" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  responses:
+    BadRequest:
+      description: The request was malformed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: The resource does not exist.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable, machine-readable identifier (e.g. `not_found`).
+            message:
+              type: string
+              description: Human-readable explanation, safe to surface to users.
+
+    Health:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, down]
+
+    Currency:
+      type: string
+      enum: [UZS, USD]
+
+    Money:
+      type: object
+      required: [amount_minor, currency]
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+          description: Amount in minor units (tiyin / cents). 9000000 UZS == 90,000 so'm.
+        currency: { $ref: "#/components/schemas/Currency" }
+
+    TeacherKind:
+      type: string
+      enum: [professional, community]
+      description: >
+        `professional` — certified/qualified teacher, structured lessons.
+        `community` — conversation practice, informal tutoring.
+
+    TeacherSort:
+      type: string
+      enum: [recommended, price_asc, price_desc, rating_desc]
+      default: recommended
+
+    LanguageLevel:
+      type: string
+      enum: [native, c2, c1, b2, b1, a2, a1]
+
+    Language:
+      type: object
+      required: [code, name, level]
+      properties:
+        code: { type: string, description: ISO 639-1 }
+        name: { type: string }
+        level: { $ref: "#/components/schemas/LanguageLevel" }
+
+    Experience:
+      type: object
+      required: [title, org, period]
+      properties:
+        title: { type: string }
+        org: { type: string }
+        period:
+          type: string
+          description: Free text, e.g. "2019 – present".
+
+    TeacherSummary:
+      type: object
+      description: Card view used in search results.
+      required:
+        - id
+        - slug
+        - display_name
+        - headline
+        - kind
+        - country_code
+        - country_name
+        - city
+        - timezone
+        - teaches
+        - also_speaks
+        - price_per_hour
+        - rating
+        - review_count
+        - lessons_completed
+        - student_count
+        - focus
+        - response_time_hours
+        - accepting_students
+        - avatar_url
+        - video_thumbnail_url
+      properties:
+        id: { type: string, format: uuid }
+        slug:
+          type: string
+          description: URL-safe, stable; used in /teachers/{slug}.
+        display_name: { type: string }
+        headline:
+          type: string
+          description: One-line hook in the teacher's own words.
+        kind: { $ref: "#/components/schemas/TeacherKind" }
+        country_code: { type: string, description: ISO 3166-1 alpha-2 }
+        country_name: { type: string }
+        city: { type: string }
+        timezone:
+          type: string
+          description: IANA name, e.g. "Asia/Tashkent". Source of truth for slot conversion.
+        teaches:
+          type: array
+          items: { $ref: "#/components/schemas/Language" }
+        also_speaks:
+          type: array
+          items: { $ref: "#/components/schemas/Language" }
+        price_per_hour: { $ref: "#/components/schemas/Money" }
+        rating:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+          description: Aggregate rating to one decimal.
+        review_count: { type: integer, minimum: 0 }
+        lessons_completed: { type: integer, minimum: 0 }
+        student_count: { type: integer, minimum: 0 }
+        focus:
+          type: array
+          items: { type: string }
+          description: Free-text focus tags, e.g. "IELTS", "Kids & teens".
+        response_time_hours:
+          type: integer
+          minimum: 0
+          description: Median hours to reply to a booking request.
+        accepting_students: { type: boolean }
+        avatar_url: { type: string, format: uri }
+        video_thumbnail_url: { type: string, format: uri }
+
+    TeacherProfile:
+      description: Full profile — every summary field plus the long-form content.
+      allOf:
+        - $ref: "#/components/schemas/TeacherSummary"
+        - type: object
+          required:
+            - intro_video_url
+            - about
+            - teaching_style
+            - experience
+          properties:
+            intro_video_url: { type: string, format: uri }
+            about:
+              type: string
+              description: Long-form, plain text; paragraphs separated by "\n\n".
+            teaching_style: { type: string }
+            experience:
+              type: array
+              items: { $ref: "#/components/schemas/Experience" }
+            trial_price:
+              description: Present only when the teacher offers a trial lesson.
+              $ref: "#/components/schemas/Money"
+
+    LanguageFacet:
+      type: object
+      required: [code, name, count]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        count:
+          type: integer
+          minimum: 0
+          description: Number of teachers in the catalog who teach this language.
+
+    TeacherListResult:
+      type: object
+      required: [teachers, total, facets]
+      properties:
+        teachers:
+          type: array
+          items: { $ref: "#/components/schemas/TeacherSummary" }
+        total:
+          type: integer
+          minimum: 0
+          description: Total matches across all pages.
+        facets:
+          type: object
+          required: [languages]
+          properties:
+            languages:
+              type: array
+              items: { $ref: "#/components/schemas/LanguageFacet" }
