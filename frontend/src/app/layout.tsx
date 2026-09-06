@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Fraunces, Archivo } from "next/font/google";
+import { Bricolage_Grotesque, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { SiteHeader } from "@/components/layout/site-header";
@@ -9,17 +9,17 @@ import { SiteFooter } from "@/components/layout/site-footer";
  * next/font self-hosts these — no runtime request to Google. Each call returns
  * an object with a `.variable` class that sets a CSS custom property; we hang
  * both on <html> and let globals.css map them to Tailwind's font tokens.
+ *
+ * Bricolage Grotesque: chunky, characterful display face for headings.
+ * Plus Jakarta Sans: clean, friendly workhorse for UI and body. Both variable,
+ * so `weight` is omitted and the font-weight utilities cover the whole range.
  */
-// Both are variable fonts — omit `weight` so the full range is available to the
-// font-weight utilities. `axes` pulls in Fraunces' optical-size and softness axes.
-const display = Fraunces({
+const display = Bricolage_Grotesque({
   subsets: ["latin"],
   variable: "--font-display",
-  axes: ["SOFT", "opsz"],
-  style: ["normal", "italic"],
 });
 
-const sans = Archivo({
+const sans = Plus_Jakarta_Sans({
   subsets: ["latin"],
   variable: "--font-sans",
 });

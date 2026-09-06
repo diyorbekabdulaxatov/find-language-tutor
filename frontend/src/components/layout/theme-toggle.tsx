@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { useTheme } from "next-themes";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,33 +15,38 @@ const NEXT_LABEL: Record<Choice, string> = {
 };
 
 /**
- * Cycles system -> light -> dark.
- *
- * next-themes returns `theme: undefined` during SSR and the first client render,
- * so `current` resolves to "system" in both — no hydration mismatch, no need for
- * a mounted flag. The icon may flip once just after mount if a non-system theme
- * was stored; that's a single frame and acceptable.
+ * `useSyncExternalStore` gives a lint-clean "am I hydrated yet" flag: it returns
+ * the server snapshot (false) during SSR and hydration, then the client snapshot
+ * (true). Until then we render a blank icon slot so the button markup matches
+ * what the server sent — the stored theme is only known on the client.
  */
+const subscribe = () => () => {};
+function useMounted() {
+  return useSyncExternalStore(
+    subscribe,
+    () => true,
+    () => false,
+  );
+}
+
+/** Cycles system -> light -> dark. */
 export function ThemeToggle() {
+  const mounted = useMounted();
   const { theme, setTheme } = useTheme();
 
-  const current: Choice = ORDER.includes(theme as Choice)
-    ? (theme as Choice)
-    : "system";
-
+  const current: Choice =
+    mounted && ORDER.includes(theme as Choice) ? (theme as Choice) : "system";
   const Icon = current === "system" ? Monitor : current === "light" ? Sun : Moon;
 
   return (
     <Button
       variant="ghost"
       size="icon-sm"
-      aria-label={NEXT_LABEL[current]}
-      title={NEXT_LABEL[current]}
-      onClick={() =>
-        setTheme(ORDER[(ORDER.indexOf(current) + 1) % ORDER.length])
-      }
+      aria-label={mounted ? NEXT_LABEL[current] : "Toggle theme"}
+      title={mounted ? NEXT_LABEL[current] : undefined}
+      onClick={() => setTheme(ORDER[(ORDER.indexOf(current) + 1) % ORDER.length])}
     >
-      <Icon />
+      {mounted ? <Icon /> : <span className="size-4" />}
     </Button>
   );
 }

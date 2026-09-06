@@ -7,28 +7,24 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function TeachersLoading() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:py-14">
-      <Skeleton className="h-9 w-56" />
+      <Skeleton className="h-10 w-64" />
       <Skeleton className="mt-3 h-5 w-full max-w-lg" />
 
-      <div className="mt-10 grid gap-10 lg:grid-cols-[240px_1fr]">
-        <div className="hidden space-y-6 lg:block">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-full" />
-          ))}
-        </div>
+      <Skeleton className="mt-8 h-32 w-full rounded-2xl" />
+      <Skeleton className="mt-6 h-5 w-40" />
 
-        <div className="space-y-8">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="grid gap-4 sm:grid-cols-[200px_1fr] sm:gap-6">
-              <Skeleton className="aspect-video w-full rounded-lg" />
-              <div className="space-y-3">
-                <Skeleton className="h-5 w-48" />
-                <Skeleton className="h-6 w-full max-w-md" />
-                <Skeleton className="h-4 w-64" />
-              </div>
+      <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="overflow-hidden rounded-2xl ring-1 ring-border">
+            <Skeleton className="aspect-[5/4] w-full rounded-none" />
+            <div className="space-y-3 p-4">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-9 w-full" />
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
     </div>
   );

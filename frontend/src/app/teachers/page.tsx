@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { listTeachers, type TeacherListParams, type TeacherSort } from "@/features/teachers/api";
 import { TeacherFilters } from "@/features/teachers/components/teacher-filters";
-import { TeacherListItem } from "@/features/teachers/components/teacher-list-item";
+import { TeacherCard } from "@/features/teachers/components/teacher-card";
 
 export const metadata: Metadata = {
   title: "Find a teacher",
@@ -26,41 +26,38 @@ export default async function TeachersPage({
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:py-14">
       <header className="max-w-2xl">
-        <h1 className="font-display text-3xl font-medium tracking-tight sm:text-4xl">
-          Find a teacher
+        <h1 className="font-display text-3xl tracking-tight sm:text-4xl">
+          Find your teacher
         </h1>
         <p className="mt-3 text-muted-foreground">
-          Every teacher here gives paid 1-on-1 video lessons. Watch a few intros,
-          book a trial, and keep the one you click with.
+          Every teacher here gives paid one-on-one video lessons. Watch a few
+          intros, book a trial, keep the one you click with.
         </p>
       </header>
 
-      <div className="mt-10 grid gap-10 lg:grid-cols-[240px_1fr]">
-        <aside className="lg:sticky lg:top-20 lg:self-start">
-          <TeacherFilters facets={facets} />
-        </aside>
-
-        <section>
-          <p className="text-sm text-muted-foreground">
-            {total} {total === 1 ? "teacher" : "teachers"}
-          </p>
-
-          {teachers.length === 0 ? (
-            <div className="mt-10 rounded-xl border border-dashed border-border p-10 text-center">
-              <p className="font-display text-lg">No teachers match those filters</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Try widening the price range or choosing a different language.
-              </p>
-            </div>
-          ) : (
-            <div className="mt-2">
-              {teachers.map((teacher) => (
-                <TeacherListItem key={teacher.id} teacher={teacher} />
-              ))}
-            </div>
-          )}
-        </section>
+      <div className="mt-8">
+        <TeacherFilters facets={facets} />
       </div>
+
+      <p className="mt-6 text-sm text-muted-foreground">
+        <span className="font-semibold text-foreground">{total}</span>{" "}
+        {total === 1 ? "teacher" : "teachers"} available
+      </p>
+
+      {teachers.length === 0 ? (
+        <div className="mt-6 rounded-2xl border border-dashed border-border bg-card p-12 text-center">
+          <p className="font-display text-xl">No teachers match those filters</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Try widening the price range or choosing a different language.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {teachers.map((teacher) => (
+            <TeacherCard key={teacher.id} teacher={teacher} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

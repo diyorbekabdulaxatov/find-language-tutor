@@ -5,15 +5,16 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Design tokens.
+ * Design tokens — "bold modern marketplace", green-forward.
  *
- * Two layers:
- *  1. Raw brand values live on :root / .dark below.
- *  2. `@theme inline` maps them to Tailwind's semantic names so utilities like
- *     `bg-background`, `text-muted-foreground`, `font-display` work.
+ * Colour does the work: a confident emerald green for primary actions, links,
+ * and surfaces; a warm coral for trial CTAs and energy; a brighter mint for
+ * "online / verified" signals; amber for stars. White cards on a faintly green
+ * ground, generous radii, soft layered shadows.
  *
- * Palette: warm paper + near-black ink + a single marigold accent used only for
- * the primary action and the rating star. Teal is the link colour.
+ *  1. Raw values on :root / .dark.
+ *  2. `@theme inline` maps them to Tailwind names (bg-background, text-coral,
+ *     shadow-card, font-display, …).
  */
 @theme inline {
   --color-background: var(--background);
@@ -34,100 +35,117 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-link: var(--link);
+
+  --color-link: var(--primary);
+  --color-coral: var(--coral);
+  --color-coral-foreground: var(--coral-foreground);
+  --color-mint: var(--mint);
+  --color-mint-foreground: var(--mint-foreground);
+  --color-star: var(--star);
+  --color-brand-tint: var(--brand-tint);
 
   --font-sans: var(--font-sans);
   --font-display: var(--font-display);
-  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --font-heading: var(--font-display);
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 16px);
+
+  --shadow-soft: 0 1px 2px rgba(23, 23, 51, 0.04), 0 4px 12px -2px rgba(23, 23, 51, 0.07);
+  --shadow-card: 0 1px 2px rgba(23, 23, 51, 0.04), 0 12px 32px -12px rgba(23, 23, 51, 0.14);
+  --shadow-lift: 0 2px 6px rgba(23, 23, 51, 0.06), 0 24px 48px -14px rgba(23, 23, 51, 0.22);
 }
 
 :root {
-  --background: #fbfaf6;
-  --foreground: #1c1b18;
+  --background: #f5f8f6;
+  --foreground: #16211c;
 
-  --card: #fffdf9;
-  --card-foreground: #1c1b18;
+  --card: #ffffff;
+  --card-foreground: #16211c;
   --popover: #ffffff;
-  --popover-foreground: #1c1b18;
+  --popover-foreground: #16211c;
 
-  --primary: #e0a106;
-  --primary-foreground: #1c1b18;
+  --primary: #0e9e70;
+  --primary-foreground: #ffffff;
 
-  --secondary: #f1eee6;
-  --secondary-foreground: #1c1b18;
-  --muted: #f1eee6;
-  --muted-foreground: #6b6659;
-  --accent: #efe9db;
-  --accent-foreground: #1c1b18;
+  --secondary: #e7f1ec;
+  --secondary-foreground: #1c3a2e;
+  --muted: #eef3f0;
+  --muted-foreground: #5f7169;
+  --accent: #dff2e9;
+  --accent-foreground: #0a6b4b;
 
-  --destructive: #b4321f;
+  --destructive: #dc2b3d;
 
-  --border: #e4e0d6;
-  --input: #e4e0d6;
-  --ring: #e0a106;
+  --border: #e0e9e4;
+  --input: #d8e5df;
+  --ring: #0e9e70;
 
-  --link: #1f5150;
+  --coral: #ff6b57;
+  --coral-foreground: #ffffff;
+  --mint: #24c088;
+  --mint-foreground: #06231a;
+  --star: #f5a524;
+  --brand-tint: #dff2e9;
 
-  --radius: 0.5rem;
+  --radius: 0.875rem;
 }
 
 .dark {
-  --background: #17150f;
-  --foreground: #f3efe4;
+  --background: #0d1512;
+  --foreground: #e9f1ec;
 
-  --card: #201d15;
-  --card-foreground: #f3efe4;
-  --popover: #201d15;
-  --popover-foreground: #f3efe4;
+  --card: #18231d;
+  --card-foreground: #e9f1ec;
+  --popover: #18231d;
+  --popover-foreground: #e9f1ec;
 
-  --primary: #e8ac1f;
-  --primary-foreground: #1c1b18;
+  --primary: #2fbd8a;
+  --primary-foreground: #04241a;
 
-  --secondary: #262218;
-  --secondary-foreground: #f3efe4;
-  --muted: #262218;
-  --muted-foreground: #a8a08c;
-  --accent: #2f2a1d;
-  --accent-foreground: #f3efe4;
+  --secondary: #21302a;
+  --secondary-foreground: #e9f1ec;
+  --muted: #1c2823;
+  --muted-foreground: #9db0a7;
+  --accent: #1d3a2c;
+  --accent-foreground: #8ee7c1;
 
-  --destructive: #e06a52;
+  --destructive: #f2586a;
 
-  --border: #322d20;
-  --input: #322d20;
-  --ring: #e8ac1f;
+  --border: #2c3a33;
+  --input: #33443c;
+  --ring: #2fbd8a;
 
-  --link: #74bfb8;
+  --coral: #ff7f6d;
+  --coral-foreground: #2a0f0a;
+  --mint: #3ad89e;
+  --mint-foreground: #04241a;
+  --star: #f7b23b;
+  --brand-tint: #123024;
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
 
   body {
     @apply bg-background text-foreground font-sans;
-    font-feature-settings: "cv05", "ss01";
-    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
   }
 
-  /* Fraunces looks best optically sized; nudge its optical axis with size. */
   .font-display {
     font-optical-sizing: auto;
-    letter-spacing: -0.011em;
-  }
-
-  a {
-    color: inherit;
+    letter-spacing: -0.02em;
+    font-weight: 700;
   }
 
   ::selection {
-    background: color-mix(in oklab, var(--primary) 30%, transparent);
+    background: color-mix(in oklab, var(--primary) 28%, transparent);
   }
 }

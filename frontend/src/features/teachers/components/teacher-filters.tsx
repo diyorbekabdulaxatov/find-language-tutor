@@ -2,8 +2,8 @@
 
 import { useCallback, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { SlidersHorizontal, X } from "lucide-react";
 import type { TeacherListResult, TeacherSort } from "@/features/teachers/api";
-import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import {
   Select,
@@ -23,8 +23,8 @@ const SORT_OPTIONS: { value: TeacherSort; label: string }[] = [
 
 const KIND_OPTIONS = [
   { value: "", label: "Anyone" },
-  { value: "professional", label: "Professional teachers" },
-  { value: "community", label: "Community tutors" },
+  { value: "professional", label: "Professional" },
+  { value: "community", label: "Community" },
 ];
 
 /** Price filter works in whole so'm; kept in the URL as e.g. ?max=90000. */
@@ -71,84 +71,84 @@ export function TeacherFilters({
   const kind = params.get("kind") ?? "";
   const sort = (params.get("sort") as TeacherSort) ?? "recommended";
   const max = Number(params.get("max") ?? PRICE_MAX);
-  const hasFilters = Boolean(lang || kind || params.get("max"));
+  const priceActive = Boolean(params.get("max"));
+  const hasFilters = Boolean(lang || kind || priceActive);
 
   return (
-    <div className={cn("space-y-7", isPending && "opacity-60 transition-opacity")}>
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-base font-medium">Filters</h2>
-        {hasFilters && (
-          <button
-            type="button"
-            onClick={() => commit((next) => {
-              next.delete("lang");
-              next.delete("kind");
-              next.delete("max");
-            })}
-            className="text-sm text-[var(--color-link)] hover:underline"
+    <div
+      className={cn(
+        "rounded-2xl bg-card p-4 ring-1 ring-border shadow-soft transition-opacity sm:p-5",
+        isPending && "opacity-60",
+      )}
+    >
+      {/* Language chips */}
+      <div className="flex flex-wrap gap-2">
+        <Chip active={!lang} onClick={() => setParam("lang", "")}>
+          All languages
+        </Chip>
+        {facets.languages.map((l) => (
+          <Chip
+            key={l.code}
+            active={lang === l.code}
+            onClick={() => setParam("lang", lang === l.code ? "" : l.code)}
           >
-            Clear all
-          </button>
-        )}
+            {l.name}
+            <span className={cn("ml-1", lang === l.code ? "text-primary-foreground/70" : "text-muted-foreground")}>
+              {l.count}
+            </span>
+          </Chip>
+        ))}
       </div>
 
-      <Field label="Language">
-        <Select value={lang || "any"} onValueChange={(v) => setParam("lang", v === "any" ? "" : v)}>
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="any">Any language</SelectItem>
-            {facets.languages.map((l) => (
-              <SelectItem key={l.code} value={l.code}>
-                {l.name} ({l.count})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-
-      <Field label="Teacher type">
-        <div className="space-y-1.5">
+      <div className="mt-4 flex flex-col gap-4 border-t border-border pt-4 lg:flex-row lg:items-center lg:gap-6">
+        {/* Kind segmented control */}
+        <div className="inline-flex rounded-lg bg-secondary p-0.5">
           {KIND_OPTIONS.map((opt) => (
-            <label
+            <button
               key={opt.value || "any"}
-              className="flex cursor-pointer items-center gap-2.5 text-sm"
+              type="button"
+              onClick={() => setParam("kind", opt.value)}
+              className={cn(
+                "rounded-[calc(var(--radius)-6px)] px-3 py-1.5 text-sm font-medium transition-colors",
+                kind === opt.value
+                  ? "bg-card text-foreground shadow-soft"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
             >
-              <input
-                type="radio"
-                name="kind"
-                checked={kind === opt.value}
-                onChange={() => setParam("kind", opt.value)}
-                className="size-3.5 accent-primary"
-              />
               {opt.label}
-            </label>
+            </button>
           ))}
         </div>
-      </Field>
 
-      <Field label={`Up to ${som.format(max)} so'm / hour`}>
-        <Slider
-          min={PRICE_MIN}
-          max={PRICE_MAX}
-          step={PRICE_STEP}
-          value={[Math.min(Math.max(max, PRICE_MIN), PRICE_MAX)]}
-          onValueChange={([v]) => {
-            const next = new URLSearchParams(params.toString());
-            next.set("max", String(v));
-            router.replace(`${pathname}?${next}`, { scroll: false });
-          }}
-          onValueCommit={([v]) =>
-            setParam("max", v >= PRICE_MAX ? "" : String(v))
-          }
-          className="py-2"
-        />
-      </Field>
+        {/* Price */}
+        <div className="flex min-w-[200px] flex-1 items-center gap-3">
+          <SlidersHorizontal className="size-4 shrink-0 text-muted-foreground" />
+          <div className="flex-1">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Max price</span>
+              <span className="font-medium text-foreground">
+                {priceActive ? `${som.format(max)} so'm` : "Any"}
+              </span>
+            </div>
+            <Slider
+              min={PRICE_MIN}
+              max={PRICE_MAX}
+              step={PRICE_STEP}
+              value={[Math.min(Math.max(max, PRICE_MIN), PRICE_MAX)]}
+              onValueChange={([v]) => {
+                const next = new URLSearchParams(params.toString());
+                next.set("max", String(v));
+                router.replace(`${pathname}?${next}`, { scroll: false });
+              }}
+              onValueCommit={([v]) => setParam("max", v >= PRICE_MAX ? "" : String(v))}
+              className="mt-1.5"
+            />
+          </div>
+        </div>
 
-      <Field label="Sort by">
+        {/* Sort */}
         <Select value={sort} onValueChange={(v) => setParam("sort", v)}>
-          <SelectTrigger className="w-full">
+          <SelectTrigger className="h-9 lg:w-[190px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -159,16 +159,50 @@ export function TeacherFilters({
             ))}
           </SelectContent>
         </Select>
-      </Field>
+
+        {hasFilters && (
+          <button
+            type="button"
+            onClick={() =>
+              commit((next) => {
+                next.delete("lang");
+                next.delete("kind");
+                next.delete("max");
+              })
+            }
+            className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+          >
+            <X className="size-3.5" />
+            Clear
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Chip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="space-y-2">
-      <Label className="text-sm font-medium text-foreground">{label}</Label>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
+        active
+          ? "bg-primary text-primary-foreground"
+          : "bg-secondary text-secondary-foreground hover:bg-accent hover:text-accent-foreground",
+      )}
+    >
       {children}
-    </div>
+    </button>
   );
 }
