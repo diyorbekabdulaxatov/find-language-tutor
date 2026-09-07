@@ -7,7 +7,7 @@
 /*
  * Design tokens — "bold modern marketplace", green-forward.
  *
- * Colour does the work: a confident emerald green for primary actions, links,
+ * Colour does the work: a fresh, light emerald green for primary actions, links,
  * and surfaces; a warm coral for trial CTAs and energy; a brighter mint for
  * "online / verified" signals; amber for stars. White cards on a faintly green
  * ground, generous radii, soft layered shadows.
@@ -70,7 +70,7 @@
   --popover: #ffffff;
   --popover-foreground: #16211c;
 
-  --primary: #0e9e70;
+  --primary: #18b184;
   --primary-foreground: #ffffff;
 
   --secondary: #e7f1ec;
@@ -84,7 +84,7 @@
 
   --border: #e0e9e4;
   --input: #d8e5df;
-  --ring: #0e9e70;
+  --ring: #18b184;
 
   --coral: #ff6b57;
   --coral-foreground: #ffffff;
@@ -97,36 +97,36 @@
 }
 
 .dark {
-  --background: #0d1512;
-  --foreground: #e9f1ec;
+  --background: #16231e;
+  --foreground: #eef4f0;
 
-  --card: #18231d;
-  --card-foreground: #e9f1ec;
-  --popover: #18231d;
-  --popover-foreground: #e9f1ec;
+  --card: #21302a;
+  --card-foreground: #eef4f0;
+  --popover: #21302a;
+  --popover-foreground: #eef4f0;
 
-  --primary: #2fbd8a;
+  --primary: #4bd8a4;
   --primary-foreground: #04241a;
 
-  --secondary: #21302a;
-  --secondary-foreground: #e9f1ec;
-  --muted: #1c2823;
-  --muted-foreground: #9db0a7;
-  --accent: #1d3a2c;
-  --accent-foreground: #8ee7c1;
+  --secondary: #2c3d35;
+  --secondary-foreground: #eef4f0;
+  --muted: #273730;
+  --muted-foreground: #a9bcb2;
+  --accent: #2b4839;
+  --accent-foreground: #9cedcb;
 
   --destructive: #f2586a;
 
-  --border: #2c3a33;
-  --input: #33443c;
-  --ring: #2fbd8a;
+  --border: #3a4c43;
+  --input: #43564c;
+  --ring: #4bd8a4;
 
-  --coral: #ff7f6d;
+  --coral: #ff8977;
   --coral-foreground: #2a0f0a;
-  --mint: #3ad89e;
+  --mint: #46e0a8;
   --mint-foreground: #04241a;
   --star: #f7b23b;
-  --brand-tint: #123024;
+  --brand-tint: #1c3a2c;
 }
 
 @layer base {

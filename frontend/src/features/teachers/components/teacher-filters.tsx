@@ -149,7 +149,9 @@ export function TeacherFilters({
         {/* Sort */}
         <Select value={sort} onValueChange={(v) => setParam("sort", v)}>
           <SelectTrigger className="h-9 lg:w-[190px]">
-            <SelectValue />
+            <SelectValue>
+              {SORT_OPTIONS.find((opt) => opt.value === sort)?.label}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {SORT_OPTIONS.map((opt) => (
