@@ -18,6 +18,8 @@ servers:
 tags:
   - name: teachers
     description: Teacher search and profiles
+  - name: availability
+    description: Teacher weekly recurring availability (stored in UTC)
   - name: system
 
 paths:
@@ -97,6 +99,72 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /v1/teachers/{slug}/availability:
+    get:
+      tags: [availability]
+      summary: Get a teacher's weekly availability
+      description: >
+        The teacher's recurring weekly slots, stored and returned in UTC.
+        Combine `timezone` with each slot to show the grid in the teacher's
+        local time; booking will do the same conversion server-side.
+      operationId: getTeacherAvailability
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The teacher's full weekly availability.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WeeklyAvailability" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [availability]
+      summary: Replace a teacher's weekly availability
+      description: >
+        Replaces the teacher's **entire** weekly set with the slots in the body
+        (send `[]` to clear it). Teacher-owned.
+
+        Auth is not wired yet: until a `RequireAuth()` middleware exists, the
+        caller proves ownership by sending an `X-Teacher-Slug` header equal to
+        the `{slug}` in the path. This stand-in will be replaced by real token
+        verification.
+
+        Validation: `weekday` in 0–6; `0 <= start_minute < end_minute <= 1440`;
+        both bounds a multiple of `granularity_minutes` (15); no two slots on the
+        same weekday may overlap (touching slots are allowed).
+      operationId: replaceTeacherAvailability
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+        - name: X-Teacher-Slug
+          in: header
+          required: true
+          description: Ownership stand-in until auth lands; must equal the path slug.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AvailabilityReplacement" }
+      responses:
+        "200":
+          description: The stored weekly availability after replacement.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WeeklyAvailability" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 components:
   responses:
     BadRequest:
@@ -106,6 +174,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     NotFound:
       description: The resource does not exist.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The caller is not allowed to perform this action.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -308,3 +381,55 @@ components:
             languages:
               type: array
               items: { $ref: "#/components/schemas/LanguageFacet" }
+
+    AvailabilitySlot:
+      type: object
+      description: >
+        One recurring availability span on a single weekday, in UTC. Times are
+        minutes from 00:00 UTC (like money's minor units — an integer, never a
+        clock string). `end_minute` is exclusive.
+      required: [weekday, start_minute, end_minute]
+      properties:
+        weekday:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: 0 = Sunday … 6 = Saturday (matches JS `Date.getDay()`).
+        start_minute:
+          type: integer
+          minimum: 0
+          maximum: 1425
+          description: Minutes from 00:00 UTC. Multiple of `granularity_minutes`.
+        end_minute:
+          type: integer
+          minimum: 15
+          maximum: 1440
+          description: Exclusive end, minutes from 00:00 UTC. Greater than `start_minute`.
+
+    WeeklyAvailability:
+      type: object
+      description: A teacher's full weekly recurring availability, in UTC.
+      required: [teacher_slug, timezone, granularity_minutes, slots]
+      properties:
+        teacher_slug: { type: string }
+        timezone:
+          type: string
+          description: >
+            The teacher's IANA timezone (e.g. "Asia/Tashkent"). Use it to render
+            the UTC slots in local time.
+        granularity_minutes:
+          type: integer
+          description: The grid every slot boundary aligns to (currently 15).
+        slots:
+          type: array
+          items: { $ref: "#/components/schemas/AvailabilitySlot" }
+          description: Ordered by weekday, then start_minute. Non-overlapping.
+
+    AvailabilityReplacement:
+      type: object
+      description: The full weekly set to store. An empty array clears availability.
+      required: [slots]
+      properties:
+        slots:
+          type: array
+          items: { $ref: "#/components/schemas/AvailabilitySlot" }

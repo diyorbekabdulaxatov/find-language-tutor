@@ -213,6 +213,16 @@ type Teacher struct {
 	UpdatedAt         pgtype.Timestamptz
 }
 
+type TeacherAvailabilitySlot struct {
+	ID          int64
+	TeacherID   uuid.UUID
+	Weekday     int16
+	StartMinute int32
+	EndMinute   int32
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
 type TeacherExperience struct {
 	ID        int64
 	TeacherID uuid.UUID

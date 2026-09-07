@@ -29,6 +29,87 @@ type seedTeacher struct {
 
 func minor(v int64) *int64 { return &v }
 
+// seedSlot is one weekly availability span, in minutes from 00:00 UTC.
+// weekday: 0 = Sunday .. 6 = Saturday.
+type seedSlot struct {
+	Weekday    int
+	Start, End int
+}
+
+// at builds a slot from clock hours in UTC, e.g. at(6, 4, 0, 9, 0) == Saturday
+// 04:00–09:00 UTC. Tashkent is UTC+5, so that is 09:00–14:00 local.
+func at(weekday, startH, startM, endH, endM int) seedSlot {
+	return seedSlot{Weekday: weekday, Start: startH*60 + startM, End: endH*60 + endM}
+}
+
+// week repeats the same UTC window across several weekdays.
+func week(days []int, startH, startM, endH, endM int) []seedSlot {
+	out := make([]seedSlot, 0, len(days))
+	for _, d := range days {
+		out = append(out, at(d, startH, startM, endH, endM))
+	}
+	return out
+}
+
+func slots(groups ...[]seedSlot) []seedSlot {
+	var out []seedSlot
+	for _, g := range groups {
+		out = append(out, g...)
+	}
+	return out
+}
+
+// seedAvailability is keyed by teacher slug. Windows are in UTC; most teachers
+// are in Asia/Tashkent (UTC+5). Deleting a teacher cascades to these rows, so
+// re-running the seed stays idempotent.
+var seedAvailability = map[string][]seedSlot{
+	// Tashkent full-timer: weekday mornings + evenings, Sat morning.
+	"nodira-karimova": slots(
+		week([]int{1, 2, 3, 4, 5}, 4, 0, 8, 0), // 09:00–13:00 local
+		week([]int{1, 3}, 12, 0, 15, 0),        // 17:00–20:00 local
+		week([]int{6}, 5, 0, 9, 0),             // Sat 10:00–14:00 local
+	),
+	// Works a day job — evenings and weekend.
+	"sardor-yusupov": slots(
+		week([]int{1, 2, 4}, 14, 0, 17, 0), // 19:00–22:00 local
+		week([]int{0, 6}, 6, 0, 10, 0),     // weekend 11:00–15:00 local
+	),
+	"elena-kim": slots(
+		week([]int{1, 2, 3, 4, 5}, 5, 30, 11, 0),
+	),
+	// Samarkand (Asia/Samarkand, also UTC+5).
+	"dilnoza-abdullayeva": slots(
+		week([]int{1, 2, 3, 4, 5}, 8, 0, 12, 0), // after-school 13:00–17:00 local
+		week([]int{6}, 5, 0, 8, 0),
+	),
+	"jasur-rakhimov": slots(
+		week([]int{2, 4}, 13, 0, 17, 0),
+		week([]int{6}, 7, 0, 11, 0),
+	),
+	"aziza-tosheva": slots(
+		week([]int{1, 3, 5}, 6, 0, 10, 0),
+	),
+	// Seoul (Asia/Seoul, UTC+9).
+	"kim-min-jun": slots(
+		week([]int{1, 2, 3, 4}, 1, 0, 5, 0), // 10:00–14:00 Seoul
+		week([]int{6}, 0, 0, 3, 0),
+	),
+	// Istanbul (Europe/Istanbul, UTC+3).
+	"mehmet-demir": slots(
+		week([]int{2, 4}, 15, 0, 18, 0), // 18:00–21:00 Istanbul
+		week([]int{0}, 9, 0, 12, 0),
+	),
+	"kamola-sattorova": slots(
+		week([]int{1, 2, 3, 4, 5}, 4, 0, 7, 0),
+		week([]int{1, 3, 5}, 11, 0, 13, 0),
+	),
+	// Andijan (UTC+5), history teacher — evenings + Sunday.
+	"bekzod-ergashev": slots(
+		week([]int{1, 2, 3, 4, 5}, 13, 0, 16, 0),
+		week([]int{0}, 6, 0, 10, 0),
+	),
+}
+
 var seedTeachers = []seedTeacher{
 	{
 		Slug: "nodira-karimova", DisplayName: "Nodira Karimova",

@@ -95,6 +95,16 @@ func main() {
 				log.Fatalf("experience %s: %v", t.Slug, err)
 			}
 		}
+		for _, sl := range seedAvailability[t.Slug] {
+			if err := q.AddAvailabilitySlot(ctx, sqlc.AddAvailabilitySlotParams{
+				TeacherID:   id,
+				Weekday:     int16(sl.Weekday),
+				StartMinute: int32(sl.Start),
+				EndMinute:   int32(sl.End),
+			}); err != nil {
+				log.Fatalf("availability %s: %v", t.Slug, err)
+			}
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

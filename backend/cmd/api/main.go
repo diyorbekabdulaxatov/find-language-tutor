@@ -13,6 +13,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/availability"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/httpapi"
@@ -63,12 +64,18 @@ func run(logger *slog.Logger) error {
 		logger,
 	)
 
+	availabilityHandler := availability.NewHandler(
+		availability.NewService(availability.NewPostgresRepository(pool)),
+		logger,
+	)
+
 	router := httpapi.NewRouter(httpapi.Deps{
-		Config:         cfg,
-		Logger:         logger,
-		Pool:           pool,
-		Redis:          rdb,
-		TeacherHandler: teacherHandler,
+		Config:              cfg,
+		Logger:              logger,
+		Pool:                pool,
+		Redis:               rdb,
+		TeacherHandler:      teacherHandler,
+		AvailabilityHandler: availabilityHandler,
 	})
 
 	srv := &http.Server{

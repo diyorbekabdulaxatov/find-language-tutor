@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	AddAvailabilitySlot(ctx context.Context, arg AddAvailabilitySlotParams) error
 	AddTeacherExperience(ctx context.Context, arg AddTeacherExperienceParams) error
 	AddTeacherFocus(ctx context.Context, arg AddTeacherFocusParams) error
 	AddTeacherLanguage(ctx context.Context, arg AddTeacherLanguageParams) error
@@ -19,10 +20,15 @@ type Querier interface {
 	// mutations (create/update from the dashboard) will live here too.
 	CreateTeacher(ctx context.Context, arg CreateTeacherParams) (uuid.UUID, error)
 	DeleteAllTeachers(ctx context.Context) error
+	DeleteAvailabilitySlots(ctx context.Context, teacherID uuid.UUID) error
+	// Availability module: a teacher's weekly recurring slots (UTC minutes).
+	// Resolve a slug to the teacher id and timezone the availability endpoints need.
+	GetTeacherAvailabilityContext(ctx context.Context, slug string) (GetTeacherAvailabilityContextRow, error)
 	GetTeacherBySlug(ctx context.Context, slug string) (Teacher, error)
 	// Count of teachers per taught language across the whole catalog. Drives the
 	// language filter in the UI, so it is intentionally unfiltered.
 	LanguageFacets(ctx context.Context) ([]LanguageFacetsRow, error)
+	ListAvailabilitySlots(ctx context.Context, teacherID uuid.UUID) ([]ListAvailabilitySlotsRow, error)
 	ListExperienceForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]ListExperienceForTeachersRow, error)
 	ListFocusForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]TeacherFocu, error)
 	ListLanguagesForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]TeacherLanguage, error)

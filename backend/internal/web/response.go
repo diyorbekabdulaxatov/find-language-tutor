@@ -29,6 +29,10 @@ func BadRequest(c *gin.Context, message string) {
 	WriteError(c, http.StatusBadRequest, "bad_request", message)
 }
 
+func Forbidden(c *gin.Context, message string) {
+	WriteError(c, http.StatusForbidden, "forbidden", message)
+}
+
 func NotFound(c *gin.Context, message string) {
 	WriteError(c, http.StatusNotFound, "not_found", message)
 }
