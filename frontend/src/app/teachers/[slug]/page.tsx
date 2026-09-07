@@ -21,9 +21,15 @@ import { flagEmoji } from "@/lib/country";
 const loadTeacher = cache(getTeacherBySlug);
 
 /**
- * Prerender every profile at build time. Combined with the default static
- * rendering, this makes profile pages fast and crawlable (the SEO requirement).
+ * Prerender every profile the backend knows about at build time. Combined with
+ * the default static rendering, this makes profile pages fast and crawlable
+ * (the SEO requirement).
+ *
+ * `dynamicParams` stays true so a teacher added after the last build still
+ * renders (on demand, then cached) instead of 404-ing.
  */
+export const dynamicParams = true;
+
 export async function generateStaticParams() {
   const slugs = await listTeacherSlugs();
   return slugs.map((slug) => ({ slug }));

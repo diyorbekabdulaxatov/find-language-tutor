@@ -1,27 +1,27 @@
-import type { TeacherProfile, TeacherSummary } from "@/types/teacher";
-import { MOCK_TEACHERS } from "./mock-data";
+import type { TeacherProfile, TeacherSummary, Money } from "@/types/teacher";
+import { api, type ApiSchemas } from "@/lib/api/client";
 
 /**
  * Data-access layer for the teachers module.
  *
- * Right now every function reads from in-memory mock data. The signatures are
- * deliberately async and return plain data (no framework objects), so when the
- * generated `openapi-fetch` client arrives we only change the bodies — callers
- * (server components, later hooks) don't change.
+ * Talks to the Go backend through the generated `openapi-fetch` client. The
+ * wire format is snake_case (see openapi.yaml); the mappers at the bottom turn
+ * each response into the camelCase view-models in `@/types/teacher` that the
+ * components consume. Callers (server components) only ever see the view-models.
  */
 
+export type TeacherSort = ApiSchemas["TeacherSort"];
+
 export interface TeacherListParams {
-  /** filter by taught-language code, e.g. "es" */
+  /** filter by taught-language code, e.g. "en" */
   language?: string;
-  kind?: TeacherProfile["kind"];
+  kind?: TeacherSummary["kind"];
   /** max price per hour in minor units */
   maxPriceMinor?: number;
   /** substring match on name / headline / focus */
   q?: string;
   sort?: TeacherSort;
 }
-
-export type TeacherSort = "recommended" | "price_asc" | "price_desc" | "rating_desc";
 
 export interface TeacherListResult {
   teachers: TeacherSummary[];
@@ -32,85 +32,124 @@ export interface TeacherListResult {
   };
 }
 
-/** Simulate network latency so loading states are visible in dev. */
-const delay = (ms = 150) => new Promise((r) => setTimeout(r, ms));
+/**
+ * No pagination UI exists yet, so ask for a page big enough to hold the whole
+ * catalog and keep the "show everything that matches" behaviour.
+ */
+const LIST_PAGE_SIZE = 100;
 
 export async function listTeachers(
   params: TeacherListParams = {},
 ): Promise<TeacherListResult> {
-  await delay();
+  const { data, error } = await api.GET("/v1/teachers", {
+    params: {
+      query: {
+        language: params.language,
+        kind: params.kind,
+        max_price_minor: params.maxPriceMinor,
+        q: params.q,
+        sort: params.sort,
+        page_size: LIST_PAGE_SIZE,
+      },
+    },
+  });
 
-  const languages = buildLanguageFacets(MOCK_TEACHERS);
-
-  let rows = MOCK_TEACHERS.slice();
-
-  if (params.language) {
-    rows = rows.filter((t) => t.teaches.some((l) => l.code === params.language));
-  }
-  if (params.kind) {
-    rows = rows.filter((t) => t.kind === params.kind);
-  }
-  if (params.maxPriceMinor != null) {
-    rows = rows.filter((t) => t.pricePerHour.amountMinor <= params.maxPriceMinor!);
-  }
-  if (params.q) {
-    const needle = params.q.toLowerCase();
-    rows = rows.filter((t) =>
-      [t.displayName, t.headline, ...t.focus]
-        .join(" ")
-        .toLowerCase()
-        .includes(needle),
-    );
+  if (error || !data) {
+    throw new Error(`Failed to load teachers: ${describeError(error)}`);
   }
 
-  rows = sortTeachers(rows, params.sort ?? "recommended");
-
-  // The mock returns full profiles; TeacherProfile extends TeacherSummary, so
-  // this is a safe widening. The real /teachers endpoint returns real summaries.
   return {
-    teachers: rows,
-    total: rows.length,
-    facets: { languages },
+    teachers: data.teachers.map(toSummary),
+    total: data.total,
+    facets: {
+      languages: data.facets.languages.map((l) => ({
+        code: l.code,
+        name: l.name,
+        count: l.count,
+      })),
+    },
   };
 }
 
-export async function getTeacherBySlug(slug: string): Promise<TeacherProfile | null> {
-  await delay();
-  return MOCK_TEACHERS.find((t) => t.slug === slug) ?? null;
+export async function getTeacherBySlug(
+  slug: string,
+): Promise<TeacherProfile | null> {
+  const { data, error, response } = await api.GET("/v1/teachers/{slug}", {
+    params: { path: { slug } },
+  });
+
+  if (response.status === 404) return null;
+  if (error || !data) {
+    throw new Error(`Failed to load teacher "${slug}": ${describeError(error)}`);
+  }
+
+  return toProfile(data);
 }
 
 /** For generateStaticParams — the set of profile pages to prerender. */
 export async function listTeacherSlugs(): Promise<string[]> {
-  return MOCK_TEACHERS.map((t) => t.slug);
+  const { data, error } = await api.GET("/v1/teachers", {
+    params: { query: { page_size: LIST_PAGE_SIZE } },
+  });
+
+  if (error || !data) {
+    // Don't fail the build if the backend is unreachable; pages still render
+    // on demand (dynamicParams stays true).
+    return [];
+  }
+
+  return data.teachers.map((t) => t.slug);
 }
 
-function buildLanguageFacets(teachers: TeacherProfile[]) {
-  const map = new Map<string, { code: string; name: string; count: number }>();
-  for (const t of teachers) {
-    for (const l of t.teaches) {
-      const entry = map.get(l.code) ?? { code: l.code, name: l.name, count: 0 };
-      entry.count += 1;
-      map.set(l.code, entry);
-    }
-  }
-  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+/* -------------------------------------------------------------------------- */
+/* wire (snake_case) -> view-model (camelCase)                                */
+/* -------------------------------------------------------------------------- */
+
+function toMoney(m: ApiSchemas["Money"]): Money {
+  return { amountMinor: m.amount_minor, currency: m.currency };
 }
 
-function sortTeachers(rows: TeacherProfile[], sort: TeacherSort): TeacherProfile[] {
-  const byRecommended = (a: TeacherProfile, b: TeacherProfile) =>
-    Number(b.acceptingStudents) - Number(a.acceptingStudents) ||
-    b.rating - a.rating ||
-    b.reviewCount - a.reviewCount;
+function toSummary(t: ApiSchemas["TeacherSummary"]): TeacherSummary {
+  return {
+    id: t.id,
+    slug: t.slug,
+    displayName: t.display_name,
+    headline: t.headline,
+    avatarUrl: t.avatar_url,
+    videoThumbnailUrl: t.video_thumbnail_url,
+    kind: t.kind,
+    countryCode: t.country_code,
+    countryName: t.country_name,
+    city: t.city,
+    timezone: t.timezone,
+    teaches: t.teaches,
+    alsoSpeaks: t.also_speaks,
+    pricePerHour: toMoney(t.price_per_hour),
+    rating: t.rating,
+    reviewCount: t.review_count,
+    lessonsCompleted: t.lessons_completed,
+    studentCount: t.student_count,
+    focus: t.focus,
+    responseTimeHours: t.response_time_hours,
+    acceptingStudents: t.accepting_students,
+  };
+}
 
-  switch (sort) {
-    case "price_asc":
-      return rows.sort((a, b) => a.pricePerHour.amountMinor - b.pricePerHour.amountMinor);
-    case "price_desc":
-      return rows.sort((a, b) => b.pricePerHour.amountMinor - a.pricePerHour.amountMinor);
-    case "rating_desc":
-      return rows.sort((a, b) => b.rating - a.rating || b.reviewCount - a.reviewCount);
-    case "recommended":
-    default:
-      return rows.sort(byRecommended);
+function toProfile(t: ApiSchemas["TeacherProfile"]): TeacherProfile {
+  return {
+    ...toSummary(t),
+    introVideoUrl: t.intro_video_url,
+    about: t.about,
+    teachingStyle: t.teaching_style,
+    experience: t.experience,
+    trialPrice: t.trial_price ? toMoney(t.trial_price) : undefined,
+  };
+}
+
+function describeError(error: unknown): string {
+  if (error && typeof error === "object" && "error" in error) {
+    const inner = (error as { error?: { message?: string } }).error;
+    if (inner?.message) return inner.message;
   }
+  return "unknown error";
 }
