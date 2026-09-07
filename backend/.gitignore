@@ -1,0 +1,13 @@
+# Binaries
+/bin/
+*.exe
+
+# Local env
+.env
+
+# Test / coverage
+*.out
+coverage.*
+
+# OS
+.DS_Store
