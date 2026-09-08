@@ -33,7 +33,11 @@ func (r *repositoryPostgres) TeacherContext(ctx context.Context, slug string) (T
 		}
 		return TeacherRef{}, fmt.Errorf("get teacher context: %w", err)
 	}
-	return TeacherRef{ID: row.ID, Slug: row.Slug, Timezone: row.Timezone}, nil
+	ref := TeacherRef{ID: row.ID, Slug: row.Slug, Timezone: row.Timezone}
+	if row.UserID.Valid {
+		ref.OwnerID = row.UserID.UUID
+	}
+	return ref, nil
 }
 
 func (r *repositoryPostgres) ListSlots(ctx context.Context, teacherID uuid.UUID) ([]Slot, error) {

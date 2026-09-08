@@ -10,11 +10,18 @@ import (
 // ErrTeacherNotFound is returned when no teacher has the requested slug.
 var ErrTeacherNotFound = errors.New("teacher not found")
 
-// TeacherRef is the slice of a teacher the availability endpoints need.
+// ErrNotOwner is returned by Replace when the acting user does not own the
+// teacher profile being edited.
+var ErrNotOwner = errors.New("not the owner of this teacher profile")
+
+// TeacherRef is the slice of a teacher the availability endpoints need. OwnerID
+// is the account that owns the profile (uuid.Nil when the profile is
+// unclaimed).
 type TeacherRef struct {
 	ID       uuid.UUID
 	Slug     string
 	Timezone string
+	OwnerID  uuid.UUID
 }
 
 // Repository is the persistence port for this module. The concrete
@@ -59,12 +66,18 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (WeeklyAvailabilit
 }
 
 // Replace validates a proposed weekly set and stores it as the teacher's full
-// availability, returning the stored result. A ValidationError means the input
-// was client-fixable; ErrTeacherNotFound means the slug is unknown.
-func (s *Service) Replace(ctx context.Context, slug string, slots []Slot) (WeeklyAvailability, error) {
+// availability, returning the stored result. actingUserID is the authenticated
+// caller: Replace returns ErrNotOwner unless it matches the teacher's owner. A
+// ValidationError means the input was client-fixable; ErrTeacherNotFound means
+// the slug is unknown.
+func (s *Service) Replace(ctx context.Context, slug string, actingUserID uuid.UUID, slots []Slot) (WeeklyAvailability, error) {
 	ref, err := s.repo.TeacherContext(ctx, slug)
 	if err != nil {
 		return WeeklyAvailability{}, err
+	}
+
+	if ref.OwnerID == uuid.Nil || ref.OwnerID != actingUserID {
+		return WeeklyAvailability{}, ErrNotOwner
 	}
 
 	if err := validateSlots(slots); err != nil {

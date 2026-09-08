@@ -16,6 +16,14 @@ servers:
     description: Local development
 
 tags:
+  - name: auth
+    description: >
+      Email/password accounts. Login/register/refresh return a short-lived
+      HS256 access token (JSON body) plus a long-lived opaque refresh token set
+      as the HttpOnly `ftr_session` cookie (Path=/v1/auth, SameSite=Lax).
+      Clients hold the access token in memory and send it as
+      `Authorization: Bearer`; refresh rotates the cookie and revokes the old
+      token (re-using a rotated token revokes the whole session chain).
   - name: teachers
     description: Teacher search and profiles
   - name: availability
@@ -23,6 +31,115 @@ tags:
   - name: system
 
 paths:
+  /v1/auth/register:
+    post:
+      tags: [auth]
+      summary: Create an account and sign in
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "201":
+          description: >
+            Account created and signed in. Body carries the access token; the
+            `ftr_session` refresh cookie is set.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+              description: "`ftr_session=<opaque>; HttpOnly; SameSite=Lax; Path=/v1/auth`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: That email is already registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Sign in
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Signed in. Body carries the access token; the `ftr_session` refresh cookie is set.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate the refresh token
+      description: >
+        Reads the `ftr_session` cookie, issues a fresh access + refresh pair,
+        revokes the presented refresh token, and sets the new cookie. A missing,
+        expired, or already-revoked cookie returns 401 (and, on re-use of a
+        revoked token, every session for that user is revoked).
+      operationId: refresh
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: New access token in the body; new `ftr_session` cookie set.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Sign out
+      description: Revokes the current session and clears the `ftr_session` cookie. Idempotent.
+      operationId: logout
+      security:
+        - cookieAuth: []
+      responses:
+        "204":
+          description: Signed out (cookie cleared). Returned even if no session was active.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+
+  /v1/auth/me:
+    get:
+      tags: [auth]
+      summary: The signed-in user
+      operationId: getCurrentUser
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The authenticated user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthUser" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /healthz:
     get:
       tags: [system]
@@ -126,26 +243,22 @@ paths:
       summary: Replace a teacher's weekly availability
       description: >
         Replaces the teacher's **entire** weekly set with the slots in the body
-        (send `[]` to clear it). Teacher-owned.
+        (send `[]` to clear it).
 
-        Auth is not wired yet: until a `RequireAuth()` middleware exists, the
-        caller proves ownership by sending an `X-Teacher-Slug` header equal to
-        the `{slug}` in the path. This stand-in will be replaced by real token
-        verification.
+        Requires a Bearer access token whose user owns the teacher profile
+        (`teachers.user_id`); otherwise 401 (no/invalid token) or 403 (not the
+        owner).
 
         Validation: `weekday` in 0–6; `0 <= start_minute < end_minute <= 1440`;
         both bounds a multiple of `granularity_minutes` (15); no two slots on the
         same weekday may overlap (touching slots are allowed).
       operationId: replaceTeacherAvailability
+      security:
+        - bearerAuth: []
       parameters:
         - name: slug
           in: path
           required: true
-          schema: { type: string }
-        - name: X-Teacher-Slug
-          in: header
-          required: true
-          description: Ownership stand-in until auth lands; must equal the path slug.
           schema: { type: string }
       requestBody:
         required: true
@@ -160,12 +273,29 @@ paths:
               schema: { $ref: "#/components/schemas/WeeklyAvailability" }
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Short-lived HS256 access token from /v1/auth/{login,register,refresh}.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: ftr_session
+      description: >
+        HttpOnly opaque refresh token, Path=/v1/auth, SameSite=Lax. Set by the
+        auth endpoints; the browser sends it automatically to /v1/auth/refresh
+        and /v1/auth/logout. Not readable or settable by client JS.
+
   responses:
     BadRequest:
       description: The request was malformed.
@@ -174,6 +304,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     NotFound:
       description: The resource does not exist.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Authentication is missing or invalid.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -198,6 +333,45 @@ components:
             message:
               type: string
               description: Human-readable explanation, safe to surface to users.
+
+    RegisterRequest:
+      type: object
+      required: [email, password, display_name]
+      properties:
+        email: { type: string, format: email }
+        password:
+          type: string
+          minLength: 8
+          description: Minimum 8 characters.
+        display_name: { type: string, minLength: 1 }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    AuthUser:
+      type: object
+      required: [id, email, display_name]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        display_name: { type: string }
+
+    AuthResponse:
+      type: object
+      description: >
+        The access token (hold in memory, send as `Authorization: Bearer`) plus
+        the user. The refresh token is NOT here — it is the `ftr_session` cookie.
+      required: [access_token, expires_in, user]
+      properties:
+        access_token: { type: string, description: HS256 JWT. }
+        expires_in:
+          type: integer
+          description: Access-token lifetime in seconds.
+        user: { $ref: "#/components/schemas/AuthUser" }
 
     Health:
       type: object

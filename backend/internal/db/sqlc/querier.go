@@ -16,15 +16,25 @@ type Querier interface {
 	AddTeacherFocus(ctx context.Context, arg AddTeacherFocusParams) error
 	AddTeacherLanguage(ctx context.Context, arg AddTeacherLanguageParams) error
 	CountTeachers(ctx context.Context, arg CountTeachersParams) (int64, error)
+	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	// Write queries — currently only used by cmd/seed. Real teacher-profile
 	// mutations (create/update from the dashboard) will live here too.
 	CreateTeacher(ctx context.Context, arg CreateTeacherParams) (uuid.UUID, error)
+	// Auth module: user accounts and refresh-token sessions.
+	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteAllTeachers(ctx context.Context) error
+	// Seed-only. teachers.user_id references users, so callers must clear teachers
+	// first.
+	DeleteAllUsers(ctx context.Context) error
 	DeleteAvailabilitySlots(ctx context.Context, teacherID uuid.UUID) error
+	GetSessionByRefreshHash(ctx context.Context, refreshTokenHash []byte) (Session, error)
 	// Availability module: a teacher's weekly recurring slots (UTC minutes).
-	// Resolve a slug to the teacher id and timezone the availability endpoints need.
+	// Resolve a slug to the teacher id, timezone, and owning user the availability
+	// endpoints need (user_id drives the ownership check on PUT).
 	GetTeacherAvailabilityContext(ctx context.Context, slug string) (GetTeacherAvailabilityContextRow, error)
 	GetTeacherBySlug(ctx context.Context, slug string) (Teacher, error)
+	GetUserByEmail(ctx context.Context, email string) (User, error)
+	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	// Count of teachers per taught language across the whole catalog. Drives the
 	// language filter in the UI, so it is intentionally unfiltered.
 	LanguageFacets(ctx context.Context) ([]LanguageFacetsRow, error)
@@ -37,6 +47,11 @@ type Querier interface {
 	// Child collections (languages, focus, experience) are loaded separately by the
 	// repository using the returned ids.
 	ListTeachers(ctx context.Context, arg ListTeachersParams) ([]Teacher, error)
+	// Reuse-detection hammer: kills every still-active session for a user.
+	RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) error
+	// Marks a session revoked and records the session that replaced it (rotation).
+	// No-op if it was already revoked.
+	RevokeSession(ctx context.Context, arg RevokeSessionParams) error
 }
 
 var _ Querier = (*Queries)(nil)

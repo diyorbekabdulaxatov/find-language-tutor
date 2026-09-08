@@ -2,8 +2,34 @@ package main
 
 import (
 	"sort"
+	"strings"
 	"testing"
 )
+
+// TestSeedDemoEmailsAreUniqueAndWellFormed guards the derived demo logins: one
+// per teacher, lowercase ASCII, collision-free (the seed inserts them into the
+// unique users.email column).
+func TestSeedDemoEmailsAreUniqueAndWellFormed(t *testing.T) {
+	seen := map[string]string{}
+	for _, tr := range seedTeachers {
+		email := demoEmail(tr.DisplayName)
+		if !strings.HasSuffix(email, "@example.com") || strings.ContainsAny(email, " \t") {
+			t.Errorf("%s: malformed demo email %q", tr.Slug, email)
+		}
+		if email != strings.ToLower(email) {
+			t.Errorf("%s: demo email not lowercase: %q", tr.Slug, email)
+		}
+		for _, r := range email {
+			if r > 127 {
+				t.Errorf("%s: non-ASCII demo email %q", tr.Slug, email)
+			}
+		}
+		if prev, ok := seen[email]; ok {
+			t.Errorf("demo email collision: %q from both %q and %q", email, prev, tr.Slug)
+		}
+		seen[email] = tr.Slug
+	}
+}
 
 // TestSeedAvailabilityIsWellFormed guards the demo availability against the
 // same rules the database (CHECK constraints + the no-overlap exclusion

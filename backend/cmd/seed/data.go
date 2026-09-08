@@ -1,5 +1,18 @@
 package main
 
+import "strings"
+
+// demoEmail derives the demo login for a teacher from their display name:
+// "Nodira Karimova" -> "nodira@example.com". First names in the seed set are
+// unique and ASCII, so this stays collision-free.
+func demoEmail(displayName string) string {
+	first := displayName
+	if i := strings.IndexAny(displayName, " -"); i > 0 {
+		first = displayName[:i]
+	}
+	return strings.ToLower(first) + "@example.com"
+}
+
 // seedTeachers mirrors frontend/src/features/teachers/mock-data.ts so the
 // frontend gets identical data when it switches from its mock module to the API.
 

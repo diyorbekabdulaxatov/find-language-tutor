@@ -12,10 +12,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/auth"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db/sqlc"
 )
+
+// demoPassword is the password for every seeded demo account. Demo data only —
+// documented in the README. Never use this pattern for real accounts.
+const demoPassword = "password"
 
 func main() {
 	log.SetFlags(0)
@@ -42,12 +47,33 @@ func main() {
 
 	q := sqlc.New(tx)
 
+	// teachers.user_id references users, so clear teachers before users.
 	if err := q.DeleteAllTeachers(ctx); err != nil {
 		log.Fatalf("clear teachers: %v", err)
 	}
+	if err := q.DeleteAllUsers(ctx); err != nil {
+		log.Fatalf("clear users: %v", err)
+	}
+
+	// Every demo teacher gets a matching account (<firstname>@example.com /
+	// "password") so the frontend can sign in and exercise owner-gated routes.
+	passwordHash, err := auth.HashPassword(demoPassword)
+	if err != nil {
+		log.Fatalf("hash demo password: %v", err)
+	}
 
 	for _, t := range seedTeachers {
+		user, err := q.CreateUser(ctx, sqlc.CreateUserParams{
+			Email:        demoEmail(t.DisplayName),
+			PasswordHash: passwordHash,
+			DisplayName:  t.DisplayName,
+		})
+		if err != nil {
+			log.Fatalf("create user for %s: %v", t.Slug, err)
+		}
+
 		id, err := q.CreateTeacher(ctx, sqlc.CreateTeacherParams{
+			UserID:            uuid.NullUUID{UUID: user.ID, Valid: true},
 			Slug:              t.Slug,
 			DisplayName:       t.DisplayName,
 			Headline:          t.Headline,
@@ -111,7 +137,7 @@ func main() {
 		log.Fatalf("commit: %v", err)
 	}
 
-	log.Printf("seeded %d teachers", len(seedTeachers))
+	log.Printf("seeded %d teachers (+ %d demo accounts, password %q)", len(seedTeachers), len(seedTeachers), demoPassword)
 }
 
 func addLang(ctx context.Context, q *sqlc.Queries, id uuid.UUID, role sqlc.LanguageRole, l seedLang, pos int) {

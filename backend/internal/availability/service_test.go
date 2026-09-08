@@ -35,8 +35,11 @@ func (f *fakeRepo) ReplaceSlots(_ context.Context, _ uuid.UUID, slots []Slot) er
 	return nil
 }
 
+// demoOwnerID is the account that owns the fake teacher in these tests.
+var demoOwnerID = uuid.New()
+
 func teacherRef() TeacherRef {
-	return TeacherRef{ID: uuid.New(), Slug: "nodira-karimova", Timezone: "Asia/Tashkent"}
+	return TeacherRef{ID: uuid.New(), Slug: "nodira-karimova", Timezone: "Asia/Tashkent", OwnerID: demoOwnerID}
 }
 
 func TestService_GetBySlug_TeacherNotFound(t *testing.T) {
@@ -90,7 +93,7 @@ func TestService_Replace_Valid_SortsAndPersists(t *testing.T) {
 		{Weekday: Monday, StartMinute: 540, EndMinute: 600},
 		{Weekday: Monday, StartMinute: 600, EndMinute: 660}, // touches previous — allowed
 	}
-	wa, err := svc.Replace(context.Background(), "nodira-karimova", in)
+	wa, err := svc.Replace(context.Background(), "nodira-karimova", demoOwnerID, in)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -108,9 +111,34 @@ func TestService_Replace_Valid_SortsAndPersists(t *testing.T) {
 func TestService_Replace_TeacherNotFound(t *testing.T) {
 	svc := NewService(&fakeRepo{refErr: ErrTeacherNotFound})
 
-	_, err := svc.Replace(context.Background(), "ghost", nil)
+	_, err := svc.Replace(context.Background(), "ghost", demoOwnerID, nil)
 	if !errors.Is(err, ErrTeacherNotFound) {
 		t.Fatalf("err = %v, want ErrTeacherNotFound", err)
+	}
+}
+
+func TestService_Replace_RejectsNonOwner(t *testing.T) {
+	repo := &fakeRepo{ref: teacherRef()}
+	svc := NewService(repo)
+
+	_, err := svc.Replace(context.Background(), "nodira-karimova", uuid.New(), []Slot{})
+	if !errors.Is(err, ErrNotOwner) {
+		t.Fatalf("err = %v, want ErrNotOwner", err)
+	}
+	if repo.replaceHit {
+		t.Error("ReplaceSlots should not run for a non-owner")
+	}
+}
+
+func TestService_Replace_RejectsUnclaimedProfile(t *testing.T) {
+	ref := teacherRef()
+	ref.OwnerID = uuid.Nil
+	repo := &fakeRepo{ref: ref}
+	svc := NewService(repo)
+
+	_, err := svc.Replace(context.Background(), "nodira-karimova", uuid.New(), []Slot{})
+	if !errors.Is(err, ErrNotOwner) {
+		t.Fatalf("err = %v, want ErrNotOwner", err)
 	}
 }
 
@@ -132,7 +160,7 @@ func TestService_Replace_RejectsInvalidSets(t *testing.T) {
 			repo := &fakeRepo{ref: teacherRef()}
 			svc := NewService(repo)
 
-			_, err := svc.Replace(context.Background(), "nodira-karimova", slots)
+			_, err := svc.Replace(context.Background(), "nodira-karimova", demoOwnerID, slots)
 			var ve ValidationError
 			if !errors.As(err, &ve) {
 				t.Fatalf("err = %v, want ValidationError", err)
@@ -148,7 +176,7 @@ func TestService_Replace_AllowsEmptySet(t *testing.T) {
 	repo := &fakeRepo{ref: teacherRef()}
 	svc := NewService(repo)
 
-	wa, err := svc.Replace(context.Background(), "nodira-karimova", []Slot{})
+	wa, err := svc.Replace(context.Background(), "nodira-karimova", demoOwnerID, []Slot{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

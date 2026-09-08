@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/auth"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/availability"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/teachers"
@@ -18,6 +19,8 @@ type Deps struct {
 	Logger              *slog.Logger
 	Pool                *pgxpool.Pool
 	Redis               *redis.Client
+	AuthHandler         *auth.Handler
+	AuthMiddleware      gin.HandlerFunc // auth.RequireAuth(tokenManager)
 	TeacherHandler      *teachers.Handler
 	AvailabilityHandler *availability.Handler
 }
@@ -40,9 +43,12 @@ func NewRouter(d Deps) *gin.Engine {
 	r.GET("/healthz", healthHandler(d.Pool, d.Redis))
 
 	v1 := r.Group("/v1")
+
+	auth.RegisterRoutes(v1.Group("/auth"), d.AuthHandler)
+
 	teacherRoutes := v1.Group("/teachers")
 	teachers.RegisterRoutes(teacherRoutes, d.TeacherHandler)
-	availability.RegisterRoutes(teacherRoutes, d.AvailabilityHandler)
+	availability.RegisterRoutes(teacherRoutes, d.AvailabilityHandler, d.AuthMiddleware)
 
 	return r
 }

@@ -64,26 +64,49 @@ See `../openapi.yaml`. Currently implemented:
 | Method | Path | Notes |
 | ------ | ---- | ----- |
 | GET | `/healthz` | status + per-dependency checks (200 / 503) |
+| POST | `/v1/auth/register` | create account + sign in; 409 on duplicate email |
+| POST | `/v1/auth/login` | sign in; 401 on bad credentials |
+| POST | `/v1/auth/refresh` | rotate the refresh cookie, new access token |
+| POST | `/v1/auth/logout` | revoke session, clear cookie; 204 |
+| GET | `/v1/auth/me` | the signed-in user; needs `Authorization: Bearer` |
 | GET | `/v1/teachers` | `?language&kind&max_price_minor&q&sort&page&page_size` |
 | GET | `/v1/teachers/{slug}` | full profile, 404 if missing |
 | GET | `/v1/teachers/{slug}/availability` | weekly recurring slots (UTC), 404 if missing |
-| PUT | `/v1/teachers/{slug}/availability` | replace the full weekly set (teacher-owned) |
+| PUT | `/v1/teachers/{slug}/availability` | replace the full weekly set; Bearer token, must own the profile |
 
 ```bash
 curl 'localhost:8080/v1/teachers?language=uz&sort=price_asc'
-curl localhost:8080/v1/teachers/nodira-karimova
 curl localhost:8080/v1/teachers/nodira-karimova/availability
+
+# Auth: seeded teachers all have an account <firstname>@example.com / "password".
+ACCESS=$(curl -s -X POST localhost:8080/v1/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"nodira@example.com","password":"password"}' | jq -r .access_token)
+
+curl localhost:8080/v1/auth/me -H "Authorization: Bearer $ACCESS"
+
 curl -X PUT localhost:8080/v1/teachers/nodira-karimova/availability \
-  -H 'Content-Type: application/json' \
-  -H 'X-Teacher-Slug: nodira-karimova' \
+  -H "Authorization: Bearer $ACCESS" -H 'Content-Type: application/json' \
   -d '{"slots":[{"weekday":1,"start_minute":540,"end_minute":720}]}'
 ```
+
+Auth model: access tokens are short-lived (15 min) HS256 JWTs held in memory by
+the client; refresh tokens are opaque, 30-day, and delivered as the HttpOnly
+`ftr_session` cookie (`Path=/v1/auth`, `SameSite=Lax`, `Secure` outside dev).
+`/refresh` rotates the cookie and revokes the previous token; presenting an
+already-revoked token revokes every session for that user. Passwords are
+argon2id (64 MiB / t=1 / p=4). Browser clients must use `credentials: 'include'`
+on the auth calls. Config: `AUTH_JWT_SECRET` (required in production),
+`AUTH_ACCESS_TTL`, `AUTH_REFRESH_TTL`, `AUTH_COOKIE_DOMAIN`, `AUTH_COOKIE_SECURE`.
+
+**Demo accounts are seeded with the password `password` — demo only, never a
+real-account pattern.**
 
 Availability slots are stored in UTC as minutes from 00:00 (`start_minute` /
 `end_minute`, aligned to a 15-minute grid); `weekday` is 0 (Sunday) – 6
 (Saturday). The teacher's IANA `timezone` (on the profile, echoed in the
 availability payload) is the source of truth for converting them to local time
-when booking lands. The `PUT` route has no real auth yet — see below.
+when booking lands. `PUT` requires a Bearer access token whose user owns the
+teacher row (`teachers.user_id`): 401 without a valid token, 403 if not the owner.
 
 ## Tests
 
@@ -92,16 +115,15 @@ make test    # go test ./...
 make vet
 ```
 
-`internal/teachers` and `internal/availability` have service tests (fake
-repository) and handler tests (httptest). No DB is required for the test suite.
+`internal/auth`, `internal/teachers` and `internal/availability` have service
+tests (fake repository) and handler tests (httptest). No DB is required for the
+test suite.
 
 ## Not done yet
 
-- **Auth** — `config` has `AUTH_ISSUER` / `AUTH_AUDIENCE` placeholders but no JWT
-  middleware. When Clerk/Auth0 is chosen, add verification in `internal/httpapi`
-  and a `RequireAuth()` middleware for the mutating routes. Until then
-  `PUT /v1/teachers/{slug}/availability` is gated by a stand-in `X-Teacher-Slug`
-  header check in the handler (marked with a `TODO(auth)`).
+- Email verification, password reset, and rate-limiting on the auth endpoints.
+- Account ↔ teacher-profile claiming flow (the column and ownership check exist;
+  there is no endpoint to claim a profile yet — the seed links them directly).
 - Booking and payments modules.
 - The worker only has a stub `lesson:reminder` handler to show the pattern.
 - `cmd/migrate` pulls in golang-migrate's transitive test deps (dktest/docker)
