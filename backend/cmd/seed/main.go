@@ -47,7 +47,20 @@ func main() {
 
 	q := sqlc.New(tx)
 
-	// FK order: bookings -> teachers/users, teachers.user_id -> users.
+	// FK order: payout_ledger / payment_events -> payments -> bookings ->
+	// teachers/users, teachers.user_id -> users. None of these FKs cascade, so
+	// the seed clears them explicitly deepest-first. (We do not seed payment
+	// rows; these deletes just keep `make seed` working once real payments
+	// exist.)
+	if err := q.DeleteAllPayoutLedger(ctx); err != nil {
+		log.Fatalf("clear payout ledger: %v", err)
+	}
+	if err := q.DeleteAllPaymentEvents(ctx); err != nil {
+		log.Fatalf("clear payment events: %v", err)
+	}
+	if err := q.DeleteAllPayments(ctx); err != nil {
+		log.Fatalf("clear payments: %v", err)
+	}
 	if err := q.DeleteAllBookings(ctx); err != nil {
 		log.Fatalf("clear bookings: %v", err)
 	}

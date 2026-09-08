@@ -19,9 +19,15 @@ import (
 // regressions (a gin wildcard-conflict panic on /:slug vs /:slug/slots) surface
 // here.
 func newTestRouter(repo Repository, tm *auth.TokenManager) *gin.Engine {
+	return newTestRouterGW(repo, tm, nil)
+}
+
+func newTestRouterGW(repo Repository, tm *auth.TokenManager, gw PaymentGateway) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h := NewHandler(&Service{repo: repo, now: func() time.Time { return fixedNow }}, discardLogger())
+	svc := &Service{repo: repo, now: func() time.Time { return fixedNow }, logger: discardLogger()}
+	svc.payments = gw
+	h := NewHandler(svc, discardLogger())
 
 	tg := r.Group("/v1/teachers")
 	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
@@ -233,22 +239,92 @@ func TestHandler_Get_BadID(t *testing.T) {
 	}
 }
 
-func TestHandler_Confirm(t *testing.T) {
+func TestHandler_Pay_OK(t *testing.T) {
 	student := uuid.New()
 	repo := newFakeRepo()
 	id := seedBooking(repo, StatusPendingPayment, student, uuid.New())
+	gw := newFakeGateway(repo)
+	gw.status[id] = "requires_payment"
 	tm := testTokenManager()
-	r := newTestRouter(repo, tm)
 
-	w := do(r, http.MethodPost, "/v1/bookings/"+id.String()+"/confirm", "", bearerFor(tm, student))
+	w := do(newTestRouterGW(repo, tm, gw), http.MethodPost, "/v1/bookings/"+id.String()+"/pay",
+		`{"method_token":"pm_ok"}`, bearerFor(tm, student))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
+	var body bookingDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if body.Status != "confirmed" || body.Payment == nil || body.Payment.Status != "authorized" {
+		t.Errorf("unexpected body: %+v (payment %+v)", body, body.Payment)
+	}
+}
 
-	// wrong state now
-	w = do(r, http.MethodPost, "/v1/bookings/"+id.String()+"/confirm", "", bearerFor(tm, student))
-	if w.Code != http.StatusConflict || errCode(t, w) != "invalid_state" {
-		t.Fatalf("status = %d code = %s, want 409 invalid_state", w.Code, errCode(t, w))
+func TestHandler_Pay_Declined402(t *testing.T) {
+	student := uuid.New()
+	repo := newFakeRepo()
+	id := seedBooking(repo, StatusPendingPayment, student, uuid.New())
+	gw := newFakeGateway(repo)
+	gw.authErr = PaymentFailedError{Reason: "the card was declined"}
+	tm := testTokenManager()
+
+	w := do(newTestRouterGW(repo, tm, gw), http.MethodPost, "/v1/bookings/"+id.String()+"/pay",
+		`{"method_token":"pm_decline"}`, bearerFor(tm, student))
+	if w.Code != http.StatusPaymentRequired || errCode(t, w) != "payment_failed" {
+		t.Fatalf("status = %d code = %s, want 402 payment_failed", w.Code, errCode(t, w))
+	}
+}
+
+func TestHandler_Pay_DoublePay409(t *testing.T) {
+	student := uuid.New()
+	repo := newFakeRepo()
+	id := seedBooking(repo, StatusConfirmed, student, uuid.New())
+	gw := newFakeGateway(repo)
+	tm := testTokenManager()
+
+	w := do(newTestRouterGW(repo, tm, gw), http.MethodPost, "/v1/bookings/"+id.String()+"/pay",
+		`{"method_token":"pm_ok"}`, bearerFor(tm, student))
+	if w.Code != http.StatusConflict || errCode(t, w) != "already_paid" {
+		t.Fatalf("status = %d code = %s, want 409 already_paid", w.Code, errCode(t, w))
+	}
+}
+
+func TestHandler_Complete_TooEarly409(t *testing.T) {
+	owner := uuid.New()
+	repo := newFakeRepo()
+	id := seedBooking(repo, StatusConfirmed, uuid.New(), owner)
+	gw := newFakeGateway(repo)
+	tm := testTokenManager()
+
+	w := do(newTestRouterGW(repo, tm, gw), http.MethodPost, "/v1/bookings/"+id.String()+"/complete",
+		"", bearerFor(tm, owner))
+	if w.Code != http.StatusConflict || errCode(t, w) != "too_early" {
+		t.Fatalf("status = %d code = %s, want 409 too_early", w.Code, errCode(t, w))
+	}
+}
+
+func TestHandler_Complete_OK(t *testing.T) {
+	owner := uuid.New()
+	repo := newFakeRepo()
+	id := uuid.New()
+	repo.store[id] = Booking{
+		ID: id, Status: StatusConfirmed,
+		StartAt: fixedNow.Add(-2 * time.Hour), EndAt: fixedNow.Add(-time.Hour),
+		Student:        StudentSummary{ID: uuid.New()},
+		TeacherOwnerID: owner,
+	}
+	gw := newFakeGateway(repo)
+	gw.status[id] = "authorized"
+	tm := testTokenManager()
+
+	w := do(newTestRouterGW(repo, tm, gw), http.MethodPost, "/v1/bookings/"+id.String()+"/complete",
+		"", bearerFor(tm, owner))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var body bookingDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if body.Status != "completed" {
+		t.Errorf("status = %s, want completed", body.Status)
 	}
 }
 

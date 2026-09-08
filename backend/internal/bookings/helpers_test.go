@@ -134,7 +134,86 @@ func (f *fakeRepo) Cancel(_ context.Context, id uuid.UUID, reason string) (Booki
 	return b, nil
 }
 
-// newService builds a Service over the fake repo with a frozen clock.
+// newService builds a Service over the fake repo with a frozen clock and a
+// discard logger. No payment gateway (pay / complete return ErrPaymentRequired).
 func newService(repo Repository) *Service {
-	return &Service{repo: repo, now: func() time.Time { return fixedNow }}
+	return &Service{repo: repo, now: func() time.Time { return fixedNow }, logger: discardLogger()}
+}
+
+// newServiceWithGateway is newService plus a wired payment gateway.
+func newServiceWithGateway(repo Repository, gw PaymentGateway) *Service {
+	s := newService(repo)
+	s.payments = gw
+	return s
+}
+
+// fakeGateway is an in-memory bookings.PaymentGateway. Authorize emulates the
+// payment webhook by flipping the booking to confirmed in the backing repo,
+// exactly as the real payments module does inside HandleWebhook.
+type fakeGateway struct {
+	repo *fakeRepo
+
+	authErr    error // Authorize returns this when set (e.g. PaymentFailedError)
+	captureErr error // Capture returns this when set (e.g. ErrCaptureFailed)
+
+	initiated map[uuid.UUID]Money
+	captured  []uuid.UUID
+	refunded  []uuid.UUID
+	status    map[uuid.UUID]string // booking id -> payment status
+}
+
+func newFakeGateway(repo *fakeRepo) *fakeGateway {
+	return &fakeGateway{
+		repo:      repo,
+		initiated: map[uuid.UUID]Money{},
+		status:    map[uuid.UUID]string{},
+	}
+}
+
+func (g *fakeGateway) InitiatePayment(_ context.Context, bookingID uuid.UUID, amountMinor int64, currency string) error {
+	g.initiated[bookingID] = Money{AmountMinor: amountMinor, Currency: currency}
+	g.status[bookingID] = "requires_payment"
+	return nil
+}
+
+func (g *fakeGateway) Authorize(ctx context.Context, bookingID uuid.UUID, _ string) (PaymentSnapshot, error) {
+	if g.authErr != nil {
+		g.status[bookingID] = "failed"
+		return PaymentSnapshot{}, g.authErr
+	}
+	g.status[bookingID] = "authorized"
+	// Emulate the payment.authorized webhook: pending_payment -> confirmed.
+	if _, err := g.repo.SetStatus(ctx, bookingID, StatusConfirmed); err != nil {
+		return PaymentSnapshot{}, err
+	}
+	return g.snapshot(bookingID), nil
+}
+
+func (g *fakeGateway) Capture(_ context.Context, bookingID uuid.UUID) (PaymentSnapshot, error) {
+	if g.captureErr != nil {
+		return PaymentSnapshot{}, g.captureErr
+	}
+	g.status[bookingID] = "captured"
+	g.captured = append(g.captured, bookingID)
+	return g.snapshot(bookingID), nil
+}
+
+func (g *fakeGateway) Refund(_ context.Context, bookingID uuid.UUID) (PaymentSnapshot, error) {
+	g.status[bookingID] = "refunded"
+	g.refunded = append(g.refunded, bookingID)
+	return g.snapshot(bookingID), nil
+}
+
+func (g *fakeGateway) SnapshotForBooking(_ context.Context, bookingID uuid.UUID) (PaymentSnapshot, bool, error) {
+	st, ok := g.status[bookingID]
+	if !ok {
+		return PaymentSnapshot{}, false, nil
+	}
+	amt := g.initiated[bookingID]
+	return PaymentSnapshot{Status: st, AmountMinor: amt.AmountMinor, Currency: amt.Currency}, true, nil
+}
+
+func (g *fakeGateway) snapshot(bookingID uuid.UUID) PaymentSnapshot {
+	amt := g.initiated[bookingID]
+	return PaymentSnapshot{Status: g.status[bookingID], AmountMinor: amt.AmountMinor, Currency: amt.Currency}
 }

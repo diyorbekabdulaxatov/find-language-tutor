@@ -78,11 +78,14 @@ See `../openapi.yaml`. Currently implemented:
 | GET | `/v1/teachers/{slug}/availability` | weekly recurring slots (UTC), 404 if missing |
 | PUT | `/v1/teachers/{slug}/availability` | replace the full weekly set; Bearer token, must own the profile |
 | GET | `/v1/teachers/{slug}/slots` | `?from&to&duration` — concrete bookable start times (UTC); public; 400 if the window > 21 days |
-| POST | `/v1/bookings` | book a lesson; Bearer token; 201 `pending_payment`; 409 `slot_unavailable` / `slot_taken` |
+| POST | `/v1/bookings` | book a lesson; Bearer token; 201 `pending_payment` + opens a `requires_payment` intent; 409 `slot_unavailable` / `slot_taken` |
 | GET | `/v1/bookings` | `?role=student\|teacher&status=` — the caller's bookings, newest first; Bearer token |
-| GET | `/v1/bookings/{id}` | full booking; Bearer token; 404 if missing, 403 if not a participant |
-| POST | `/v1/bookings/{id}/confirm` | `pending_payment → confirmed`; participant only; 409 on wrong state |
-| POST | `/v1/bookings/{id}/cancel` | `{reason?}`; `pending_payment\|confirmed → cancelled`; participant only; 409 if already done |
+| GET | `/v1/bookings/{id}` | full booking (with embedded `payment`); Bearer token; 404 if missing, 403 if not a participant |
+| POST | `/v1/bookings/{id}/pay` | `{method_token}`; student only; authorize → `pending_payment → confirmed`; 402 `payment_failed`, 409 `already_paid` |
+| POST | `/v1/bookings/{id}/complete` | teacher-owner only; `confirmed → completed` + capture + payout-ledger row; 409 `too_early`, 502 `capture_failed` |
+| POST | `/v1/bookings/{id}/cancel` | `{reason?}`; `pending_payment\|confirmed → cancelled`; participant only; refunds/voids the intent; 409 if already done |
+| POST | `/v1/payments/webhook` | provider event; unauthenticated (signed); idempotent by `event_id`; 200 on a well-formed duplicate |
+| GET | `/v1/payments/me` | the caller's teacher earnings summary; Bearer token; 404 if they own no profile |
 
 ```bash
 curl 'localhost:8080/v1/teachers?language=uz&sort=price_asc'
@@ -125,7 +128,15 @@ BID=$(curl -s -X POST localhost:8080/v1/bookings -H "Authorization: Bearer $STU"
   -d '{"teacher_slug":"nodira-karimova","start_at":"2026-09-14T09:00:00Z","duration_minutes":60}' | jq -r .id)
 
 curl "localhost:8080/v1/bookings?role=student" -H "Authorization: Bearer $STU"
-curl -X POST "localhost:8080/v1/bookings/$BID/confirm" -H "Authorization: Bearer $STU"
+
+# Pay (student). Fake-provider method tokens: pm_ok | pm_decline | pm_capture_fail.
+curl -X POST "localhost:8080/v1/bookings/$BID/pay" -H "Authorization: Bearer $STU" \
+  -H 'Content-Type: application/json' -d '{"method_token":"pm_ok"}'
+
+# Complete (teacher-owner, only after the lesson's end_at), then check earnings.
+curl -X POST "localhost:8080/v1/bookings/$BID/complete" -H "Authorization: Bearer $ACCESS"
+curl localhost:8080/v1/payments/me -H "Authorization: Bearer $ACCESS"
+
 curl -X POST "localhost:8080/v1/bookings/$BID/cancel" -H "Authorization: Bearer $STU" \
   -H 'Content-Type: application/json' -d '{"reason":"schedule clash"}'
 ```
@@ -168,9 +179,45 @@ Double-booking is prevented at the DB layer by two `EXCLUDE USING gist`
 constraints (one on `teacher_id`, one on `student_id`, both over
 `tstzrange(start_at, end_at)` where `status <> 'cancelled'`): a slot the service
 can already see as taken returns 409 `slot_unavailable`, and a lost race on the
-constraint returns 409 `slot_taken`. `confirm` / `cancel` are participant-only
+constraint returns 409 `slot_taken`. `cancel` is participant-only
 (student or teacher-owner); cancellation is currently allowed at any time and
 only records who/when (`// TODO(phase-5): cancellation window / penalties`).
+
+Payments (`internal/payments`) sit behind a provider-agnostic port
+(`payments.Provider` — `Authorize` / `Capture` / `Refund`). The MVP ships a
+deterministic in-process **fake** (`fake_provider.go`); Stripe does not operate
+in Uzbekistan, and a real Payme / Click / Uzum adapter drops in behind the same
+port later. The fake's `method_token` drives the outcome: `pm_ok` authorizes,
+`pm_decline` is refused (402 `payment_failed`), `pm_capture_fail` authorizes but
+fails the first `Capture`.
+
+Module boundary: `internal/bookings` defines the port it needs
+(`bookings.PaymentGateway`); `internal/payments` provides the adapter
+(`payments.NewGateway`), wired in `cmd/api` with `bookingService.SetPaymentGateway`.
+`bookings` never imports `payments`. The reverse direction — a successful
+authorization moving the booking `pending_payment → confirmed` — happens inside
+the webhook transaction as a guarded `UPDATE` on the bookings row, so payment
+and booking state commit together.
+
+Every provider state change is a **webhook event** (`payment.authorized`,
+`payment.captured`, `payment.refunded`, `payment.failed`) with a stable
+`event_id`. The in-process fake routes events through the same
+`Service.HandleWebhook` a real provider's HTTP `POST /v1/payments/webhook` would
+hit. Idempotency is enforced by the `payment_events` **primary key**: the
+handler inserts `event_id` first and treats a `23505` unique violation as
+"already processed" — never a check-then-insert, so concurrent duplicate
+deliveries are race-safe. A well-formed duplicate still returns 200.
+
+The `payout_ledger` is a simplified teacher-earnings model: one row per captured
+booking, `held` on capture then `available` immediately (no clearing window for
+the MVP — `// TODO(payouts)`), `reversed` on refund. `GET /v1/payments/me`
+aggregates it into `{total_earned_minor, held_minor, available_minor, currency,
+lessons[]}`; reversed lessons are excluded from the totals. Money is integer
+minor units end to end.
+
+Config: `PAYMENTS_PROVIDER` (default `fake`), `PAYMENTS_WEBHOOK_SECRET` (when
+set, the webhook verifies an `X-Payment-Signature` HMAC-SHA256 header; empty
+disables verification for dev).
 
 ## Tests
 
@@ -179,11 +226,14 @@ make test    # go test ./...
 make vet
 ```
 
-`internal/auth`, `internal/teachers`, `internal/availability` and
-`internal/bookings` have service tests (fake repository) and handler tests
-(httptest); `internal/bookings` also has a slot-generation table test covering
-the tricky timezone / weekday / midnight-wrap cases. No DB is required for the
-test suite.
+`internal/auth`, `internal/teachers`, `internal/availability`,
+`internal/bookings` and `internal/payments` have service tests (fake
+repository) and handler tests (httptest); `internal/bookings` also has a
+slot-generation table test covering the tricky timezone / weekday / midnight-wrap
+cases. The payments tests cover authorize-ok, decline (402), double-pay (409),
+complete-too-early (409), complete → ledger, cancel-with-refund → ledger
+reversed, webhook idempotency (same `event_id` twice = one effect), and the
+earnings summary math. No DB is required for the test suite.
 
 ## Not done yet
 
@@ -191,10 +241,14 @@ test suite.
 - Changing a profile's `slug` (immutable for now), and clearing a trial price
   via `PATCH` (an omitted `trial_price_minor` is left unchanged; there is no way
   yet to express "remove the trial").
-- Payments: bookings are created as `pending_payment` and `confirm` is a bare
-  participant action for now — a later phase moves it behind payment success.
-- Booking `completed` transitions, lesson reminders, and any cancellation
-  window / penalty rules.
+- Payments use a fake in-process provider — no real Payme / Click / Uzum
+  adapter yet (the `payments.Provider` port is ready for one). No real webhook
+  signing key rotation, no refund-retry queue (a failed refund on cancel is
+  logged, not retried), and the `payout_ledger` has no clearing window or payout
+  run (`held` → `available` is instant).
+- Lesson reminders, meeting links, and completion emails (phase 5 — this phase
+  is only the money side of `complete`).
+- Any cancellation window / penalty rules.
 - The worker only has a stub `lesson:reminder` handler to show the pattern.
 - `cmd/migrate` pulls in golang-migrate's transitive test deps (dktest/docker)
   as indirect modules — a known cost of using it as a library.

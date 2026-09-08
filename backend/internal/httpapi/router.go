@@ -11,6 +11,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/availability"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/bookings"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payments"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/teachers"
 )
 
@@ -25,6 +26,7 @@ type Deps struct {
 	TeacherHandler      *teachers.Handler
 	AvailabilityHandler *availability.Handler
 	BookingHandler      *bookings.Handler
+	PaymentHandler      *payments.Handler
 }
 
 // NewRouter builds the gin engine with middleware, the health check, and every
@@ -54,6 +56,8 @@ func NewRouter(d Deps) *gin.Engine {
 	bookings.RegisterTeacherSlotRoute(teacherRoutes, d.BookingHandler)
 
 	bookings.RegisterRoutes(v1.Group("/bookings"), d.BookingHandler, d.AuthMiddleware)
+
+	payments.RegisterRoutes(v1.Group("/payments"), d.PaymentHandler, d.AuthMiddleware)
 
 	return r
 }

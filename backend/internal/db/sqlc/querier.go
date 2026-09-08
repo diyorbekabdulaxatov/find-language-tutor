@@ -16,8 +16,18 @@ type Querier interface {
 	AddTeacherFocus(ctx context.Context, arg AddTeacherFocusParams) error
 	AddTeacherLanguage(ctx context.Context, arg AddTeacherLanguageParams) error
 	CancelBooking(ctx context.Context, arg CancelBookingParams) error
+	// System transition (no participant check): pending_payment -> confirmed on a
+	// successful authorization webhook. Guarded so a replay cannot resurrect a
+	// cancelled booking.
+	ConfirmBookingForPayment(ctx context.Context, id uuid.UUID) error
 	CountTeachers(ctx context.Context, arg CountTeachersParams) (int64, error)
 	CreateBooking(ctx context.Context, arg CreateBookingParams) (uuid.UUID, error)
+	// Payments module: one payment intent per booking, the webhook-event log that
+	// guards idempotency, and the simplified teacher-earnings ledger. Money is
+	// integer minor units everywhere.
+	// Eagerly created right after a booking is inserted. Idempotent: a second call
+	// for the same booking is a no-op and still returns the existing row.
+	CreatePayment(ctx context.Context, arg CreatePaymentParams) (Payment, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateTeacher(ctx context.Context, arg CreateTeacherParams) (uuid.UUID, error)
 	// Auth module: user accounts and refresh-token sessions.
@@ -25,6 +35,12 @@ type Querier interface {
 	// Seed-only. bookings.teacher_id / student_id reference teachers / users with
 	// no ON DELETE CASCADE, so the seed must clear bookings before those tables.
 	DeleteAllBookings(ctx context.Context) error
+	DeleteAllPaymentEvents(ctx context.Context) error
+	// Seed-only. payments.booking_id references bookings with no ON DELETE CASCADE,
+	// so the seed must clear payment rows (and the event log / ledger that
+	// reference them) before bookings.
+	DeleteAllPayments(ctx context.Context) error
+	DeleteAllPayoutLedger(ctx context.Context) error
 	DeleteAllTeachers(ctx context.Context) error
 	// Seed-only. teachers.user_id references users, so callers must clear teachers
 	// first.
@@ -42,6 +58,8 @@ type Querier interface {
 	// Slug -> everything the booking flow needs: identity, timezone, pricing, and
 	// the owning account (drives the "can't book yourself" check).
 	GetBookingTeacherContext(ctx context.Context, slug string) (GetBookingTeacherContextRow, error)
+	GetPaymentByBooking(ctx context.Context, bookingID uuid.UUID) (Payment, error)
+	GetPaymentByID(ctx context.Context, id uuid.UUID) (Payment, error)
 	GetSessionByRefreshHash(ctx context.Context, refreshTokenHash []byte) (Session, error)
 	// Availability module: a teacher's weekly recurring slots (UTC minutes).
 	// Resolve a slug to the teacher id, timezone, and owning user the availability
@@ -52,6 +70,11 @@ type Querier interface {
 	GetTeacherIDByOwner(ctx context.Context, userID uuid.NullUUID) (uuid.UUID, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	// One row per captured booking. teacher_id is copied from the booking.
+	InsertLedgerHeld(ctx context.Context, arg InsertLedgerHeldParams) error
+	// The idempotency gate. A duplicate event_id raises SQLSTATE 23505, which the
+	// repository treats as "already processed".
+	InsertPaymentEvent(ctx context.Context, arg InsertPaymentEventParams) error
 	// Count of teachers per taught language across the whole catalog. Drives the
 	// language filter in the UI, so it is intentionally unfiltered.
 	LanguageFacets(ctx context.Context) ([]LanguageFacetsRow, error)
@@ -66,11 +89,20 @@ type Querier interface {
 	// Non-cancelled bookings for a teacher that overlap the [from, to) window, for
 	// server-side slot generation and the pre-insert bookability re-check.
 	ListTeacherBookingIntervals(ctx context.Context, arg ListTeacherBookingIntervalsParams) ([]ListTeacherBookingIntervalsRow, error)
+	ListTeacherEarnings(ctx context.Context, teacherID uuid.UUID) ([]ListTeacherEarningsRow, error)
 	ListTeacherSlugs(ctx context.Context) ([]string, error)
 	// Page of teachers matching the optional filters, ordered by the requested sort.
 	// Child collections (languages, focus, experience) are loaded separately by the
 	// repository using the returned ids.
 	ListTeachers(ctx context.Context, arg ListTeachersParams) ([]Teacher, error)
+	// MVP: 'held' clears to 'available' immediately (no hold period).
+	// TODO(payouts): real clearing window.
+	MarkLedgerAvailable(ctx context.Context, bookingID uuid.UUID) error
+	MarkLedgerReversed(ctx context.Context, bookingID uuid.UUID) error
+	MarkPaymentAuthorized(ctx context.Context, arg MarkPaymentAuthorizedParams) error
+	MarkPaymentCaptured(ctx context.Context, id uuid.UUID) error
+	MarkPaymentFailed(ctx context.Context, arg MarkPaymentFailedParams) error
+	MarkPaymentRefunded(ctx context.Context, id uuid.UUID) error
 	// Reuse-detection hammer: kills every still-active session for a user.
 	RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) error
 	// Marks a session revoked and records the session that replaced it (rotation).

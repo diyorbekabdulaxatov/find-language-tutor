@@ -325,28 +325,132 @@ func TestService_Get(t *testing.T) {
 	}
 }
 
-func TestService_Confirm(t *testing.T) {
+// --- Pay ---
+
+func TestService_Pay_AuthorizesAndConfirms(t *testing.T) {
 	student := uuid.New()
-	owner := uuid.New()
-
 	repo := newFakeRepo()
-	id := seedBooking(repo, StatusPendingPayment, student, owner)
-	b, err := newService(repo).Confirm(ctx(), owner, id)
-	if err != nil || b.Status != StatusConfirmed {
-		t.Fatalf("confirm: status %s err %v", b.Status, err)
-	}
+	id := seedBooking(repo, StatusPendingPayment, student, uuid.New())
+	gw := newFakeGateway(repo)
+	gw.status[id] = "requires_payment"
 
-	// second confirm -> wrong state
-	if _, err := newService(repo).Confirm(ctx(), owner, id); !errors.Is(err, ErrInvalidTransition) {
-		t.Errorf("err = %v, want ErrInvalidTransition", err)
+	b, snap, err := newServiceWithGateway(repo, gw).Pay(ctx(), student, id, "pm_ok")
+	if err != nil {
+		t.Fatalf("pay: %v", err)
+	}
+	if b.Status != StatusConfirmed {
+		t.Errorf("status = %s, want confirmed", b.Status)
+	}
+	if snap == nil || snap.Status != "authorized" {
+		t.Errorf("snapshot = %+v", snap)
 	}
 }
 
-func TestService_Confirm_NonParticipant(t *testing.T) {
+func TestService_Pay_StudentOnly(t *testing.T) {
 	repo := newFakeRepo()
 	id := seedBooking(repo, StatusPendingPayment, uuid.New(), uuid.New())
-	if _, err := newService(repo).Confirm(ctx(), uuid.New(), id); !errors.Is(err, ErrForbidden) {
-		t.Errorf("err = %v, want ErrForbidden", err)
+	gw := newFakeGateway(repo)
+	if _, _, err := newServiceWithGateway(repo, gw).Pay(ctx(), uuid.New(), id, "pm_ok"); !errors.Is(err, ErrNotStudent) {
+		t.Errorf("err = %v, want ErrNotStudent", err)
+	}
+}
+
+func TestService_Pay_Declined(t *testing.T) {
+	student := uuid.New()
+	repo := newFakeRepo()
+	id := seedBooking(repo, StatusPendingPayment, student, uuid.New())
+	gw := newFakeGateway(repo)
+	gw.authErr = PaymentFailedError{Reason: "the card was declined"}
+
+	_, _, err := newServiceWithGateway(repo, gw).Pay(ctx(), student, id, "pm_decline")
+	var pf PaymentFailedError
+	if !errors.As(err, &pf) {
+		t.Fatalf("err = %v, want PaymentFailedError", err)
+	}
+	if repo.store[id].Status != StatusPendingPayment {
+		t.Errorf("booking moved off pending_payment on decline: %s", repo.store[id].Status)
+	}
+}
+
+func TestService_Pay_DoublePay(t *testing.T) {
+	student := uuid.New()
+	repo := newFakeRepo()
+	id := seedBooking(repo, StatusConfirmed, student, uuid.New())
+	gw := newFakeGateway(repo)
+	if _, _, err := newServiceWithGateway(repo, gw).Pay(ctx(), student, id, "pm_ok"); !errors.Is(err, ErrAlreadyPaid) {
+		t.Errorf("err = %v, want ErrAlreadyPaid", err)
+	}
+}
+
+// --- Complete ---
+
+func TestService_Complete_TooEarly(t *testing.T) {
+	owner := uuid.New()
+	repo := newFakeRepo()
+	id := seedBooking(repo, StatusConfirmed, uuid.New(), owner) // end_at = fixedNow + 49h
+	gw := newFakeGateway(repo)
+	if _, _, err := newServiceWithGateway(repo, gw).Complete(ctx(), owner, id); !errors.Is(err, ErrTooEarly) {
+		t.Errorf("err = %v, want ErrTooEarly", err)
+	}
+}
+
+func TestService_Complete_TeacherOwnerOnly(t *testing.T) {
+	repo := newFakeRepo()
+	id := seedBooking(repo, StatusConfirmed, uuid.New(), uuid.New())
+	gw := newFakeGateway(repo)
+	if _, _, err := newServiceWithGateway(repo, gw).Complete(ctx(), uuid.New(), id); !errors.Is(err, ErrNotTeacherOwner) {
+		t.Errorf("err = %v, want ErrNotTeacherOwner", err)
+	}
+}
+
+func TestService_Complete_CapturesAndWritesLedger(t *testing.T) {
+	owner := uuid.New()
+	repo := newFakeRepo()
+	id := uuid.New()
+	repo.store[id] = Booking{
+		ID:             id,
+		Status:         StatusConfirmed,
+		StartAt:        fixedNow.Add(-2 * time.Hour),
+		EndAt:          fixedNow.Add(-time.Hour), // already ended
+		Student:        StudentSummary{ID: uuid.New(), DisplayName: "Student"},
+		TeacherOwnerID: owner,
+	}
+	gw := newFakeGateway(repo)
+	gw.status[id] = "authorized"
+
+	b, snap, err := newServiceWithGateway(repo, gw).Complete(ctx(), owner, id)
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if b.Status != StatusCompleted {
+		t.Errorf("status = %s, want completed", b.Status)
+	}
+	if len(gw.captured) != 1 || gw.captured[0] != id {
+		t.Errorf("capture not called: %+v", gw.captured)
+	}
+	if snap == nil || snap.Status != "captured" {
+		t.Errorf("snapshot = %+v", snap)
+	}
+}
+
+func TestService_Complete_CaptureFailureLeavesConfirmed(t *testing.T) {
+	owner := uuid.New()
+	repo := newFakeRepo()
+	id := uuid.New()
+	repo.store[id] = Booking{
+		ID: id, Status: StatusConfirmed,
+		StartAt: fixedNow.Add(-2 * time.Hour), EndAt: fixedNow.Add(-time.Hour),
+		Student:        StudentSummary{ID: uuid.New()},
+		TeacherOwnerID: owner,
+	}
+	gw := newFakeGateway(repo)
+	gw.captureErr = ErrCaptureFailed
+
+	if _, _, err := newServiceWithGateway(repo, gw).Complete(ctx(), owner, id); !errors.Is(err, ErrCaptureFailed) {
+		t.Fatalf("err = %v, want ErrCaptureFailed", err)
+	}
+	if repo.store[id].Status != StatusConfirmed {
+		t.Errorf("status = %s, want still confirmed", repo.store[id].Status)
 	}
 }
 
@@ -383,5 +487,24 @@ func TestService_Cancel_Completed(t *testing.T) {
 	repo.store[id] = b
 	if _, err := newService(repo).Cancel(ctx(), student, id, ""); !errors.Is(err, ErrInvalidTransition) {
 		t.Errorf("err = %v, want ErrInvalidTransition", err)
+	}
+}
+
+func TestService_Cancel_RefundsAuthorizedPayment(t *testing.T) {
+	student := uuid.New()
+	repo := newFakeRepo()
+	id := seedBooking(repo, StatusConfirmed, student, uuid.New())
+	gw := newFakeGateway(repo)
+	gw.status[id] = "authorized"
+
+	b, err := newServiceWithGateway(repo, gw).Cancel(ctx(), student, id, "changed my mind")
+	if err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if b.Status != StatusCancelled {
+		t.Errorf("status = %s, want cancelled", b.Status)
+	}
+	if len(gw.refunded) != 1 || gw.refunded[0] != id {
+		t.Errorf("refund not issued: %+v", gw.refunded)
 	}
 }

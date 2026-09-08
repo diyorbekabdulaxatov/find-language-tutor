@@ -23,19 +23,26 @@ type studentSummaryDTO struct {
 	DisplayName string `json:"display_name"`
 }
 
+type bookingPaymentDTO struct {
+	Status      string `json:"status"`
+	AmountMinor int64  `json:"amount_minor"`
+	Currency    string `json:"currency"`
+}
+
 type bookingDTO struct {
-	ID                 string            `json:"id"`
-	Status             string            `json:"status"`
-	StartAt            time.Time         `json:"start_at"`
-	EndAt              time.Time         `json:"end_at"`
-	DurationMinutes    int               `json:"duration_minutes"`
-	IsTrial            bool              `json:"is_trial"`
-	Price              moneyDTO          `json:"price"`
-	CreatedAt          time.Time         `json:"created_at"`
-	CancelledAt        *time.Time        `json:"cancelled_at"`
-	CancellationReason string            `json:"cancellation_reason,omitempty"`
-	Teacher            teacherSummaryDTO `json:"teacher"`
-	Student            studentSummaryDTO `json:"student"`
+	ID                 string             `json:"id"`
+	Status             string             `json:"status"`
+	StartAt            time.Time          `json:"start_at"`
+	EndAt              time.Time          `json:"end_at"`
+	DurationMinutes    int                `json:"duration_minutes"`
+	IsTrial            bool               `json:"is_trial"`
+	Price              moneyDTO           `json:"price"`
+	CreatedAt          time.Time          `json:"created_at"`
+	CancelledAt        *time.Time         `json:"cancelled_at"`
+	CancellationReason string             `json:"cancellation_reason,omitempty"`
+	Teacher            teacherSummaryDTO  `json:"teacher"`
+	Student            studentSummaryDTO  `json:"student"`
+	Payment            *bookingPaymentDTO `json:"payment"`
 }
 
 type bookingListDTO struct {
@@ -70,6 +77,10 @@ type cancelBookingRequest struct {
 	Reason string `json:"reason"`
 }
 
+type payBookingRequest struct {
+	MethodToken string `json:"method_token"`
+}
+
 // --- mapping ---
 
 func toMoneyDTO(m Money) moneyDTO {
@@ -99,6 +110,18 @@ func toBookingDTO(b Booking) bookingDTO {
 			DisplayName: b.Student.DisplayName,
 		},
 	}
+}
+
+func toBookingDTOWithPayment(b Booking, snap *PaymentSnapshot) bookingDTO {
+	dto := toBookingDTO(b)
+	if snap != nil {
+		dto.Payment = &bookingPaymentDTO{
+			Status:      snap.Status,
+			AmountMinor: snap.AmountMinor,
+			Currency:    snap.Currency,
+		}
+	}
+	return dto
 }
 
 func toBookingListDTO(bs []Booking) bookingListDTO {
