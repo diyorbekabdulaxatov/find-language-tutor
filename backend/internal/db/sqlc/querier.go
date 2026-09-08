@@ -15,7 +15,9 @@ type Querier interface {
 	AddTeacherExperience(ctx context.Context, arg AddTeacherExperienceParams) error
 	AddTeacherFocus(ctx context.Context, arg AddTeacherFocusParams) error
 	AddTeacherLanguage(ctx context.Context, arg AddTeacherLanguageParams) error
+	CancelBooking(ctx context.Context, arg CancelBookingParams) error
 	CountTeachers(ctx context.Context, arg CountTeachersParams) (int64, error)
+	CreateBooking(ctx context.Context, arg CreateBookingParams) (uuid.UUID, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateTeacher(ctx context.Context, arg CreateTeacherParams) (uuid.UUID, error)
 	// Auth module: user accounts and refresh-token sessions.
@@ -28,21 +30,39 @@ type Querier interface {
 	DeleteTeacherExperience(ctx context.Context, teacherID uuid.UUID) error
 	DeleteTeacherFocus(ctx context.Context, teacherID uuid.UUID) error
 	DeleteTeacherLanguages(ctx context.Context, teacherID uuid.UUID) error
+	GetBookingByID(ctx context.Context, id uuid.UUID) (GetBookingByIDRow, error)
+	// Booking module: concrete scheduled lessons. Times are UTC timestamptz. The
+	// recurring weekly availability is read via the availability queries; here we
+	// only need the teacher context, existing bookings for overlap checks, and the
+	// booking rows themselves (joined to a light teacher + student summary so the
+	// frontend lists avoid N+1 calls).
+	// Slug -> everything the booking flow needs: identity, timezone, pricing, and
+	// the owning account (drives the "can't book yourself" check).
+	GetBookingTeacherContext(ctx context.Context, slug string) (GetBookingTeacherContextRow, error)
 	GetSessionByRefreshHash(ctx context.Context, refreshTokenHash []byte) (Session, error)
 	// Availability module: a teacher's weekly recurring slots (UTC minutes).
 	// Resolve a slug to the teacher id, timezone, and owning user the availability
 	// endpoints need (user_id drives the ownership check on PUT).
 	GetTeacherAvailabilityContext(ctx context.Context, slug string) (GetTeacherAvailabilityContextRow, error)
 	GetTeacherBySlug(ctx context.Context, slug string) (Teacher, error)
+	// The teacher profile owned by an account (one per user), or no rows.
+	GetTeacherIDByOwner(ctx context.Context, userID uuid.NullUUID) (uuid.UUID, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	// Count of teachers per taught language across the whole catalog. Drives the
 	// language filter in the UI, so it is intentionally unfiltered.
 	LanguageFacets(ctx context.Context) ([]LanguageFacetsRow, error)
 	ListAvailabilitySlots(ctx context.Context, teacherID uuid.UUID) ([]ListAvailabilitySlotsRow, error)
+	// Bookings the caller participates in. Pass the caller's user id as
+	// student_filter and/or the caller-owned teacher id as teacher_filter; use the
+	// all-zero uuid for a dimension that should not match. Newest lesson first.
+	ListBookings(ctx context.Context, arg ListBookingsParams) ([]ListBookingsRow, error)
 	ListExperienceForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]ListExperienceForTeachersRow, error)
 	ListFocusForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]TeacherFocu, error)
 	ListLanguagesForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]TeacherLanguage, error)
+	// Non-cancelled bookings for a teacher that overlap the [from, to) window, for
+	// server-side slot generation and the pre-insert bookability re-check.
+	ListTeacherBookingIntervals(ctx context.Context, arg ListTeacherBookingIntervalsParams) ([]ListTeacherBookingIntervalsRow, error)
 	ListTeacherSlugs(ctx context.Context) ([]string, error)
 	// Page of teachers matching the optional filters, ordered by the requested sort.
 	// Child collections (languages, focus, experience) are loaded separately by the
@@ -53,6 +73,7 @@ type Querier interface {
 	// Marks a session revoked and records the session that replaced it (rotation).
 	// No-op if it was already revoked.
 	RevokeSession(ctx context.Context, arg RevokeSessionParams) error
+	SetBookingStatus(ctx context.Context, arg SetBookingStatusParams) error
 	// The teacher profile owned by a user (one per user), or no rows.
 	TeacherRefByOwner(ctx context.Context, userID uuid.NullUUID) (TeacherRefByOwnerRow, error)
 	// Write queries: the demo seed plus the dashboard's create/update-profile flow.

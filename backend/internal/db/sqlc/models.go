@@ -185,6 +185,23 @@ func (ns NullTeacherKind) Value() (driver.Value, error) {
 	return string(ns.TeacherKind), nil
 }
 
+type Booking struct {
+	ID                 uuid.UUID
+	TeacherID          uuid.UUID
+	StudentID          uuid.UUID
+	StartAt            pgtype.Timestamptz
+	EndAt              pgtype.Timestamptz
+	DurationMinutes    int32
+	Status             string
+	PriceMinor         int64
+	Currency           string
+	IsTrial            bool
+	CancelledAt        pgtype.Timestamptz
+	CancellationReason string
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
 type Session struct {
 	ID               uuid.UUID
 	UserID           uuid.UUID
