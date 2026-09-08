@@ -16,9 +16,10 @@ import {
   SlotPicker,
   type SlotSelection,
 } from "@/features/bookings/components/slot-picker";
+import { PaymentForm } from "@/features/bookings/components/payment-form";
 import { Button } from "@/components/ui/button";
 
-type Step = "pick" | "confirm" | "done";
+type Step = "pick" | "confirm" | "pay" | "done";
 
 export function BookingFlow({
   slug,
@@ -66,7 +67,8 @@ export function BookingFlow({
         isTrial: selection.isTrial,
       });
       setBooking(b);
-      setStep("done");
+      setSubmitting(false);
+      setStep("pay");
     } catch (err) {
       setSubmitting(false);
       if (
@@ -88,14 +90,25 @@ export function BookingFlow({
   }
 
   if (step === "done" && booking) {
+    const paid = booking.status === "confirmed";
     return (
       <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-card p-8 text-center">
         <CheckCircle2 className="size-10 text-primary" />
-        <h2 className="font-display text-2xl">Lesson requested</h2>
+        <h2 className="font-display text-2xl">
+          {paid ? "Lesson booked" : "Lesson reserved"}
+        </h2>
         <p className="max-w-sm text-sm text-muted-foreground">
-          Your lesson with {teacherName} is held as{" "}
-          <span className="font-medium text-foreground">pending payment</span>.
-          Payment comes next — for now you can see it in your bookings.
+          {paid ? (
+            <>
+              Your lesson with {teacherName} is confirmed. {teacherName} is paid
+              once the lesson takes place.
+            </>
+          ) : (
+            <>
+              Your lesson with {teacherName} is held, but payment didn&apos;t go
+              through. Finish paying from your bookings to confirm it.
+            </>
+          )}
         </p>
         <p className="text-sm">
           {formatFull(booking.startAt, viewerTz)}{" "}
@@ -111,6 +124,28 @@ export function BookingFlow({
             <Link href="/bookings">All bookings</Link>
           </Button>
         </div>
+      </div>
+    );
+  }
+
+  if (step === "pay" && booking) {
+    return (
+      <div className="flex flex-col gap-5">
+        <button
+          type="button"
+          onClick={() => setStep("done")}
+          className="inline-flex items-center gap-1.5 self-start text-sm font-medium text-muted-foreground hover:text-foreground"
+        >
+          Skip for now
+        </button>
+        <PaymentForm
+          bookingId={booking.id}
+          amount={booking.price}
+          onPaid={(b) => {
+            setBooking(b);
+            setStep("done");
+          }}
+        />
       </div>
     );
   }
@@ -146,8 +181,8 @@ export function BookingFlow({
           </dl>
 
           <p className="mt-4 rounded-lg bg-primary/8 p-3 text-xs text-muted-foreground">
-            You won&apos;t be charged yet. The booking is held as pending until
-            payment (coming soon).
+            Next you&apos;ll pay to hold the slot. The teacher is only paid after
+            the lesson — cancel before then for a full refund.
           </p>
 
           {error && (
@@ -162,7 +197,7 @@ export function BookingFlow({
             onClick={handleConfirm}
             disabled={submitting}
           >
-            {submitting ? "Booking…" : "Confirm booking"}
+            {submitting ? "Reserving…" : "Continue to payment"}
           </Button>
         </div>
       </div>

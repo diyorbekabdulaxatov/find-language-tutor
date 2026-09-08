@@ -8,20 +8,31 @@ import { useAuth } from "@/features/auth/auth-context";
 import {
   BookingError,
   cancelBooking,
-  confirmBooking,
+  completeBooking,
   getBooking,
   type Booking,
+  type PaymentStatus,
 } from "@/features/bookings/api";
 import { formatFull, viewerTimezone } from "@/features/bookings/datetime";
 import { BookingStatusBadge } from "./booking-status-badge";
+import { PaymentForm } from "./payment-form";
 import { Button } from "@/components/ui/button";
+
+const PAYMENT_LABEL: Record<PaymentStatus, string> = {
+  requires_payment: "Not paid",
+  authorized: "Held (paid, not yet released)",
+  captured: "Released to teacher",
+  refunded: "Refunded",
+  failed: "Payment failed",
+};
 
 export function BookingDetail({ id }: { id: string }) {
   const { user } = useAuth();
   const [booking, setBooking] = useState<Booking | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"confirm" | "cancel" | null>(null);
+  const [busy, setBusy] = useState<"complete" | "cancel" | null>(null);
+  const [payOpen, setPayOpen] = useState(false);
   const [now] = useState(() => Date.now());
   const viewerTz = viewerTimezone();
 
@@ -47,10 +58,7 @@ export function BookingDetail({ id }: { id: string }) {
     };
   }, [id]);
 
-  async function run(
-    action: "confirm" | "cancel",
-    fn: () => Promise<Booking>,
-  ) {
+  async function run(action: "complete" | "cancel", fn: () => Promise<Booking>) {
     setBusy(action);
     setErrorMsg(null);
     try {
@@ -91,9 +99,13 @@ export function BookingDetail({ id }: { id: string }) {
   }
 
   const isStudent = user?.id === booking.student.id;
+  const isTeacher = !isStudent; // only participants reach this page
+  const ended = new Date(booking.endAt).getTime() < now;
+
+  const canPay = isStudent && booking.status === "pending_payment";
+  const canComplete = isTeacher && booking.status === "confirmed" && ended;
   const canCancel =
     booking.status === "pending_payment" || booking.status === "confirmed";
-  const canConfirm = isStudent && booking.status === "pending_payment";
   const startsSoon =
     new Date(booking.startAt).getTime() - now < 10 * 60_000 &&
     new Date(booking.endAt).getTime() > now;
@@ -135,6 +147,9 @@ export function BookingDetail({ id }: { id: string }) {
           )}
           <Row label="Length">{booking.durationMinutes} min</Row>
           <Row label="Price">{formatMoney(booking.price)}</Row>
+          {booking.payment && (
+            <Row label="Payment">{PAYMENT_LABEL[booking.payment.status]}</Row>
+          )}
           {booking.status === "cancelled" && booking.cancellationReason && (
             <Row label="Cancellation reason">{booking.cancellationReason}</Row>
           )}
@@ -159,14 +174,19 @@ export function BookingDetail({ id }: { id: string }) {
           </p>
         )}
 
-        {(canConfirm || canCancel) && (
+        {(canPay || canComplete || canCancel) && (
           <div className="mt-6 flex flex-wrap gap-3">
-            {canConfirm && (
+            {canPay && !payOpen && (
+              <Button onClick={() => setPayOpen(true)}>Pay now</Button>
+            )}
+            {canComplete && (
               <Button
-                onClick={() => run("confirm", () => confirmBooking(booking.id))}
+                onClick={() =>
+                  run("complete", () => completeBooking(booking.id))
+                }
                 disabled={busy !== null}
               >
-                {busy === "confirm" ? "Confirming…" : "Confirm (skip payment)"}
+                {busy === "complete" ? "Completing…" : "Mark lesson complete"}
               </Button>
             )}
             {canCancel && (
@@ -175,12 +195,29 @@ export function BookingDetail({ id }: { id: string }) {
                 onClick={() => run("cancel", () => cancelBooking(booking.id))}
                 disabled={busy !== null}
               >
-                {busy === "cancel" ? "Cancelling…" : "Cancel lesson"}
+                {busy === "cancel"
+                  ? "Cancelling…"
+                  : booking.status === "confirmed"
+                    ? "Cancel & refund"
+                    : "Cancel lesson"}
               </Button>
             )}
           </div>
         )}
       </div>
+
+      {canPay && payOpen && (
+        <div className="mt-4">
+          <PaymentForm
+            bookingId={booking.id}
+            amount={booking.price}
+            onPaid={(b) => {
+              setBooking(b);
+              setPayOpen(false);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

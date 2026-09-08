@@ -11,6 +11,7 @@ import { useAuth } from "@/features/auth/auth-context";
 import { getMyProfile } from "@/features/dashboard/api";
 import { ProfileEditor } from "@/features/dashboard/components/profile-editor";
 import { AvailabilityEditor } from "@/features/availability/components/availability-editor";
+import { EarningsPanel } from "@/features/dashboard/components/earnings-panel";
 import type { TeacherProfile } from "@/types/teacher";
 import {
   Tabs,
@@ -66,6 +67,7 @@ export function DashboardShell() {
           <TabsList>
             <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="availability">Availability</TabsTrigger>
+            <TabsTrigger value="earnings">Earnings</TabsTrigger>
           </TabsList>
 
           <TabsContent value="profile" className="mt-6">
@@ -79,6 +81,17 @@ export function DashboardShell() {
               <p className="rounded-xl bg-accent/60 px-4 py-3 text-sm text-accent-foreground">
                 Create your teacher profile first, then set your weekly hours
                 here.
+              </p>
+            )}
+          </TabsContent>
+
+          <TabsContent value="earnings" className="mt-6">
+            {profile ? (
+              <EarningsPanel />
+            ) : (
+              <p className="rounded-xl bg-accent/60 px-4 py-3 text-sm text-accent-foreground">
+                Earnings appear here once you have a teacher profile and a
+                completed lesson.
               </p>
             )}
           </TabsContent>

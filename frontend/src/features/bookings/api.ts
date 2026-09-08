@@ -5,9 +5,11 @@
  * view-models.
  */
 
-import { browserApi } from "@/features/auth/browser-client";
+import { authedFetch, browserApi } from "@/features/auth/browser-client";
 import type { components } from "@/lib/api/schema";
 import type { Money } from "@/types/teacher";
+
+const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 export type BookingStatus = components["schemas"]["BookingStatus"];
 
@@ -30,6 +32,18 @@ export interface SlotsResult {
   slots: BookableSlot[];
 }
 
+export type PaymentStatus =
+  | "requires_payment"
+  | "authorized"
+  | "captured"
+  | "refunded"
+  | "failed";
+
+export interface PaymentInfo {
+  status: PaymentStatus;
+  amount: Money;
+}
+
 export interface Booking {
   id: string;
   status: BookingStatus;
@@ -41,6 +55,7 @@ export interface Booking {
   createdAt: string;
   cancelledAt: string | null;
   cancellationReason?: string;
+  payment: PaymentInfo | null;
   teacher: {
     slug: string;
     displayName: string;
@@ -48,6 +63,26 @@ export interface Booking {
     avatarUrl: string;
   };
   student: { id: string; displayName: string };
+}
+
+/** Simulated payment methods the fake provider recognises. */
+export const TEST_METHODS = [
+  { token: "pm_ok", label: "Test card — succeeds", hint: "•••• 4242" },
+  { token: "pm_decline", label: "Test card — declined", hint: "•••• 0002" },
+] as const;
+export type MethodToken = (typeof TEST_METHODS)[number]["token"];
+
+export interface EarningsSummary {
+  totalEarned: Money;
+  held: Money;
+  available: Money;
+  lessons: {
+    bookingId: string;
+    studentDisplayName: string;
+    startAt: string;
+    amount: Money;
+    state: "held" | "available" | "reversed";
+  }[];
 }
 
 export class BookingError extends Error {
@@ -83,7 +118,13 @@ const money = (m: WireMoney): Money => ({
   currency: m.currency,
 });
 
-function toBooking(b: WireBooking): Booking {
+/** The generated Booking schema won't carry `payment` until the backend adds it. */
+type WireBookingMaybePayment = WireBooking & {
+  payment?: { status: PaymentStatus; amount: WireMoney } | null;
+};
+
+function toBooking(raw: WireBooking): Booking {
+  const b = raw as WireBookingMaybePayment;
   return {
     id: b.id,
     status: b.status,
@@ -95,6 +136,9 @@ function toBooking(b: WireBooking): Booking {
     createdAt: b.created_at,
     cancelledAt: b.cancelled_at,
     cancellationReason: b.cancellation_reason,
+    payment: b.payment
+      ? { status: b.payment.status, amount: money(b.payment.amount) }
+      : null,
     teacher: {
       slug: b.teacher.slug,
       displayName: b.teacher.display_name,
@@ -177,15 +221,89 @@ export async function getBooking(id: string): Promise<Booking> {
   return toBooking(data);
 }
 
-export async function confirmBooking(id: string): Promise<Booking> {
-  const { data, error, response } = await browserApi.POST(
-    "/v1/bookings/{id}/confirm",
-    { params: { path: { id } } },
-  );
-  if (error || !data) {
-    throw toError(error, response.status, "Could not confirm the booking.");
+/* -------------------------------------------------------------------------- */
+/* Phase 4 — payments. Hand-typed over authedFetch until these land in         */
+/* openapi.yaml; swap to browserApi after `npm run gen:api`.                   */
+/* -------------------------------------------------------------------------- */
+
+async function raw<T>(
+  path: string,
+  init: RequestInit,
+  fallback: string,
+): Promise<T> {
+  const res = await authedFetch(`${baseUrl}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init.headers },
+  });
+  const body =
+    res.status === 204 ? undefined : await res.json().catch(() => undefined);
+  if (!res.ok) {
+    const e = body as ErrorBody | undefined;
+    throw new BookingError(
+      e?.error?.message ?? fallback,
+      e?.error?.code ?? "unknown",
+      res.status,
+    );
   }
-  return toBooking(data);
+  return body as T;
+}
+
+/** Pay for a pending booking — authorizes the hold and confirms the lesson. */
+export async function payBooking(
+  id: string,
+  methodToken: MethodToken,
+): Promise<Booking> {
+  const b = await raw<WireBooking>(
+    `/v1/bookings/${encodeURIComponent(id)}/pay`,
+    { method: "POST", body: JSON.stringify({ method_token: methodToken }) },
+    "Payment could not be processed.",
+  );
+  return toBooking(b);
+}
+
+/** Teacher marks a past confirmed lesson complete — captures the payment. */
+export async function completeBooking(id: string): Promise<Booking> {
+  const b = await raw<WireBooking>(
+    `/v1/bookings/${encodeURIComponent(id)}/complete`,
+    { method: "POST", body: "{}" },
+    "Could not mark the lesson complete.",
+  );
+  return toBooking(b);
+}
+
+interface WireEarnings {
+  total_earned_minor: number;
+  held_minor: number;
+  available_minor: number;
+  currency: Money["currency"];
+  lessons: {
+    booking_id: string;
+    student_display_name: string;
+    start_at: string;
+    amount_minor: number;
+    state: "held" | "available" | "reversed";
+  }[];
+}
+
+export async function getEarnings(): Promise<EarningsSummary> {
+  const w = await raw<WireEarnings>(
+    "/v1/teachers/me/earnings",
+    { method: "GET" },
+    "Could not load your earnings.",
+  );
+  const cur = w.currency;
+  return {
+    totalEarned: { amountMinor: w.total_earned_minor, currency: cur },
+    held: { amountMinor: w.held_minor, currency: cur },
+    available: { amountMinor: w.available_minor, currency: cur },
+    lessons: w.lessons.map((l) => ({
+      bookingId: l.booking_id,
+      studentDisplayName: l.student_display_name,
+      startAt: l.start_at,
+      amount: { amountMinor: l.amount_minor, currency: cur },
+      state: l.state,
+    })),
+  };
 }
 
 export async function cancelBooking(
