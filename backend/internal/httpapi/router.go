@@ -9,6 +9,7 @@ import (
 
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/auth"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/availability"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/bookings"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/teachers"
 )
@@ -23,6 +24,7 @@ type Deps struct {
 	AuthMiddleware      gin.HandlerFunc // auth.RequireAuth(tokenManager)
 	TeacherHandler      *teachers.Handler
 	AvailabilityHandler *availability.Handler
+	BookingHandler      *bookings.Handler
 }
 
 // NewRouter builds the gin engine with middleware, the health check, and every
@@ -49,6 +51,9 @@ func NewRouter(d Deps) *gin.Engine {
 	teacherRoutes := v1.Group("/teachers")
 	teachers.RegisterRoutes(teacherRoutes, d.TeacherHandler, d.AuthMiddleware)
 	availability.RegisterRoutes(teacherRoutes, d.AvailabilityHandler, d.AuthMiddleware)
+	bookings.RegisterTeacherSlotRoute(teacherRoutes, d.BookingHandler)
+
+	bookings.RegisterRoutes(v1.Group("/bookings"), d.BookingHandler, d.AuthMiddleware)
 
 	return r
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/auth"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/availability"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/bookings"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/httpapi"
@@ -84,6 +85,11 @@ func run(logger *slog.Logger) error {
 		logger,
 	)
 
+	bookingHandler := bookings.NewHandler(
+		bookings.NewService(bookings.NewPostgresRepository(pool)),
+		logger,
+	)
+
 	router := httpapi.NewRouter(httpapi.Deps{
 		Config:              cfg,
 		Logger:              logger,
@@ -93,6 +99,7 @@ func run(logger *slog.Logger) error {
 		AuthMiddleware:      auth.RequireAuth(tokenManager),
 		TeacherHandler:      teacherHandler,
 		AvailabilityHandler: availabilityHandler,
+		BookingHandler:      bookingHandler,
 	})
 
 	srv := &http.Server{

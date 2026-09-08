@@ -28,6 +28,11 @@ tags:
     description: Teacher search and profiles
   - name: availability
     description: Teacher weekly recurring availability (stored in UTC)
+  - name: bookings
+    description: >
+      Concrete scheduled lessons. Slots are derived by projecting a teacher's
+      recurring weekly availability (UTC minutes) onto real UTC datetimes; every
+      create re-checks availability server-side. All datetimes are RFC3339 UTC.
   - name: system
 
 paths:
@@ -407,6 +412,230 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /v1/teachers/{slug}/slots:
+    get:
+      tags: [bookings]
+      summary: List a teacher's concrete bookable start times
+      description: >
+        Projects the teacher's recurring weekly availability
+        (`teacher_availability_slots`, stored as UTC minutes-from-midnight on a
+        UTC weekday) onto real UTC datetimes across `[from, to]`, then removes
+        any start that collides with an existing non-cancelled booking.
+
+        Window rules: `from` defaults to now (and is clamped forward to now),
+        `to` defaults to `from + 14 days`, and `to - from` may not exceed 21
+        days (400 otherwise). Slots are never generated in the past.
+
+        A start time is included only if `[start, start + duration]` fits
+        entirely inside one availability window. Windows the frontend split
+        across 00:00 UTC are stitched back together first, so a lesson may
+        legitimately straddle UTC midnight. Candidate starts step every 30
+        minutes from the start of each window.
+
+        `price.amount_minor = round(price_per_hour_minor * duration / 60)` in
+        integer minor units, rounded half-up.
+      operationId: listTeacherSlots
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: RFC3339 UTC. Defaults to now.
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: RFC3339 UTC. Defaults to from + 14 days. Max span 21 days.
+        - name: duration
+          in: query
+          required: false
+          schema: { type: integer, enum: [30, 60, 90, 120], default: 60 }
+          description: Lesson length in minutes.
+      responses:
+        "200":
+          description: The bookable start times in the window.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeacherSlots" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/bookings:
+    post:
+      tags: [bookings]
+      summary: Book a lesson
+      description: >
+        Creates a booking in `pending_payment`. The server re-derives the
+        bookable slot set and rejects a `start_at` that is not a real, currently
+        free slot; it never trusts a client-supplied price.
+
+        `duration_minutes` must be one of 30/60/90/120. When `is_trial` is true
+        the duration is forced to 30 minutes and the price is the teacher's
+        `trial_price_minor` (400 if the teacher offers no trial). You cannot
+        book your own teacher profile.
+      operationId: createBooking
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateBookingRequest" }
+      responses:
+        "201":
+          description: The created booking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: >
+            The slot is not bookable (`slot_unavailable` — outside availability,
+            misaligned, in the past, or already taken) or was taken by a
+            concurrent request between the check and the insert (`slot_taken`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      tags: [bookings]
+      summary: List the caller's bookings
+      description: >
+        With no `role`, returns every booking the caller participates in (as
+        student or as the owner of the teacher profile). `role=student` limits
+        it to bookings the caller booked; `role=teacher` to bookings for the
+        teacher profile the caller owns (empty if they own none). Newest lesson
+        first. Optional `status` filter.
+      operationId: listBookings
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: role
+          in: query
+          required: false
+          schema: { type: string, enum: [student, teacher] }
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/BookingStatus" }
+      responses:
+        "200":
+          description: The matching bookings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingList" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/bookings/{id}:
+    get:
+      tags: [bookings]
+      summary: Get one booking
+      operationId: getBooking
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The booking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/bookings/{id}/confirm:
+    post:
+      tags: [bookings]
+      summary: Confirm a booking
+      description: >
+        Moves `pending_payment` -> `confirmed`. Participant-only (student or
+        teacher-owner). A later phase moves this behind payment success. Any
+        other current state -> 409.
+      operationId: confirmBooking
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The confirmed booking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The booking is not in a state that allows confirmation (`invalid_state`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/bookings/{id}/cancel:
+    post:
+      tags: [bookings]
+      summary: Cancel a booking
+      description: >
+        Moves `pending_payment` or `confirmed` -> `cancelled`, recording
+        `cancelled_at` and the optional `reason`. Participant-only. For the MVP
+        cancellation is allowed at any time (no window / penalties yet). Already
+        `completed` or `cancelled` -> 409.
+      operationId: cancelBooking
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CancelBookingRequest" }
+      responses:
+        "200":
+          description: The cancelled booking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The booking is already completed or cancelled (`invalid_state`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
 components:
   securitySchemes:
@@ -801,3 +1030,115 @@ components:
         slots:
           type: array
           items: { $ref: "#/components/schemas/AvailabilitySlot" }
+
+    BookingStatus:
+      type: string
+      enum: [pending_payment, confirmed, completed, cancelled]
+
+    Slot:
+      type: object
+      description: One concrete bookable start time with its price.
+      required: [start_at, end_at, price]
+      properties:
+        start_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        end_at: { type: string, format: date-time, description: RFC3339 UTC — start_at + duration. }
+        price: { $ref: "#/components/schemas/Money" }
+
+    TeacherSlots:
+      type: object
+      required: [teacher_slug, timezone, from, to, duration_minutes, slots]
+      properties:
+        teacher_slug: { type: string }
+        timezone:
+          type: string
+          description: The teacher's IANA timezone, for display only — the slot math is pure UTC.
+        from: { type: string, format: date-time, description: Effective window start (RFC3339 UTC). }
+        to: { type: string, format: date-time, description: Effective window end (RFC3339 UTC). }
+        duration_minutes: { type: integer, enum: [30, 60, 90, 120] }
+        slots:
+          type: array
+          items: { $ref: "#/components/schemas/Slot" }
+          description: Ordered by start_at.
+
+    BookingTeacherSummary:
+      type: object
+      description: Light teacher summary embedded in a booking so lists avoid N+1 calls.
+      required: [slug, display_name, timezone, avatar_url]
+      properties:
+        slug: { type: string }
+        display_name: { type: string }
+        timezone: { type: string, description: IANA name. }
+        avatar_url: { type: string }
+
+    BookingStudentSummary:
+      type: object
+      required: [id, display_name]
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+
+    Booking:
+      type: object
+      required:
+        - id
+        - status
+        - start_at
+        - end_at
+        - duration_minutes
+        - is_trial
+        - price
+        - created_at
+        - cancelled_at
+        - teacher
+        - student
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/BookingStatus" }
+        start_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        end_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        duration_minutes: { type: integer }
+        is_trial: { type: boolean }
+        price: { $ref: "#/components/schemas/Money" }
+        created_at: { type: string, format: date-time }
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set when status is `cancelled`, otherwise null.
+        cancellation_reason:
+          type: string
+          description: Present (may be empty) only once cancelled; omitted otherwise.
+        teacher: { $ref: "#/components/schemas/BookingTeacherSummary" }
+        student: { $ref: "#/components/schemas/BookingStudentSummary" }
+
+    BookingList:
+      type: object
+      required: [bookings]
+      properties:
+        bookings:
+          type: array
+          items: { $ref: "#/components/schemas/Booking" }
+
+    CreateBookingRequest:
+      type: object
+      required: [teacher_slug, start_at, duration_minutes]
+      properties:
+        teacher_slug: { type: string }
+        start_at:
+          type: string
+          format: date-time
+          description: RFC3339 UTC. Must be in the future and a real bookable slot.
+        duration_minutes:
+          type: integer
+          enum: [30, 60, 90, 120]
+          description: Ignored when is_trial is true (forced to 30).
+        is_trial:
+          type: boolean
+          default: false
+          description: A trial lesson — 30 minutes, priced at the teacher's trial_price.
+
+    CancelBookingRequest:
+      type: object
+      description: Optional body. Omit entirely for a reason-less cancellation.
+      properties:
+        reason: { type: string }

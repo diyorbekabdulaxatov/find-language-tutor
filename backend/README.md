@@ -77,6 +77,12 @@ See `../openapi.yaml`. Currently implemented:
 | PATCH | `/v1/teachers/{slug}` | edit own profile (partial); Bearer token, must own it; 403/404 otherwise |
 | GET | `/v1/teachers/{slug}/availability` | weekly recurring slots (UTC), 404 if missing |
 | PUT | `/v1/teachers/{slug}/availability` | replace the full weekly set; Bearer token, must own the profile |
+| GET | `/v1/teachers/{slug}/slots` | `?from&to&duration` — concrete bookable start times (UTC); public; 400 if the window > 21 days |
+| POST | `/v1/bookings` | book a lesson; Bearer token; 201 `pending_payment`; 409 `slot_unavailable` / `slot_taken` |
+| GET | `/v1/bookings` | `?role=student\|teacher&status=` — the caller's bookings, newest first; Bearer token |
+| GET | `/v1/bookings/{id}` | full booking; Bearer token; 404 if missing, 403 if not a participant |
+| POST | `/v1/bookings/{id}/confirm` | `pending_payment → confirmed`; participant only; 409 on wrong state |
+| POST | `/v1/bookings/{id}/cancel` | `{reason?}`; `pending_payment\|confirmed → cancelled`; participant only; 409 if already done |
 
 ```bash
 curl 'localhost:8080/v1/teachers?language=uz&sort=price_asc'
@@ -107,6 +113,21 @@ curl -X PATCH localhost:8080/v1/teachers/new-teacher \
 curl -X PUT localhost:8080/v1/teachers/nodira-karimova/availability \
   -H "Authorization: Bearer $ACCESS" -H 'Content-Type: application/json' \
   -d '{"slots":[{"weekday":1,"start_minute":540,"end_minute":720}]}'
+
+# Concrete bookable slots (public), then book / confirm / cancel as a student.
+curl 'localhost:8080/v1/teachers/nodira-karimova/slots?duration=60'
+
+STU=$(curl -s -X POST localhost:8080/v1/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"sardor@example.com","password":"password"}' | jq -r .access_token)
+
+BID=$(curl -s -X POST localhost:8080/v1/bookings -H "Authorization: Bearer $STU" \
+  -H 'Content-Type: application/json' \
+  -d '{"teacher_slug":"nodira-karimova","start_at":"2026-09-14T09:00:00Z","duration_minutes":60}' | jq -r .id)
+
+curl "localhost:8080/v1/bookings?role=student" -H "Authorization: Bearer $STU"
+curl -X POST "localhost:8080/v1/bookings/$BID/confirm" -H "Authorization: Bearer $STU"
+curl -X POST "localhost:8080/v1/bookings/$BID/cancel" -H "Authorization: Bearer $STU" \
+  -H 'Content-Type: application/json' -d '{"reason":"schedule clash"}'
 ```
 
 Auth model: access tokens are short-lived (15 min) HS256 JWTs held in memory by
@@ -128,6 +149,29 @@ availability payload) is the source of truth for converting them to local time
 when booking lands. `PUT` requires a Bearer access token whose user owns the
 teacher row (`teachers.user_id`): 401 without a valid token, 403 if not the owner.
 
+Bookings (`internal/bookings`) turn that recurring availability into concrete
+lessons. `GET /v1/teachers/{slug}/slots` projects each weekly span (UTC
+minutes-from-midnight on a UTC weekday) onto real UTC datetimes across the
+requested window — the projection is pure UTC arithmetic, the teacher's IANA
+timezone is echoed for display only and never enters the math. Spans the
+frontend split at 00:00 UTC (a teacher whose local hours wrap midnight) are
+stitched back together before candidate starts are stepped every 30 minutes, so
+a lesson may legitimately straddle UTC midnight. A start is offered only if the
+whole `[start, start+duration]` fits one availability window and clears every
+non-cancelled booking; `duration` is one of 30/60/90/120 (default 60) and the
+window is capped at 21 days. Slot price is
+`round(price_per_hour_minor * duration / 60)` in integer minor units (half-up).
+
+`POST /v1/bookings` re-runs that exact check server-side (never trusting the
+client's price or alignment), then inserts `status='pending_payment'`.
+Double-booking is prevented at the DB layer by two `EXCLUDE USING gist`
+constraints (one on `teacher_id`, one on `student_id`, both over
+`tstzrange(start_at, end_at)` where `status <> 'cancelled'`): a slot the service
+can already see as taken returns 409 `slot_unavailable`, and a lost race on the
+constraint returns 409 `slot_taken`. `confirm` / `cancel` are participant-only
+(student or teacher-owner); cancellation is currently allowed at any time and
+only records who/when (`// TODO(phase-5): cancellation window / penalties`).
+
 ## Tests
 
 ```bash
@@ -135,8 +179,10 @@ make test    # go test ./...
 make vet
 ```
 
-`internal/auth`, `internal/teachers` and `internal/availability` have service
-tests (fake repository) and handler tests (httptest). No DB is required for the
+`internal/auth`, `internal/teachers`, `internal/availability` and
+`internal/bookings` have service tests (fake repository) and handler tests
+(httptest); `internal/bookings` also has a slot-generation table test covering
+the tricky timezone / weekday / midnight-wrap cases. No DB is required for the
 test suite.
 
 ## Not done yet
@@ -145,7 +191,10 @@ test suite.
 - Changing a profile's `slug` (immutable for now), and clearing a trial price
   via `PATCH` (an omitted `trial_price_minor` is left unchanged; there is no way
   yet to express "remove the trial").
-- Booking and payments modules.
+- Payments: bookings are created as `pending_payment` and `confirm` is a bare
+  participant action for now — a later phase moves it behind payment success.
+- Booking `completed` transitions, lesson reminders, and any cancellation
+  window / penalty rules.
 - The worker only has a stub `lesson:reminder` handler to show the pattern.
 - `cmd/migrate` pulls in golang-migrate's transitive test deps (dktest/docker)
   as indirect modules — a known cost of using it as a library.
