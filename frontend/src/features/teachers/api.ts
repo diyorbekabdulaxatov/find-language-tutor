@@ -146,6 +146,7 @@ export function toProfile(t: ApiSchemas["TeacherProfile"]): TeacherProfile {
     teachingStyle: t.teaching_style,
     experience: t.experience,
     trialPrice: t.trial_price ? toMoney(t.trial_price) : undefined,
+    meetingUrl: t.meeting_url ?? "",
   };
 }
 

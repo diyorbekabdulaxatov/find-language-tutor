@@ -266,6 +266,21 @@ export function ProfileEditor({
         </Field>
       </Section>
 
+      <Section
+        title="Video room"
+        hint="Your default meeting link. Students see it once a lesson is confirmed; you can override it per booking."
+      >
+        <Field label="Meeting link" htmlFor="meeting">
+          <Input
+            id="meeting"
+            type="url"
+            placeholder="https://meet.example.com/your-room"
+            value={values.meetingUrl}
+            onChange={(e) => set("meetingUrl", e.target.value)}
+          />
+        </Field>
+      </Section>
+
       <Section title="Experience">
         <ExperienceRows
           rows={values.experience}

@@ -338,6 +338,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/bookings/{id}/meeting-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set or clear a booking's meeting link
+         * @description Sets the per-booking meeting-link override. Teacher-owner only. A non-empty `url` must be an http(s) URL; an empty string clears the override so the booking falls back to the teacher's default `meeting_url`.
+         *     The link is still only revealed on the booking (`Booking.meeting_url`) once the booking is `confirmed` / `completed` and to a participant.
+         */
+        put: operations["setBookingMeetingLink"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}/no-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a no-show
+         * @description Teacher-owner only (MVP). Allowed only from `confirmed` and only once `start_at` is in the past (409 `too_early` otherwise — a lesson has not been missed until it has started).
+         *     `party = "student"` — the teacher attended, the student did not: the booking moves to `completed`, `no_show_party = student`, the payment is captured and the payout-ledger row written (identical to `complete`).
+         *     `party = "teacher"` — the teacher self-reports they could not attend: the booking moves to `cancelled`, `no_show_party = teacher`, and the student is refunded (identical to `cancel`).
+         */
+        post: operations["recordBookingNoShow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/payments/webhook": {
         parameters: {
             query?: never;
@@ -506,6 +549,8 @@ export interface components {
         TeacherProfile: components["schemas"]["TeacherSummary"] & {
             /** Format: uri */
             intro_video_url: string;
+            /** @description The teacher's default video room for lessons (may be empty). Set via `PATCH /v1/teachers/{slug}`; surfaced on a booking only once it is confirmed (see `Booking.meeting_url`). */
+            meeting_url: string;
             /** @description Long-form, plain text; paragraphs separated by "\n\n". */
             about: string;
             teaching_style: string;
@@ -547,6 +592,8 @@ export interface components {
             avatar_url?: string;
             intro_video_url?: string;
             video_thumbnail_url?: string;
+            /** @description Default video room for this teacher's lessons. Must be an http(s) URL, or empty. Never revealed to students until a lesson is confirmed. */
+            meeting_url?: string;
             languages?: components["schemas"]["LanguageEntry"][];
             focus?: string[];
             experience?: components["schemas"]["Experience"][];
@@ -662,6 +709,13 @@ export interface components {
             cancelled_at: string | null;
             /** @description Present (may be empty) only once cancelled; omitted otherwise. */
             cancellation_reason?: string;
+            /** @description The effective video link (the per-booking override if set, else the teacher's default `meeting_url`). Present ONLY when the caller is a participant AND `status` is `confirmed` or `completed`; omitted for everyone else (it never leaks to a `pending_payment` booking or a non-participant). */
+            meeting_url?: string;
+            /**
+             * @description Empty normally. `student` when the student missed a lesson the teacher attended (booking `completed`, payment captured); `teacher` when the teacher self-reported they could not attend (booking `cancelled`, student refunded).
+             * @enum {string}
+             */
+            no_show_party: "" | "student" | "teacher";
             teacher: components["schemas"]["BookingTeacherSummary"];
             student: components["schemas"]["BookingStudentSummary"];
             /** @description The booking's payment intent. Null when there is none yet, and omitted from list responses (only single-booking responses embed it). */
@@ -753,6 +807,17 @@ export interface components {
         /** @description Optional body. Omit entirely for a reason-less cancellation. */
         CancelBookingRequest: {
             reason?: string;
+        };
+        MeetingLinkRequest: {
+            /** @description An http(s) URL for the lesson's video room, or an empty string to clear the per-booking override. */
+            url: string;
+        };
+        NoShowRequest: {
+            /**
+             * @description Who missed the lesson.
+             * @enum {string}
+             */
+            party: "student" | "teacher";
         };
     };
     responses: {
@@ -1426,6 +1491,91 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             /** @description The booking is already completed or cancelled (`invalid_state`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    setBookingMeetingLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeetingLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description The booking with the override applied. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Booking"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The caller is not the teacher for this lesson (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    recordBookingNoShow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoShowRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated booking (completed or cancelled). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Booking"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The caller is not the teacher for this lesson (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The booking is not `confirmed` (`invalid_state`) or the lesson has not started yet (`too_early`). */
             409: {
                 headers: {
                     [name: string]: unknown;

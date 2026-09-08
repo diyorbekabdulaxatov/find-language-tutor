@@ -5,11 +5,9 @@
  * view-models.
  */
 
-import { authedFetch, browserApi } from "@/features/auth/browser-client";
+import { browserApi } from "@/features/auth/browser-client";
 import type { components } from "@/lib/api/schema";
 import type { Money } from "@/types/teacher";
-
-const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 export type BookingStatus = components["schemas"]["BookingStatus"];
 
@@ -124,12 +122,9 @@ const money = (m: WireMoney): Money => ({
 });
 
 function toBooking(b: WireBooking): Booking {
-  const extra = b as {
-    payment?: components["schemas"]["BookingPayment"] | null;
-    meeting_url?: string;
-    no_show_party?: NoShowParty;
-  };
-  const wp = extra.payment;
+  // `payment` and `meeting_url` are absent from list responses; read defensively.
+  const wp = (b as { payment?: components["schemas"]["BookingPayment"] | null })
+    .payment;
   return {
     id: b.id,
     status: b.status,
@@ -150,8 +145,8 @@ function toBooking(b: WireBooking): Booking {
           },
         }
       : null,
-    meetingUrl: extra.meeting_url ?? "",
-    noShowParty: extra.no_show_party ?? "",
+    meetingUrl: b.meeting_url ?? "",
+    noShowParty: b.no_show_party ?? "",
     teacher: {
       slug: b.teacher.slug,
       displayName: b.teacher.display_name,
@@ -283,39 +278,18 @@ export async function getEarnings(): Promise<EarningsSummary> {
   };
 }
 
-/* ---- Phase 5 — lessons. Hand-typed over authedFetch until these land in     */
-/* openapi.yaml; swap to browserApi after `npm run gen:api`.                   */
-
-async function raw<T>(
-  path: string,
-  init: RequestInit,
-  fallback: string,
-): Promise<T> {
-  const res = await authedFetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init.headers },
-  });
-  const body =
-    res.status === 204 ? undefined : await res.json().catch(() => undefined);
-  if (!res.ok) {
-    const e = body as ErrorBody | undefined;
-    throw new BookingError(
-      e?.error?.message ?? fallback,
-      e?.error?.code ?? "unknown",
-      res.status,
-    );
-  }
-  return body as T;
-}
+/* ---- Phase 5 — lessons ---- */
 
 /** Teacher sets (or clears, with "") the per-booking meeting link. */
 export async function setMeetingLink(id: string, url: string): Promise<Booking> {
-  const b = await raw<WireBooking>(
-    `/v1/bookings/${encodeURIComponent(id)}/meeting-link`,
-    { method: "PUT", body: JSON.stringify({ url }) },
-    "Could not update the meeting link.",
+  const { data, error, response } = await browserApi.PUT(
+    "/v1/bookings/{id}/meeting-link",
+    { params: { path: { id } }, body: { url } },
   );
-  return toBooking(b);
+  if (error || !data) {
+    throw toError(error, response.status, "Could not update the meeting link.");
+  }
+  return toBooking(data);
 }
 
 /** Teacher reports a no-show for a lesson that has started. */
@@ -323,12 +297,14 @@ export async function reportNoShow(
   id: string,
   party: "student" | "teacher",
 ): Promise<Booking> {
-  const b = await raw<WireBooking>(
-    `/v1/bookings/${encodeURIComponent(id)}/no-show`,
-    { method: "POST", body: JSON.stringify({ party }) },
-    "Could not report the no-show.",
+  const { data, error, response } = await browserApi.POST(
+    "/v1/bookings/{id}/no-show",
+    { params: { path: { id } }, body: { party } },
   );
-  return toBooking(b);
+  if (error || !data) {
+    throw toError(error, response.status, "Could not report the no-show.");
+  }
+  return toBooking(data);
 }
 
 export async function cancelBooking(

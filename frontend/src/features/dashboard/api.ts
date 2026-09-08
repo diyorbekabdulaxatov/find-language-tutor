@@ -27,6 +27,7 @@ export interface ProfileFormValues {
   avatarUrl: string;
   introVideoUrl: string;
   videoThumbnailUrl: string;
+  meetingUrl: string;
   languages: {
     role: "teaches" | "also_speaks";
     code: string;
@@ -76,6 +77,7 @@ function toWritable(v: ProfileFormValues): Writable {
     avatar_url: v.avatarUrl,
     intro_video_url: v.introVideoUrl,
     video_thumbnail_url: v.videoThumbnailUrl,
+    meeting_url: v.meetingUrl,
     languages: v.languages,
     focus: v.focus,
     experience: v.experience,
@@ -135,6 +137,7 @@ export function emptyProfileForm(displayName = ""): ProfileFormValues {
     avatarUrl: "",
     introVideoUrl: "",
     videoThumbnailUrl: "",
+    meetingUrl: "",
     languages: [],
     focus: [],
     experience: [],
@@ -158,6 +161,7 @@ export function profileToForm(p: TeacherProfile): ProfileFormValues {
     avatarUrl: p.avatarUrl,
     introVideoUrl: p.introVideoUrl,
     videoThumbnailUrl: p.videoThumbnailUrl,
+    meetingUrl: p.meetingUrl,
     languages: [
       ...p.teaches.map((l) => ({
         role: "teaches" as const,

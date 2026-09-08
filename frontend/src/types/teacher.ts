@@ -87,6 +87,8 @@ export interface TeacherProfile extends TeacherSummary {
   experience: ExperienceItem[];
   /** trial lesson price, if offered */
   trialPrice?: Money;
+  /** default video-room link; surfaced on a booking only once confirmed */
+  meetingUrl: string;
 }
 
 export interface ExperienceItem {
