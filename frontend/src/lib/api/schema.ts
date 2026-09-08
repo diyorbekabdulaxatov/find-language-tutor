@@ -92,7 +92,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Edit the signed-in account
+         * @description Updates the caller's own account. Only `display_name` is editable; changing the email is out of scope and any `email` key in the body is ignored. Omitting `display_name` is a no-op that returns the account unchanged.
+         */
+        patch: operations["updateCurrentUser"];
         trace?: never;
     };
     "/healthz": {
@@ -122,6 +126,33 @@ export interface paths {
         /** Search teachers */
         get: operations["listTeachers"];
         put?: never;
+        /**
+         * Create the caller's teacher profile
+         * @description Claims a teacher profile for the authenticated account. One profile per account — a second attempt is 409. The new profile's owner is the caller.
+         *     The body carries only the editable fields; server-controlled aggregates (`rating`, `review_count`, `lessons_completed`, `student_count`, `response_time_hours`) start at 0, `accepting_students` starts true, and the `slug` is generated from `display_name` (de-duplicated with a numeric suffix). `languages` / `focus` / `experience` are stored as given.
+         *
+         *     On create, `display_name`, `headline`, `kind`, `country_code`, `country_name`, `city`, `timezone`, and `price_per_hour_minor` are required; a missing or blank one is a 400.
+         */
+        post: operations["createTeacherProfile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/teachers/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's own teacher profile
+         * @description Returns the teacher profile owned by the authenticated account, or 404 if they have not created one yet. The dashboard uses this to decide between the "create profile" and the edit flow, and to get the slug for the availability editor.
+         */
+        get: operations["getMyTeacherProfile"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -143,7 +174,12 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Edit the caller's own teacher profile
+         * @description Partial update of the profile at `slug`. Requires a Bearer token whose account owns the profile (`teachers.user_id`); otherwise 401 (no/invalid token) or 403 (not the owner — an unclaimed profile is never editable).
+         *     Every field is optional; an omitted field is left unchanged. A present `languages` / `focus` / `experience` array (even `[]`) fully replaces that collection. The `slug` is immutable and server-controlled aggregates cannot be set here.
+         */
+        patch: operations["updateTeacherProfile"];
         trace?: never;
     };
     "/v1/teachers/{slug}/availability": {
@@ -195,6 +231,10 @@ export interface components {
             /** Format: email */
             email: string;
             password: string;
+        };
+        /** @description Fields to change on the caller's account. All optional; an omitted field is left unchanged. `email` is not editable and is ignored if sent. */
+        UpdateMeRequest: {
+            display_name?: string;
         };
         AuthUser: {
             /** Format: uuid */
@@ -299,6 +339,44 @@ export interface components {
             experience: components["schemas"]["Experience"][];
             /** @description Present only when the teacher offers a trial lesson. */
             trial_price?: components["schemas"]["Money"];
+        };
+        /** @description One row of the `languages` collection in a write request. `role` splits into the read shape's `teaches` / `also_speaks` arrays. */
+        LanguageEntry: {
+            /** @enum {string} */
+            role: "teaches" | "also_speaks";
+            /** @description ISO 639-1 */
+            code: string;
+            name: string;
+            level: components["schemas"]["LanguageLevel"];
+        };
+        /** @description The caller-editable profile fields shared by create and update. Money stays in integer minor units. Server-controlled aggregates (`rating`, `review_count`, `lessons_completed`, `student_count`, `response_time_hours`, `accepting_students`) and `slug` are never accepted here. */
+        TeacherProfileWritable: {
+            display_name?: string;
+            headline?: string;
+            kind?: components["schemas"]["TeacherKind"];
+            /** @description ISO 3166-1 alpha-2 */
+            country_code?: string;
+            country_name?: string;
+            city?: string;
+            /** @description IANA name, e.g. "Asia/Tashkent". Must resolve via the tz database. */
+            timezone?: string;
+            /** Format: int64 */
+            price_per_hour_minor?: number;
+            /**
+             * Format: int64
+             * @description Omit or null for "no trial lesson offered".
+             */
+            trial_price_minor?: number | null;
+            /** @description Must be `UZS` (the only supported currency). Defaults to `UZS` on create. */
+            currency?: components["schemas"]["Currency"];
+            about?: string;
+            teaching_style?: string;
+            avatar_url?: string;
+            intro_video_url?: string;
+            video_thumbnail_url?: string;
+            languages?: components["schemas"]["LanguageEntry"][];
+            focus?: string[];
+            experience?: components["schemas"]["Experience"][];
         };
         LanguageFacet: {
             code: string;
@@ -508,6 +586,32 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    updateCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMeRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated account. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthUser"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     getHealth: {
         parameters: {
             query?: never;
@@ -569,6 +673,63 @@ export interface operations {
             400: components["responses"]["BadRequest"];
         };
     };
+    createTeacherProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeacherProfileWritable"];
+            };
+        };
+        responses: {
+            /** @description The created profile (same shape as GET /v1/teachers/{slug}). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherProfile"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The account already has a teacher profile. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getMyTeacherProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's full teacher profile. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherProfile"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getTeacherBySlug: {
         parameters: {
             query?: never;
@@ -589,6 +750,36 @@ export interface operations {
                     "application/json": components["schemas"]["TeacherProfile"];
                 };
             };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateTeacherProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeacherProfileWritable"];
+            };
+        };
+        responses: {
+            /** @description The updated profile. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherProfile"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };

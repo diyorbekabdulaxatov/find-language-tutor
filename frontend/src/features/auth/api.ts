@@ -4,11 +4,9 @@
  * forms can show the server's message.
  */
 
-import { authedFetch, browserApi } from "./browser-client";
+import { browserApi } from "./browser-client";
 import { fromWireSession, fromWireUser } from "./mappers";
 import type { AuthUser, Session } from "./types";
-
-const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 /** A failed auth call. `code` is the backend's stable identifier when present. */
 export class AuthError extends Error {
@@ -78,23 +76,15 @@ export async function fetchCurrentUser(): Promise<AuthUser> {
   return fromWireUser(data);
 }
 
-/**
- * Update the signed-in user's own account (currently just the display name).
- *
- * TODO: `PATCH /v1/auth/me` is being added to the backend; once it lands in
- * openapi.yaml, run `npm run gen:api` and switch this to `browserApi.PATCH`.
- */
+/** Update the signed-in user's own account (currently just the display name). */
 export async function updateProfile(input: {
   displayName: string;
 }): Promise<AuthUser> {
-  const res = await authedFetch(`${baseUrl}/v1/auth/me`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ display_name: input.displayName }),
+  const { data, error, response } = await browserApi.PATCH("/v1/auth/me", {
+    body: { display_name: input.displayName },
   });
-  const body = await res.json().catch(() => undefined);
-  if (!res.ok) {
-    throw toAuthError(body, res.status, "Could not save your changes.");
+  if (error || !data) {
+    throw toAuthError(error, response.status, "Could not save your changes.");
   }
-  return fromWireUser(body as Parameters<typeof fromWireUser>[0]);
+  return fromWireUser(data);
 }

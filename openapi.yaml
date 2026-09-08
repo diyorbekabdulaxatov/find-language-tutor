@@ -234,6 +234,11 @@ paths:
         `response_time_hours`) start at 0, `accepting_students` starts true, and
         the `slug` is generated from `display_name` (de-duplicated with a numeric
         suffix). `languages` / `focus` / `experience` are stored as given.
+
+
+        On create, `display_name`, `headline`, `kind`, `country_code`,
+        `country_name`, `city`, `timezone`, and `price_per_hour_minor` are
+        required; a missing or blank one is a 400.
       operationId: createTeacherProfile
       security:
         - bearerAuth: []
@@ -241,7 +246,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/TeacherProfileCreate" }
+            schema: { $ref: "#/components/schemas/TeacherProfileWritable" }
       responses:
         "201":
           description: The created profile (same shape as GET /v1/teachers/{slug}).
@@ -323,7 +328,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/TeacherProfilePatch" }
+            schema: { $ref: "#/components/schemas/TeacherProfileWritable" }
       responses:
         "200":
           description: The updated profile.
@@ -714,28 +719,6 @@ components:
         experience:
           type: array
           items: { $ref: "#/components/schemas/Experience" }
-
-    TeacherProfileCreate:
-      allOf:
-        - $ref: "#/components/schemas/TeacherProfileWritable"
-        - type: object
-          required:
-            - display_name
-            - headline
-            - kind
-            - country_code
-            - country_name
-            - city
-            - timezone
-            - price_per_hour_minor
-
-    TeacherProfilePatch:
-      description: >
-        Partial edit. Every field optional; an omitted field is unchanged. A
-        present `languages` / `focus` / `experience` array (even empty) fully
-        replaces that collection.
-      allOf:
-        - $ref: "#/components/schemas/TeacherProfileWritable"
 
     LanguageFacet:
       type: object

@@ -108,11 +108,11 @@ export async function listTeacherSlugs(): Promise<string[]> {
 /* wire (snake_case) -> view-model (camelCase)                                */
 /* -------------------------------------------------------------------------- */
 
-function toMoney(m: ApiSchemas["Money"]): Money {
+export function toMoney(m: ApiSchemas["Money"]): Money {
   return { amountMinor: m.amount_minor, currency: m.currency };
 }
 
-function toSummary(t: ApiSchemas["TeacherSummary"]): TeacherSummary {
+export function toSummary(t: ApiSchemas["TeacherSummary"]): TeacherSummary {
   return {
     id: t.id,
     slug: t.slug,
@@ -138,7 +138,7 @@ function toSummary(t: ApiSchemas["TeacherSummary"]): TeacherSummary {
   };
 }
 
-function toProfile(t: ApiSchemas["TeacherProfile"]): TeacherProfile {
+export function toProfile(t: ApiSchemas["TeacherProfile"]): TeacherProfile {
   return {
     ...toSummary(t),
     introVideoUrl: t.intro_video_url,
