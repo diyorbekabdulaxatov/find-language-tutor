@@ -131,7 +131,7 @@ func (h *Handler) Me(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toUserDTO(user))
+	c.JSON(http.StatusOK, toUserDTO(user, h.svc.PermissionsFor(c.Request.Context(), uid)))
 }
 
 // UpdateMe handles PATCH /v1/auth/me — edit the authenticated account.
@@ -164,7 +164,7 @@ func (h *Handler) UpdateMe(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toUserDTO(user))
+	c.JSON(http.StatusOK, toUserDTO(user, h.svc.PermissionsFor(c.Request.Context(), uid)))
 }
 
 // renderAuthError maps a service error to its HTTP response. It returns true if

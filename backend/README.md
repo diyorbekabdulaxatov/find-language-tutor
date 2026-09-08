@@ -73,18 +73,18 @@ See `../openapi.yaml`. Currently implemented:
 | POST | `/v1/auth/login` | sign in; 401 on bad credentials |
 | POST | `/v1/auth/refresh` | rotate the refresh cookie, new access token |
 | POST | `/v1/auth/logout` | revoke session, clear cookie; 204 |
-| GET | `/v1/auth/me` | the signed-in user; needs `Authorization: Bearer` |
+| GET | `/v1/auth/me` | the signed-in user + `permissions` (RBAC keys, resolved per request, `[]` for a normal user); needs `Authorization: Bearer` |
 | PATCH | `/v1/auth/me` | edit own account (`display_name` only; email is read-only) |
-| GET | `/v1/teachers` | `?language&kind&max_price_minor&q&sort&page&page_size` |
-| POST | `/v1/teachers` | claim/create the caller's profile; Bearer token; 409 if they already own one |
-| GET | `/v1/teachers/me` | the caller's own profile; Bearer token; 404 if not created yet |
-| GET | `/v1/teachers/{slug}` | full profile, 404 if missing |
+| GET | `/v1/teachers` | `?language&kind&max_price_minor&q&sort&page&page_size` — **only `approved` teachers** |
+| POST | `/v1/teachers` | claim/create the caller's profile; Bearer token; 409 if they already own one. **New profiles are `status = pending`** — fillable + can set availability, but not public until an admin approves |
+| GET | `/v1/teachers/me` | the caller's own profile **regardless of status**; includes `status` / `verified` / `moderation_note`; Bearer token; 404 if not created yet |
+| GET | `/v1/teachers/{slug}` | full profile; **404 unless `approved`**; carries `verified` (badge) |
 | PATCH | `/v1/teachers/{slug}` | edit own profile (partial); Bearer token, must own it; 403/404 otherwise. Now also accepts `meeting_url` (default video room; http(s) or empty) |
 | GET | `/v1/teachers/{slug}/availability` | weekly recurring slots (UTC), 404 if missing |
 | PUT | `/v1/teachers/{slug}/availability` | replace the full weekly set; Bearer token, must own the profile |
-| GET | `/v1/teachers/{slug}/slots` | `?from&to&duration` — concrete bookable start times (UTC); public; 400 if the window > 21 days |
-| GET | `/v1/teachers/{slug}/reviews` | `?page&page_size` (default 1 / 10, cap 50) — the teacher's reviews, newest first; public; 404 if missing |
-| POST | `/v1/bookings` | book a lesson; Bearer token; 201 `pending_payment` + opens a `requires_payment` intent; 409 `slot_unavailable` / `slot_taken` |
+| GET | `/v1/teachers/{slug}/slots` | `?from&to&duration` — concrete bookable start times (UTC); public; **404 for a non-`approved` slug**; 400 if the window > 21 days |
+| GET | `/v1/teachers/{slug}/reviews` | `?page&page_size` (default 1 / 10, cap 50) — the teacher's reviews, newest first; public; **404 unless `approved`** |
+| POST | `/v1/bookings` | book a lesson; Bearer token; **404 for a non-`approved` teacher**; 201 `pending_payment` + opens a `requires_payment` intent; 409 `slot_unavailable` / `slot_taken` |
 | GET | `/v1/bookings` | `?role=student\|teacher&status=` — the caller's bookings, newest first; Bearer token |
 | GET | `/v1/bookings/{id}` | full booking (with embedded `payment`); Bearer token; 404 if missing, 403 if not a participant |
 | POST | `/v1/bookings/{id}/pay` | `{method_token}`; student only; authorize → `pending_payment → confirmed`; 402 `payment_failed`, 409 `already_paid` |
@@ -95,6 +95,19 @@ See `../openapi.yaml`. Currently implemented:
 | POST | `/v1/bookings/{id}/review` | `{rating: 1-5, comment?}`; student only; booking must be `completed` (409 `booking_not_completed`); one per booking (409 `already_reviewed`); nudges the teacher `rating` / `review_count` in the same transaction; 201 |
 | POST | `/v1/payments/webhook` | provider event; unauthenticated (signed); idempotent by `event_id`; 200 on a well-formed duplicate |
 | GET | `/v1/payments/me` | the caller's teacher earnings summary; Bearer token; 404 if they own no profile |
+| GET | `/v1/admin/metrics` | dashboard counters; perm `metrics.view` |
+| GET | `/v1/admin/users` | `?q&page&page_size` — user directory; perm `users.view` |
+| GET | `/v1/admin/users/{id}` | user + roles + teacher profile + 50 newest bookings + payments summary; perm `users.view` |
+| POST/DELETE | `/v1/admin/users/{id}/roles[/{role_id}]` | assign / unassign a role (idempotent); perm `users.manage_roles` |
+| GET | `/v1/admin/permissions` | the permission catalog; perm `roles.manage` |
+| GET/POST | `/v1/admin/roles` | list / create roles; perm `roles.manage`; 400 `unknown_permission`, 409 `role_exists` |
+| PATCH/DELETE | `/v1/admin/roles/{id}` | edit (description always; permissions unless `is_system` → 403 `role_locked`) / delete (403 `role_locked`, 409 `role_in_use`); perm `roles.manage` |
+| GET | `/v1/admin/teachers` | `?status&q&page&page_size` — moderation queue (all statuses); perm `teachers.view` |
+| GET | `/v1/admin/teachers/{slug}` | full profile + `status` / `verified` / `moderation_note` / `owner`; perm `teachers.view` |
+| POST | `/v1/admin/teachers/{slug}/approve` | → `approved`, clears note; from pending/rejected/suspended; 409 `invalid_transition`; perm `teachers.moderate` |
+| POST | `/v1/admin/teachers/{slug}/reject` | `{note}` (required) → `rejected`; from pending only; perm `teachers.moderate` |
+| POST | `/v1/admin/teachers/{slug}/suspend` | `{note}` (required) → `suspended`; from approved only; leaves bookings intact; perm `teachers.moderate` |
+| POST | `/v1/admin/teachers/{slug}/verify` | `{verified: bool}`; independent of status; perm `teachers.verify` |
 
 ```bash
 curl 'localhost:8080/v1/teachers?language=uz&sort=price_asc'
@@ -148,6 +161,20 @@ curl localhost:8080/v1/payments/me -H "Authorization: Bearer $ACCESS"
 
 curl -X POST "localhost:8080/v1/bookings/$BID/cancel" -H "Authorization: Bearer $STU" \
   -H 'Content-Type: application/json' -d '{"reason":"schedule clash"}'
+
+# Admin: seeded account admin@findtutor.local / "admin" (superadmin role).
+ADMIN=$(curl -s -X POST localhost:8080/v1/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"admin@findtutor.local","password":"admin"}' | jq -r .access_token)
+
+curl localhost:8080/v1/admin/metrics -H "Authorization: Bearer $ADMIN"
+curl 'localhost:8080/v1/admin/teachers?status=pending' -H "Authorization: Bearer $ADMIN"
+curl -X POST localhost:8080/v1/admin/teachers/malika-abdurakhmonova/approve \
+  -H "Authorization: Bearer $ADMIN"
+curl -X POST localhost:8080/v1/admin/teachers/malika-abdurakhmonova/verify \
+  -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d '{"verified":true}'
+
+# RBAC: create a scoped role, assign it, and the holder logs in to see permissions.
+curl localhost:8080/v1/admin/roles -H "Authorization: Bearer $ADMIN"
 ```
 
 Auth model: access tokens are short-lived (15 min) HS256 JWTs held in memory by
@@ -300,6 +327,66 @@ not yet reviewed) and `review` (`{rating, comment, created_at} | null`, visible
 to both participants) without a second call. bookings never imports reviews;
 `cmd/api` injects the adapter with `bookingService.SetReviewReader(...)`. A nil
 reader is a guarded no-op.
+
+### Admin & RBAC (phase A/B)
+
+`internal/rbac` + `internal/admin`, mounted under `/v1/admin` behind
+`auth.RequireAuth`; each route then adds its own `rbacGuard.Require("<perm>")`.
+
+**RBAC model** (migration `000008_rbac`): `roles`, `role_permissions`,
+`user_roles`. A user's effective permissions are the **union across their roles**,
+resolved **from the database on every request** — deliberately *not* in the JWT,
+so revoking a role takes effect immediately rather than at the next 15-minute
+token refresh. The access-token claims are unchanged (`sub` / `email` /
+`display_name`). `internal/rbac/permissions.go` is the permission catalog (the
+source of truth): `role_permissions` writes are validated against it, and
+`GET /v1/admin/permissions` serves it. A+B wire `metrics.view`, `users.view`,
+`users.manage_roles`, `teachers.view`, `teachers.moderate`, `teachers.verify`,
+`roles.manage`; the rest (`bookings.*`, `disputes.resolve`, `payouts.*`,
+`reviews.moderate`) are defined for later phases.
+
+- **`GET /v1/auth/me`** and the login / register / refresh responses carry the
+  caller's `permissions` (flat, sorted). rbac implements `auth.PermissionsPort`;
+  a nil port yields `[]`.
+- **`superadmin`** is a system role (`is_system = true`) that always holds the
+  **entire catalog**: the seed grants every `rbac.AllPermissions` entry, and
+  `Service.PermissionsFor` short-circuits to `AllPermissions` for any holder of
+  the `superadmin` role even if the stored `role_permissions` rows lag a catalog
+  change. System roles can't be renamed, re-permissioned, or deleted through the
+  API (`403 role_locked`); their description is editable.
+- Per-request resolution path: `auth.RequireAuth` stashes the user id →
+  `rbacGuard.Require(perm)` calls `Service.PermissionsFor(userID)` (two indexed
+  queries: `user_roles ⋈ roles` for the superadmin guard, `user_roles ⋈
+  role_permissions` for the union) → `403 forbidden` unless `perm` is in the set.
+  The resolved set is stashed so `rbac.Can(c, perm)` works in-handler.
+
+**Teacher moderation** (migration `000009_teacher_moderation`): `teachers`
+gains `status` (`pending` | `approved` | `rejected` | `suspended`, **DEFAULT
+`approved`** so every existing/seeded row stays live), `verified`, and
+`moderation_note`. `POST /v1/teachers` overrides the default to `pending`. Public
+reads hide everything non-`approved`:
+
+| read | how |
+| --- | --- |
+| `GET /v1/teachers` (list + count) | `WHERE t.status = 'approved'` in `ListTeachers` / `CountTeachers` (always, not a filter param) |
+| SSG slug list | `WHERE status = 'approved'` in `ListTeacherSlugs` |
+| `GET /v1/teachers/{slug}` | repo returns the row; `teachers.Service.GetBySlug` maps non-`approved` → `ErrNotFound` (handler 404). `GetForAdmin` / `GetOwnProfile` skip that check |
+| `GET /v1/teachers/{slug}/slots`, `POST /v1/bookings` | `GetBookingTeacherContext` query has `AND status = 'approved'` → `ErrTeacherNotFound` → **404** |
+| `GET /v1/teachers/{slug}/reviews` | reviews repo uses `ApprovedTeacherIDBySlug` (`AND status = 'approved'`) → 404 |
+
+Owner reads (`GET /v1/teachers/me`) and `PUT .../availability` are unaffected — a
+`pending` teacher fills in everything and sets availability while invisible.
+
+**Admin repo** reads other modules' tables directly
+(`internal/db/queries/admin.sql`) — it's an ops tool, not a public API. The one
+exception is `GET /v1/admin/teachers/{slug}`, which reuses the teachers read
+model via the `admin.TeacherProfiles` port (`*teachers.Service`).
+
+**Seed**: 3 roles (`superadmin` system + `support` + `moderator` examples), one
+admin account **`admin@findtutor.local` / `admin`** holding `superadmin` (no
+teacher profile), 3 verified seed teachers (Nodira, Elena, Kim), and one
+`pending` demo teacher (`malika-abdurakhmonova`, account `malika@example.com` /
+`password`) so the moderation queue isn't empty on a fresh DB.
 
 ## Tests
 

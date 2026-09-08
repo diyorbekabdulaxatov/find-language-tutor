@@ -34,6 +34,7 @@ type summaryDTO struct {
 	Teaches           []languageDTO `json:"teaches"`
 	AlsoSpeaks        []languageDTO `json:"also_speaks"`
 	PricePerHour      moneyDTO      `json:"price_per_hour"`
+	Verified          bool          `json:"verified"`
 	Rating            float64       `json:"rating"`
 	ReviewCount       int           `json:"review_count"`
 	LessonsCompleted  int           `json:"lessons_completed"`
@@ -49,13 +50,22 @@ type summaryDTO struct {
 // summary fields plus the long-form ones.
 type profileDTO struct {
 	summaryDTO
-	IntroVideoURL string          `json:"intro_video_url"`
-	MeetingURL    string          `json:"meeting_url"`
-	About         string          `json:"about"`
-	TeachingStyle string          `json:"teaching_style"`
-	Experience    []experienceDTO `json:"experience"`
-	TrialPrice    *moneyDTO       `json:"trial_price,omitempty"`
+	IntroVideoURL  string          `json:"intro_video_url"`
+	MeetingURL     string          `json:"meeting_url"`
+	About          string          `json:"about"`
+	TeachingStyle  string          `json:"teaching_style"`
+	Experience     []experienceDTO `json:"experience"`
+	TrialPrice     *moneyDTO       `json:"trial_price,omitempty"`
+	Status         string          `json:"status"`
+	ModerationNote string          `json:"moderation_note"`
 }
+
+// Profile is the exported alias for the full-profile wire shape so the admin
+// module can embed it in its own responses without duplicating the mapping.
+type Profile = profileDTO
+
+// BuildProfile maps a domain Teacher onto the full-profile wire shape.
+func BuildProfile(t *Teacher) Profile { return toProfile(*t) }
 
 // --- write request DTOs (POST /v1/teachers, PATCH /v1/teachers/{slug}) ---
 
@@ -250,6 +260,7 @@ func toSummary(t Teacher) summaryDTO {
 		CountryName:       t.CountryName,
 		City:              t.City,
 		Timezone:          t.Timezone,
+		Verified:          t.Verified,
 		Teaches:           languages(t.Teaches),
 		AlsoSpeaks:        languages(t.AlsoSpeaks),
 		PricePerHour:      money(t.PricePerHour),
@@ -271,13 +282,19 @@ func toProfile(t Teacher) profileDTO {
 		exp[i] = experienceDTO{Title: e.Title, Org: e.Org, Period: e.Period}
 	}
 
+	status := t.Status
+	if status == "" {
+		status = StatusApproved
+	}
 	p := profileDTO{
-		summaryDTO:    toSummary(t),
-		IntroVideoURL: t.IntroVideoURL,
-		MeetingURL:    t.MeetingURL,
-		About:         t.About,
-		TeachingStyle: t.TeachingStyle,
-		Experience:    exp,
+		summaryDTO:     toSummary(t),
+		IntroVideoURL:  t.IntroVideoURL,
+		MeetingURL:     t.MeetingURL,
+		About:          t.About,
+		TeachingStyle:  t.TeachingStyle,
+		Experience:     exp,
+		Status:         string(status),
+		ModerationNote: t.ModerationNote,
 	}
 	if t.TrialPrice != nil {
 		m := money(*t.TrialPrice)

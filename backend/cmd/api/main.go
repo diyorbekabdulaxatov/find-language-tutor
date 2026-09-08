@@ -14,6 +14,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/admin"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/auth"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/availability"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/bookings"
@@ -23,6 +24,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/httpapi"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/lessons"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payments"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/rbac"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/reviews"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/teachers"
 )
@@ -67,8 +69,17 @@ func run(logger *slog.Logger) error {
 	}
 
 	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTL)
+
+	// RBAC: per-request permission resolution. Also feeds the caller's
+	// permissions into the auth responses (nil-safe port).
+	rbacService := rbac.NewService(rbac.NewPostgresRepository(pool))
+	rbacGuard := rbac.NewGuard(rbacService)
+	rbacHandler := rbac.NewHandler(rbacService, logger)
+
+	authService := auth.NewService(auth.NewPostgresRepository(pool), tokenManager, cfg.RefreshTokenTTL)
+	authService.SetPermissionsPort(rbac.NewAuthPermissions(rbacService))
 	authHandler := auth.NewHandler(
-		auth.NewService(auth.NewPostgresRepository(pool), tokenManager, cfg.RefreshTokenTTL),
+		authService,
 		tokenManager,
 		auth.CookieConfig{
 			Name:   "ftr_session",
@@ -80,8 +91,14 @@ func run(logger *slog.Logger) error {
 		logger,
 	)
 
-	teacherHandler := teachers.NewHandler(
-		teachers.NewService(teachers.NewPostgresRepository(pool)),
+	teacherService := teachers.NewService(teachers.NewPostgresRepository(pool))
+	teacherHandler := teachers.NewHandler(teacherService, logger)
+
+	// Admin surface (phase A/B). Reads across tables directly; reuses the
+	// teachers read model for the one full-profile endpoint. Authorization is
+	// per-route via rbacGuard.
+	adminHandler := admin.NewHandler(
+		admin.NewService(admin.NewPostgresRepository(pool), teacherService),
 		logger,
 	)
 
@@ -132,6 +149,9 @@ func run(logger *slog.Logger) error {
 		Redis:               rdb,
 		AuthHandler:         authHandler,
 		AuthMiddleware:      auth.RequireAuth(tokenManager),
+		AdminHandler:        adminHandler,
+		RBACHandler:         rbacHandler,
+		RBACGuard:           rbacGuard,
 		TeacherHandler:      teacherHandler,
 		AvailabilityHandler: availabilityHandler,
 		BookingHandler:      bookingHandler,

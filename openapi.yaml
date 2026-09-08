@@ -145,6 +145,11 @@ paths:
     get:
       tags: [auth]
       summary: The signed-in user
+      description: >
+        Returns the account plus its `permissions` — the caller's effective RBAC
+        permission keys, resolved from the database on every call (never from the
+        JWT). The login / register / refresh responses carry the same `user`
+        shape.
       operationId: getCurrentUser
       security:
         - bearerAuth: []
@@ -980,6 +985,362 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  # ----------------------------------------------------------------------------
+  # Admin (phase A/B). Everything under /v1/admin needs a valid access token
+  # (401 otherwise) AND the specific RBAC permission for the route (403 with
+  # code `forbidden` otherwise). Permissions are resolved per request from the
+  # roles the caller holds — never from the JWT.
+  # ----------------------------------------------------------------------------
+
+  /v1/admin/metrics:
+    get:
+      tags: [admin]
+      summary: Dashboard metrics
+      description: "Permission: `metrics.view`. GMV = sum of price over confirmed + completed bookings."
+      operationId: adminMetrics
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Platform counters.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminMetrics" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/users:
+    get:
+      tags: [admin]
+      summary: User directory
+      description: "Permission: `users.view`. `q` is a case-insensitive substring on email or display_name."
+      operationId: adminListUsers
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of users.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUserList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/users/{id}:
+    get:
+      tags: [admin]
+      summary: User detail
+      description: "Permission: `users.view`. Bookings capped at the 50 newest."
+      operationId: adminGetUser
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The user with roles, teacher profile, recent bookings, and a payments summary.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUserDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/admin/users/{id}/roles:
+    post:
+      tags: [admin]
+      summary: Assign a role to a user
+      description: "Permission: `users.manage_roles`. Idempotent."
+      operationId: adminAssignRole
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role_id]
+              properties: { role_id: { type: string, format: uuid } }
+      responses:
+        "204": { description: Assigned. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/admin/users/{id}/roles/{role_id}:
+    delete:
+      tags: [admin]
+      summary: Unassign a role from a user
+      description: "Permission: `users.manage_roles`. Idempotent."
+      operationId: adminUnassignRole
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: role_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Unassigned. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/admin/permissions:
+    get:
+      tags: [admin]
+      summary: Permission catalog
+      description: "Permission: `roles.manage`. The full set of permission keys, for a checkbox UI."
+      operationId: adminPermissionCatalog
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The catalog.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [key, description]
+                  properties:
+                    key: { type: string }
+                    description: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/roles:
+    get:
+      tags: [admin]
+      summary: List roles
+      description: "Permission: `roles.manage`."
+      operationId: adminListRoles
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Every role with its permissions and assignment count.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminRole" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [admin]
+      summary: Create a role
+      description: "Permission: `roles.manage`. Each permission must be in the catalog; the name must be unique."
+      operationId: adminCreateRole
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1 }
+                description: { type: string }
+                permissions:
+                  type: array
+                  items: { type: string }
+      responses:
+        "201":
+          description: The created role.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminRole" }
+        "400":
+          description: "`unknown_permission` — a permission key is not in the catalog."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: "`role_exists` — a role with that name already exists."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/roles/{id}:
+    patch:
+      tags: [admin]
+      summary: Edit a role
+      description: >
+        Permission: `roles.manage`. `description` is always editable. `permissions`,
+        when present, replaces the whole set — but a system role's permissions are
+        locked (403 `role_locked`).
+      operationId: adminUpdateRole
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description: { type: string }
+                permissions:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: The updated role.
+          content: { application/json: { schema: { $ref: "#/components/schemas/AdminRole" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`forbidden` (missing `roles.manage`) or `role_locked` (system role permissions)."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [admin]
+      summary: Delete a role
+      description: "Permission: `roles.manage`. 403 `role_locked` for a system role; 409 `role_in_use` if any user still holds it."
+      operationId: adminDeleteRole
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`forbidden` or `role_locked`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`role_in_use` — unassign it from all users first."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/teachers:
+    get:
+      tags: [admin]
+      summary: Teacher moderation queue
+      description: "Permission: `teachers.view`. `status` filter optional; `q` matches display_name / slug / owner email."
+      operationId: adminListTeachers
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, approved, rejected, suspended] } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of teacher profiles across all statuses.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminTeacherList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/teachers/{slug}:
+    get:
+      tags: [admin]
+      summary: Teacher detail (moderation)
+      description: "Permission: `teachers.view`. The full public profile shape plus `status`, `verified`, `moderation_note`, and `owner`."
+      operationId: adminGetTeacher
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The teacher profile with its moderation slice.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminTeacherDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/admin/teachers/{slug}/approve:
+    post:
+      tags: [admin]
+      summary: Approve a teacher
+      description: >
+        Permission: `teachers.moderate`. Sets `status = approved` and clears the
+        moderation note. Allowed from pending, rejected, or suspended (the last is
+        a reinstate). 409 `invalid_transition` from approved.
+      operationId: adminApproveTeacher
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: The updated teacher detail., content: { application/json: { schema: { $ref: "#/components/schemas/AdminTeacherDetail" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`invalid_transition`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/teachers/{slug}/reject:
+    post:
+      tags: [admin]
+      summary: Reject a pending teacher
+      description: "Permission: `teachers.moderate`. Body `{note}` required (non-empty). Allowed only from pending."
+      operationId: adminRejectTeacher
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [note], properties: { note: { type: string, minLength: 1 } } }
+      responses:
+        "200": { description: The updated teacher detail., content: { application/json: { schema: { $ref: "#/components/schemas/AdminTeacherDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`invalid_transition` — not in `pending`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/teachers/{slug}/suspend:
+    post:
+      tags: [admin]
+      summary: Suspend an approved teacher
+      description: >
+        Permission: `teachers.moderate`. Body `{note}` required. Allowed only from
+        approved. Pulls the profile from public search immediately; existing
+        bookings are untouched.
+      operationId: adminSuspendTeacher
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [note], properties: { note: { type: string, minLength: 1 } } }
+      responses:
+        "200": { description: The updated teacher detail., content: { application/json: { schema: { $ref: "#/components/schemas/AdminTeacherDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`invalid_transition` — not in `approved`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/teachers/{slug}/verify:
+    post:
+      tags: [admin]
+      summary: Set the verified badge
+      description: "Permission: `teachers.verify`. Body `{verified: bool}`. Independent of moderation status."
+      operationId: adminVerifyTeacher
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [verified], properties: { verified: { type: boolean } } }
+      responses:
+        "200": { description: The updated teacher detail., content: { application/json: { schema: { $ref: "#/components/schemas/AdminTeacherDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1062,11 +1423,20 @@ components:
 
     AuthUser:
       type: object
-      required: [id, email, display_name]
+      required: [id, email, display_name, permissions]
       properties:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
         display_name: { type: string }
+        permissions:
+          type: array
+          items: { type: string }
+          description: >
+            The caller's effective RBAC permission keys (flat, sorted, deduped
+            across all their roles). Resolved server-side per request — NOT from
+            the JWT — so a revoked role takes effect immediately. Empty for a
+            normal user. The frontend gates the /admin area on these. See
+            GET /v1/admin/permissions for the catalog.
 
     AuthResponse:
       type: object
@@ -1199,6 +1569,9 @@ components:
         review_count: { type: integer, minimum: 0 }
         lessons_completed: { type: integer, minimum: 0 }
         student_count: { type: integer, minimum: 0 }
+        verified:
+          type: boolean
+          description: Whether an admin has granted this teacher the verified badge.
         focus:
           type: array
           items: { type: string }
@@ -1240,6 +1613,16 @@ components:
             trial_price:
               description: Present only when the teacher offers a trial lesson.
               $ref: "#/components/schemas/Money"
+            status:
+              type: string
+              enum: [pending, approved, rejected, suspended]
+              description: >
+                Moderation status. On the public GET /v1/teachers/{slug} this is
+                always `approved` (non-approved profiles 404). Meaningful on
+                GET /v1/teachers/me and the admin endpoints.
+            moderation_note:
+              type: string
+              description: The admin's reason on a reject / suspend, shown to the teacher. Empty otherwise.
 
     LanguageEntry:
       type: object
@@ -1685,3 +2068,141 @@ components:
         total:
           type: integer
           description: Total reviews for the teacher (not just this page).
+
+    # --- Admin (phase A/B) ---
+
+    AdminMetrics:
+      type: object
+      required: [users_total, teachers_total, teachers_pending, bookings_total, bookings_this_week, gmv_minor, gmv_currency]
+      properties:
+        users_total: { type: integer }
+        teachers_total: { type: integer }
+        teachers_pending: { type: integer }
+        bookings_total: { type: integer }
+        bookings_this_week: { type: integer, description: Created in the last 7 days. }
+        gmv_minor: { type: integer, format: int64, description: Sum of price over confirmed + completed bookings, minor units. }
+        gmv_currency: { type: string, description: "UZS for the MVP." }
+
+    AdminUserRow:
+      type: object
+      required: [id, email, display_name, created_at, is_teacher, booking_count]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        display_name: { type: string }
+        created_at: { type: string, format: date-time }
+        is_teacher: { type: boolean, description: Owns a teachers row. }
+        booking_count: { type: integer }
+
+    AdminUserList:
+      type: object
+      required: [users, total]
+      properties:
+        users: { type: array, items: { $ref: "#/components/schemas/AdminUserRow" } }
+        total: { type: integer }
+
+    AdminRoleRef:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+
+    AdminUserDetail:
+      type: object
+      required: [user, roles, teacher_profile, bookings, payments_summary]
+      properties:
+        user:
+          type: object
+          required: [id, email, display_name, created_at]
+          properties:
+            id: { type: string, format: uuid }
+            email: { type: string, format: email }
+            display_name: { type: string }
+            created_at: { type: string, format: date-time }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/AdminRoleRef" }
+        teacher_profile:
+          nullable: true
+          type: object
+          required: [slug, status, verified]
+          properties:
+            slug: { type: string }
+            status: { type: string, enum: [pending, approved, rejected, suspended] }
+            verified: { type: boolean }
+        bookings:
+          type: array
+          description: The 50 newest bookings the user takes part in.
+          items:
+            type: object
+            required: [id, status, start_at, role_in_booking, other_party_name, price]
+            properties:
+              id: { type: string, format: uuid }
+              status: { type: string }
+              start_at: { type: string, format: date-time }
+              role_in_booking: { type: string, enum: [student, teacher] }
+              other_party_name: { type: string }
+              price: { $ref: "#/components/schemas/Money" }
+        payments_summary:
+          type: object
+          required: [authorized_minor, captured_minor, refunded_minor, currency]
+          description: The user's payments as the paying student, bucketed by current payment state.
+          properties:
+            authorized_minor: { type: integer, format: int64 }
+            captured_minor: { type: integer, format: int64 }
+            refunded_minor: { type: integer, format: int64 }
+            currency: { type: string }
+
+    AdminRole:
+      type: object
+      required: [id, name, description, is_system, permissions, user_count]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        is_system:
+          type: boolean
+          description: System roles (e.g. superadmin) cannot be re-permissioned or deleted; only their description is editable.
+        permissions: { type: array, items: { type: string } }
+        user_count: { type: integer }
+
+    AdminTeacherRow:
+      type: object
+      required: [slug, display_name, status, verified, headline, country_name, created_at, owner]
+      properties:
+        slug: { type: string }
+        display_name: { type: string }
+        status: { type: string, enum: [pending, approved, rejected, suspended] }
+        verified: { type: boolean }
+        headline: { type: string }
+        country_name: { type: string }
+        created_at: { type: string, format: date-time }
+        owner:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            email: { type: string, format: email }
+
+    AdminTeacherList:
+      type: object
+      required: [teachers, total]
+      properties:
+        teachers: { type: array, items: { $ref: "#/components/schemas/AdminTeacherRow" } }
+        total: { type: integer }
+
+    AdminTeacherDetail:
+      description: The full public TeacherProfile shape (with status / verified / moderation_note) plus the owner account.
+      allOf:
+        - $ref: "#/components/schemas/TeacherProfile"
+        - type: object
+          required: [owner]
+          properties:
+            owner:
+              type: object
+              required: [id, email, display_name]
+              properties:
+                id: { type: string, format: uuid }
+                email: { type: string, format: email }
+                display_name: { type: string }
+

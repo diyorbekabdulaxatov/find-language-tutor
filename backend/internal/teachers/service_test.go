@@ -99,6 +99,7 @@ func (f *fakeRepo) Create(_ context.Context, ownerID uuid.UUID, slug string, in 
 		PricePerHour: Money{in.PricePerHourMinor, in.Currency},
 		Teaches:      teaches, AlsoSpeaks: alsoSpeaks, Focus: in.Focus,
 		Experience: in.Experience, AcceptingStudents: true,
+		Status: StatusPending, // mirrors the real repo: new profiles are pending
 	}
 	if f.ownerBySlug == nil {
 		f.ownerBySlug = map[string]uuid.UUID{}
@@ -225,7 +226,7 @@ func TestService_GetBySlug_NotFound(t *testing.T) {
 }
 
 func TestService_GetBySlug_Found(t *testing.T) {
-	want := &Teacher{ID: uuid.New(), Slug: "nodira-karimova"}
+	want := &Teacher{ID: uuid.New(), Slug: "nodira-karimova", Status: StatusApproved}
 	svc := NewService(&fakeRepo{bySlug: map[string]*Teacher{"nodira-karimova": want}})
 
 	got, err := svc.GetBySlug(context.Background(), "nodira-karimova")

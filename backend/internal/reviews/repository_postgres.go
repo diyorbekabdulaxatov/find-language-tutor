@@ -123,14 +123,16 @@ func (r *repositoryPostgres) ReviewByBooking(ctx context.Context, bookingID uuid
 }
 
 func (r *repositoryPostgres) TeacherIDBySlug(ctx context.Context, slug string) (uuid.UUID, error) {
-	ref, err := r.q.TeacherRefBySlug(ctx, slug)
+	// Only an approved (public) teacher has a reviews page — a non-approved slug
+	// 404s here, matching GET /v1/teachers/{slug}.
+	id, err := r.q.ApprovedTeacherIDBySlug(ctx, slug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return uuid.Nil, ErrTeacherNotFound
 		}
-		return uuid.Nil, fmt.Errorf("teacher ref by slug: %w", err)
+		return uuid.Nil, fmt.Errorf("approved teacher id by slug: %w", err)
 	}
-	return ref.ID, nil
+	return id, nil
 }
 
 func (r *repositoryPostgres) ListByTeacher(ctx context.Context, teacherID uuid.UUID, limit, offset int) ([]Review, int, error) {

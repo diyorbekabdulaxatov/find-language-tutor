@@ -45,6 +45,9 @@ DELETE FROM teacher_focus WHERE teacher_id = $1;
 DELETE FROM teacher_experience WHERE teacher_id = $1;
 
 -- name: CreateTeacher :one
+-- Both the demo seed and POST /v1/teachers insert through here. The seed passes
+-- status = 'approved'; the API create path passes 'pending' so a new profile is
+-- not public until an admin approves it. verified defaults to false.
 INSERT INTO teachers (
     slug, display_name, headline, kind,
     country_code, country_name, city, timezone,
@@ -52,7 +55,7 @@ INSERT INTO teachers (
     rating, review_count, lessons_completed, student_count,
     response_time_hours, accepting_students,
     avatar_url, video_thumbnail_url, intro_video_url, about, teaching_style,
-    user_id
+    user_id, status, verified
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7, $8,
@@ -60,7 +63,7 @@ INSERT INTO teachers (
     $12, $13, $14, $15,
     $16, $17,
     $18, $19, $20, $21, $22,
-    $23
+    $23, $24, $25
 )
 RETURNING id;
 

@@ -97,7 +97,8 @@ func TestHandler_GetBySlug_OK(t *testing.T) {
 	repo := &fakeRepo{bySlug: map[string]*Teacher{
 		"nodira-karimova": {
 			ID: uuid.New(), Slug: "nodira-karimova", DisplayName: "Nodira Karimova",
-			Kind: KindProfessional, PricePerHour: Money{9_000_000, CurrencyUZS}, TrialPrice: &trial,
+			Kind: KindProfessional, Status: StatusApproved,
+			PricePerHour: Money{9_000_000, CurrencyUZS}, TrialPrice: &trial,
 			About:      "para one\n\npara two",
 			Experience: []Experience{{Title: "IELTS instructor", Org: "Cambridge", Period: "2019 – present"}},
 		},

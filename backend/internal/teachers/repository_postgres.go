@@ -180,15 +180,18 @@ func (r *repositoryPostgres) attachExperience(ctx context.Context, ids []uuid.UU
 // children — the caller attaches those).
 func rowToTeacher(row sqlc.Teacher) Teacher {
 	t := Teacher{
-		ID:          row.ID,
-		Slug:        row.Slug,
-		DisplayName: row.DisplayName,
-		Headline:    row.Headline,
-		Kind:        Kind(row.Kind),
-		CountryCode: row.CountryCode,
-		CountryName: row.CountryName,
-		City:        row.City,
-		Timezone:    row.Timezone,
+		ID:             row.ID,
+		Slug:           row.Slug,
+		DisplayName:    row.DisplayName,
+		Headline:       row.Headline,
+		Kind:           Kind(row.Kind),
+		CountryCode:    row.CountryCode,
+		CountryName:    row.CountryName,
+		City:           row.City,
+		Timezone:       row.Timezone,
+		Status:         Status(row.Status),
+		Verified:       row.Verified,
+		ModerationNote: row.ModerationNote,
 		PricePerHour: Money{
 			AmountMinor: row.PricePerHourMinor,
 			Currency:    Currency(row.Currency),
@@ -289,6 +292,10 @@ func (r *repositoryPostgres) Create(ctx context.Context, ownerID uuid.UUID, slug
 		About:             in.About,
 		TeachingStyle:     in.TeachingStyle,
 		UserID:            uuid.NullUUID{UUID: ownerID, Valid: true},
+		// New profiles are not public until an admin approves them, and the
+		// verified badge is never self-granted.
+		Status:   string(StatusPending),
+		Verified: false,
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("create teacher: %w", err)

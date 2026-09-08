@@ -168,7 +168,7 @@ const getBookingTeacherContext = `-- name: GetBookingTeacherContext :one
 SELECT id, slug, display_name, timezone, avatar_url,
        price_per_hour_minor, trial_price_minor, currency, user_id, meeting_url
 FROM teachers
-WHERE slug = $1
+WHERE slug = $1 AND status = 'approved'
 `
 
 type GetBookingTeacherContextRow struct {
@@ -191,6 +191,9 @@ type GetBookingTeacherContextRow struct {
 // frontend lists avoid N+1 calls).
 // Slug -> everything the booking flow needs: identity, timezone, pricing, and
 // the owning account (drives the "can't book yourself" check).
+// Only an approved (publicly visible) teacher can be booked. A non-approved slug
+// returns no rows here, so the booking flow treats it as "no such teacher": 404
+// on GET /v1/teachers/{slug}/slots and 404 teacher_not_found on POST /v1/bookings.
 func (q *Queries) GetBookingTeacherContext(ctx context.Context, slug string) (GetBookingTeacherContextRow, error) {
 	row := q.db.QueryRow(ctx, getBookingTeacherContext, slug)
 	var i GetBookingTeacherContextRow
