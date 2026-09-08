@@ -81,3 +81,8 @@ UPDATE bookings SET status = $2, updated_at = now() WHERE id = $1;
 UPDATE bookings
 SET status = 'cancelled', cancelled_at = now(), cancellation_reason = $2, updated_at = now()
 WHERE id = $1;
+
+-- name: DeleteAllBookings :exec
+-- Seed-only. bookings.teacher_id / student_id reference teachers / users with
+-- no ON DELETE CASCADE, so the seed must clear bookings before those tables.
+DELETE FROM bookings;

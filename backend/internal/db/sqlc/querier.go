@@ -22,6 +22,9 @@ type Querier interface {
 	CreateTeacher(ctx context.Context, arg CreateTeacherParams) (uuid.UUID, error)
 	// Auth module: user accounts and refresh-token sessions.
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	// Seed-only. bookings.teacher_id / student_id reference teachers / users with
+	// no ON DELETE CASCADE, so the seed must clear bookings before those tables.
+	DeleteAllBookings(ctx context.Context) error
 	DeleteAllTeachers(ctx context.Context) error
 	// Seed-only. teachers.user_id references users, so callers must clear teachers
 	// first.

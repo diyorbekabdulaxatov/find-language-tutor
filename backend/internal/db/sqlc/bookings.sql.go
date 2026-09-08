@@ -68,6 +68,17 @@ func (q *Queries) CreateBooking(ctx context.Context, arg CreateBookingParams) (u
 	return id, err
 }
 
+const deleteAllBookings = `-- name: DeleteAllBookings :exec
+DELETE FROM bookings
+`
+
+// Seed-only. bookings.teacher_id / student_id reference teachers / users with
+// no ON DELETE CASCADE, so the seed must clear bookings before those tables.
+func (q *Queries) DeleteAllBookings(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteAllBookings)
+	return err
+}
+
 const getBookingByID = `-- name: GetBookingByID :one
 SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,

@@ -47,7 +47,10 @@ func main() {
 
 	q := sqlc.New(tx)
 
-	// teachers.user_id references users, so clear teachers before users.
+	// FK order: bookings -> teachers/users, teachers.user_id -> users.
+	if err := q.DeleteAllBookings(ctx); err != nil {
+		log.Fatalf("clear bookings: %v", err)
+	}
 	if err := q.DeleteAllTeachers(ctx); err != nil {
 		log.Fatalf("clear teachers: %v", err)
 	}
