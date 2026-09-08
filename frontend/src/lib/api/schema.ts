@@ -246,8 +246,9 @@ export interface paths {
         put?: never;
         /**
          * Book a lesson
-         * @description Creates a booking in `pending_payment`. The server re-derives the bookable slot set and rejects a `start_at` that is not a real, currently free slot; it never trusts a client-supplied price.
+         * @description Creates a booking in `pending_payment` and opens a `requires_payment` payment intent for its price. The server re-derives the bookable slot set and rejects a `start_at` that is not a real, currently free slot; it never trusts a client-supplied price.
          *     `duration_minutes` must be one of 30/60/90/120. When `is_trial` is true the duration is forced to 30 minutes and the price is the teacher's `trial_price_minor` (400 if the teacher offers no trial). You cannot book your own teacher profile.
+         *     The student then calls `POST /v1/bookings/{id}/pay` to authorise payment, which confirms the booking.
          */
         post: operations["createBooking"];
         delete?: never;
@@ -273,7 +274,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/bookings/{id}/confirm": {
+    "/v1/bookings/{id}/pay": {
         parameters: {
             query?: never;
             header?: never;
@@ -283,10 +284,33 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Confirm a booking
-         * @description Moves `pending_payment` -> `confirmed`. Participant-only (student or teacher-owner). A later phase moves this behind payment success. Any other current state -> 409.
+         * Pay for a booking
+         * @description Authorises payment for a `pending_payment` booking and, on success, moves it to `confirmed` (the payment webhook performs the transition). Student-only — only the account that booked the lesson may pay.
+         *     The `method_token` is an opaque payment-method handle. The MVP ships a deterministic fake provider (Stripe does not operate in Uzbekistan); its tokens drive the outcome: `pm_ok` authorises, `pm_decline` is refused (402 `payment_failed`), `pm_capture_fail` authorises but fails the first capture at completion.
+         *     Response is the booking with its embedded `payment` (now `authorized`).
          */
-        post: operations["confirmBooking"];
+        post: operations["payBooking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete a lesson
+         * @description Moves a `confirmed` booking to `completed` and captures the payment, then writes the teacher's payout-ledger entry. Teacher-owner only. Allowed only once the lesson's `end_at` is in the past (409 `too_early` otherwise).
+         *     Capture happens before the status flips, so a capture failure leaves the booking `confirmed` and retryable (502 `capture_failed`).
+         */
+        post: operations["completeBooking"];
         delete?: never;
         options?: never;
         head?: never;
@@ -305,8 +329,52 @@ export interface paths {
         /**
          * Cancel a booking
          * @description Moves `pending_payment` or `confirmed` -> `cancelled`, recording `cancelled_at` and the optional `reason`. Participant-only. For the MVP cancellation is allowed at any time (no window / penalties yet). Already `completed` or `cancelled` -> 409.
+         *     Payment side effects: an `authorized` intent is refunded in full (the hold is released); an intent that was never authorised is voided. If a payout-ledger row exists it is reversed.
          */
         post: operations["cancelBooking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/payments/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Payment provider webhook
+         * @description Receives one provider state-change event. Unauthenticated — a real provider signs the body and the handler verifies the `X-Payment-Signature` header (HMAC-SHA256) when a secret is configured.
+         *     Idempotent by `event_id`: the id is inserted into `payment_events` under its primary key, and a duplicate is treated as already processed. A well-formed event always returns 200, with `applied` telling whether this delivery was the one that ran the effect.
+         *     Events: `payment.authorized` (payment -> authorized, booking `pending_payment` -> `confirmed`), `payment.captured` (payment -> captured, payout-ledger row `held` -> `available`), `payment.refunded` (payment -> refunded, ledger row -> `reversed`), `payment.failed` (payment -> failed).
+         *     The MVP's in-process fake provider reaches the same handler code via an internal sink rather than an HTTP call.
+         */
+        post: operations["paymentsWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/payments/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's teacher earnings summary
+         * @description Aggregates the caller-owned teacher profile's payout-ledger. `held` is money captured but not yet payable, `available` is payable now (the MVP has no clearing window, so a lesson lands `available` the moment it is captured), and reversed lessons are excluded from the totals. 404 if the caller owns no teacher profile.
+         */
+        get: operations["getMyEarnings"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -596,6 +664,70 @@ export interface components {
             cancellation_reason?: string;
             teacher: components["schemas"]["BookingTeacherSummary"];
             student: components["schemas"]["BookingStudentSummary"];
+            /** @description The booking's payment intent. Null when there is none yet, and omitted from list responses (only single-booking responses embed it). */
+            payment: components["schemas"]["BookingPayment"] | null;
+        };
+        /** @description The payment intent embedded in a booking. */
+        BookingPayment: {
+            /** @enum {string} */
+            status: "requires_payment" | "authorized" | "captured" | "refunded" | "failed";
+            /**
+             * Format: int64
+             * @description Integer minor units.
+             */
+            amount_minor: number;
+            currency: string;
+        };
+        PayBookingRequest: {
+            /** @description Opaque payment-method handle. Fake-provider tokens: `pm_ok`, `pm_decline`, `pm_capture_fail`. */
+            method_token: string;
+        };
+        PaymentWebhookEvent: {
+            /** @description Stable per state change; replaying it is a no-op. */
+            event_id: string;
+            /** @enum {string} */
+            type: "payment.authorized" | "payment.captured" | "payment.refunded" | "payment.failed";
+            /** Format: uuid */
+            payment_id: string;
+            /** @description The provider's reference for the intent/charge. */
+            provider_ref?: string;
+            /** Format: int64 */
+            amount_minor?: number;
+            currency?: string;
+            /** @description Human-readable detail */
+            message?: string;
+        };
+        PaymentWebhookAck: {
+            received: boolean;
+            /** @description True when this delivery ran the effect; false for a recognised duplicate. */
+            applied: boolean;
+        };
+        TeacherEarnings: {
+            /**
+             * Format: int64
+             * @description held + available (integer minor units); excludes reversed lessons.
+             */
+            total_earned_minor: number;
+            /** Format: int64 */
+            held_minor: number;
+            /** Format: int64 */
+            available_minor: number;
+            currency: string;
+            lessons: components["schemas"]["EarningLesson"][];
+        };
+        EarningLesson: {
+            /** Format: uuid */
+            booking_id: string;
+            student_display_name: string;
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC.
+             */
+            start_at: string;
+            /** Format: int64 */
+            amount_minor: number;
+            /** @enum {string} */
+            state: "held" | "available" | "reversed";
         };
         BookingList: {
             bookings: components["schemas"]["Booking"][];
@@ -1159,7 +1291,63 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
-    confirmBooking: {
+    payBooking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayBookingRequest"];
+            };
+        };
+        responses: {
+            /** @description The confirmed booking with its authorised payment. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Booking"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The payment method was declined (`payment_failed`). The booking stays `pending_payment`. */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The caller is not the student who booked this lesson (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The booking is already paid (`already_paid`) or is cancelled (`invalid_state`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    completeBooking: {
         parameters: {
             query?: never;
             header?: never;
@@ -1170,7 +1358,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The confirmed booking. */
+            /** @description The completed booking with its captured payment. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1180,10 +1368,27 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
+            /** @description The caller is not the teacher for this lesson (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             404: components["responses"]["NotFound"];
-            /** @description The booking is not in a state that allows confirmation (`invalid_state`). */
+            /** @description The booking is not `confirmed` (`invalid_state`) or the lesson has not ended yet (`too_early`). */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The provider could not capture the hold (`capture_failed`). The booking stays `confirmed`. */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1229,6 +1434,63 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    paymentsWebhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentWebhookEvent"];
+            };
+        };
+        responses: {
+            /** @description The event was accepted (newly applied or a recognised duplicate). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentWebhookAck"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description The webhook signature did not verify. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getMyEarnings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The earnings summary. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherEarnings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
 }

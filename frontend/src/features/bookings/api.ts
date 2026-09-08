@@ -5,11 +5,9 @@
  * view-models.
  */
 
-import { authedFetch, browserApi } from "@/features/auth/browser-client";
+import { browserApi } from "@/features/auth/browser-client";
 import type { components } from "@/lib/api/schema";
 import type { Money } from "@/types/teacher";
-
-const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 export type BookingStatus = components["schemas"]["BookingStatus"];
 
@@ -118,13 +116,9 @@ const money = (m: WireMoney): Money => ({
   currency: m.currency,
 });
 
-/** The generated Booking schema won't carry `payment` until the backend adds it. */
-type WireBookingMaybePayment = WireBooking & {
-  payment?: { status: PaymentStatus; amount: WireMoney } | null;
-};
-
-function toBooking(raw: WireBooking): Booking {
-  const b = raw as WireBookingMaybePayment;
+function toBooking(b: WireBooking): Booking {
+  const wp = (b as { payment?: components["schemas"]["BookingPayment"] | null })
+    .payment;
   return {
     id: b.id,
     status: b.status,
@@ -136,8 +130,14 @@ function toBooking(raw: WireBooking): Booking {
     createdAt: b.created_at,
     cancelledAt: b.cancelled_at,
     cancellationReason: b.cancellation_reason,
-    payment: b.payment
-      ? { status: b.payment.status, amount: money(b.payment.amount) }
+    payment: wp
+      ? {
+          status: wp.status,
+          amount: {
+            amountMinor: wp.amount_minor,
+            currency: wp.currency as Money["currency"],
+          },
+        }
       : null,
     teacher: {
       slug: b.teacher.slug,
@@ -221,82 +221,46 @@ export async function getBooking(id: string): Promise<Booking> {
   return toBooking(data);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Phase 4 — payments. Hand-typed over authedFetch until these land in         */
-/* openapi.yaml; swap to browserApi after `npm run gen:api`.                   */
-/* -------------------------------------------------------------------------- */
-
-async function raw<T>(
-  path: string,
-  init: RequestInit,
-  fallback: string,
-): Promise<T> {
-  const res = await authedFetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init.headers },
-  });
-  const body =
-    res.status === 204 ? undefined : await res.json().catch(() => undefined);
-  if (!res.ok) {
-    const e = body as ErrorBody | undefined;
-    throw new BookingError(
-      e?.error?.message ?? fallback,
-      e?.error?.code ?? "unknown",
-      res.status,
-    );
-  }
-  return body as T;
-}
+/* ---- Phase 4 — payments ---- */
 
 /** Pay for a pending booking — authorizes the hold and confirms the lesson. */
 export async function payBooking(
   id: string,
   methodToken: MethodToken,
 ): Promise<Booking> {
-  const b = await raw<WireBooking>(
-    `/v1/bookings/${encodeURIComponent(id)}/pay`,
-    { method: "POST", body: JSON.stringify({ method_token: methodToken }) },
-    "Payment could not be processed.",
+  const { data, error, response } = await browserApi.POST(
+    "/v1/bookings/{id}/pay",
+    { params: { path: { id } }, body: { method_token: methodToken } },
   );
-  return toBooking(b);
+  if (error || !data) {
+    throw toError(error, response.status, "Payment could not be processed.");
+  }
+  return toBooking(data);
 }
 
 /** Teacher marks a past confirmed lesson complete — captures the payment. */
 export async function completeBooking(id: string): Promise<Booking> {
-  const b = await raw<WireBooking>(
-    `/v1/bookings/${encodeURIComponent(id)}/complete`,
-    { method: "POST", body: "{}" },
-    "Could not mark the lesson complete.",
+  const { data, error, response } = await browserApi.POST(
+    "/v1/bookings/{id}/complete",
+    { params: { path: { id } } },
   );
-  return toBooking(b);
-}
-
-interface WireEarnings {
-  total_earned_minor: number;
-  held_minor: number;
-  available_minor: number;
-  currency: Money["currency"];
-  lessons: {
-    booking_id: string;
-    student_display_name: string;
-    start_at: string;
-    amount_minor: number;
-    state: "held" | "available" | "reversed";
-  }[];
+  if (error || !data) {
+    throw toError(error, response.status, "Could not mark the lesson complete.");
+  }
+  return toBooking(data);
 }
 
 export async function getEarnings(): Promise<EarningsSummary> {
-  const w = await raw<WireEarnings>(
-    "/v1/teachers/me/earnings",
-    { method: "GET" },
-    "Could not load your earnings.",
-  );
-  const cur = w.currency;
+  const { data, error, response } = await browserApi.GET("/v1/payments/me", {});
+  if (error || !data) {
+    throw toError(error, response.status, "Could not load your earnings.");
+  }
+  const cur = data.currency as Money["currency"];
   return {
-    totalEarned: { amountMinor: w.total_earned_minor, currency: cur },
-    held: { amountMinor: w.held_minor, currency: cur },
-    available: { amountMinor: w.available_minor, currency: cur },
-    lessons: w.lessons.map((l) => ({
+    totalEarned: { amountMinor: data.total_earned_minor, currency: cur },
+    held: { amountMinor: data.held_minor, currency: cur },
+    available: { amountMinor: data.available_minor, currency: cur },
+    lessons: data.lessons.map((l) => ({
       bookingId: l.booking_id,
       studentDisplayName: l.student_display_name,
       startAt: l.start_at,

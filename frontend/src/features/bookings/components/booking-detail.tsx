@@ -62,7 +62,9 @@ export function BookingDetail({ id }: { id: string }) {
     setBusy(action);
     setErrorMsg(null);
     try {
-      setBooking(await fn());
+      await fn();
+      // Re-fetch: cancel's response body omits the embedded payment.
+      setBooking(await getBooking(id));
     } catch (err) {
       setErrorMsg(
         err instanceof BookingError
