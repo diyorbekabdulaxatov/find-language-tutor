@@ -126,14 +126,9 @@ const money = (m: WireMoney): Money => ({
 });
 
 function toBooking(b: WireBooking): Booking {
-  // `payment` / `meeting_url` / `review` are absent from list responses; read
-  // defensively. `can_review` / `review` land with the Phase-6 schema regen.
-  const extra = b as {
-    payment?: components["schemas"]["BookingPayment"] | null;
-    can_review?: boolean;
-    review?: { rating: number; comment: string; created_at: string } | null;
-  };
-  const wp = extra.payment;
+  // `payment` / `meeting_url` are absent from list responses; read defensively.
+  const wp = (b as { payment?: components["schemas"]["BookingPayment"] | null })
+    .payment;
   return {
     id: b.id,
     status: b.status,
@@ -156,12 +151,12 @@ function toBooking(b: WireBooking): Booking {
       : null,
     meetingUrl: b.meeting_url ?? "",
     noShowParty: b.no_show_party ?? "",
-    canReview: extra.can_review ?? false,
-    review: extra.review
+    canReview: b.can_review ?? false,
+    review: b.review
       ? {
-          rating: extra.review.rating,
-          comment: extra.review.comment,
-          createdAt: extra.review.created_at,
+          rating: b.review.rating,
+          comment: b.review.comment,
+          createdAt: b.review.created_at,
         }
       : null,
     teacher: {

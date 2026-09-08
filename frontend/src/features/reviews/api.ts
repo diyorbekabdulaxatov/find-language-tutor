@@ -1,15 +1,11 @@
 /**
- * Reviews data-access (browser).
- *
- * NOTE: `GET /v1/teachers/{slug}/reviews` and `POST /v1/bookings/{id}/review`
- * are being added to the backend (Phase 6). Until they land in openapi.yaml +
- * `npm run gen:api`, this uses `authedFetch` with hand-written wire types; swap
- * to the typed `browserApi` once the schema regenerates.
+ * Reviews data-access (browser). `GET /v1/teachers/{slug}/reviews` is public;
+ * `POST /v1/bookings/{id}/review` needs the student's token. Both go through
+ * the generated `browserApi`.
  */
 
-import { authedFetch } from "@/features/auth/browser-client";
-
-const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+import { browserApi } from "@/features/auth/browser-client";
+import type { components } from "@/lib/api/schema";
 
 export interface Review {
   id: string;
@@ -37,37 +33,16 @@ export class ReviewError extends Error {
 
 type ErrorBody = { error?: { code?: string; message?: string } };
 
-async function call<T>(
-  path: string,
-  init: RequestInit,
-  fallback: string,
-): Promise<T> {
-  const res = await authedFetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init.headers },
-  });
-  const body =
-    res.status === 204 ? undefined : await res.json().catch(() => undefined);
-  if (!res.ok) {
-    const e = body as ErrorBody | undefined;
-    throw new ReviewError(
-      e?.error?.message ?? fallback,
-      e?.error?.code ?? "unknown",
-      res.status,
-    );
-  }
-  return body as T;
+function toError(error: unknown, status: number, fallback: string): ReviewError {
+  const b = error as ErrorBody | undefined;
+  return new ReviewError(
+    b?.error?.message ?? fallback,
+    b?.error?.code ?? "unknown",
+    status,
+  );
 }
 
-interface WireReview {
-  id: string;
-  rating: number;
-  comment: string;
-  created_at: string;
-  student_display_name: string;
-}
-
-const toReview = (r: WireReview): Review => ({
+const toReview = (r: components["schemas"]["ReviewListItem"]): Review => ({
   id: r.id,
   rating: r.rating,
   comment: r.comment,
@@ -80,25 +55,28 @@ export async function getTeacherReviews(
   page = 1,
   pageSize = 10,
 ): Promise<ReviewPage> {
-  const q = new URLSearchParams({
-    page: String(page),
-    page_size: String(pageSize),
-  });
-  const w = await call<{ reviews: WireReview[]; total: number }>(
-    `/v1/teachers/${encodeURIComponent(slug)}/reviews?${q}`,
-    { method: "GET" },
-    "Could not load reviews.",
+  const { data, error, response } = await browserApi.GET(
+    "/v1/teachers/{slug}/reviews",
+    { params: { path: { slug }, query: { page, page_size: pageSize } } },
   );
-  return { reviews: w.reviews.map(toReview), total: w.total };
+  if (error || !data) {
+    throw toError(error, response.status, "Could not load reviews.");
+  }
+  return { reviews: data.reviews.map(toReview), total: data.total };
 }
 
 export async function submitReview(
   bookingId: string,
   input: { rating: number; comment: string },
 ): Promise<void> {
-  await call<unknown>(
-    `/v1/bookings/${encodeURIComponent(bookingId)}/review`,
-    { method: "POST", body: JSON.stringify(input) },
-    "Could not submit your review.",
+  const { error, response } = await browserApi.POST(
+    "/v1/bookings/{id}/review",
+    {
+      params: { path: { id: bookingId } },
+      body: { rating: input.rating, comment: input.comment },
+    },
   );
+  if (error) {
+    throw toError(error, response.status, "Could not submit your review.");
+  }
 }

@@ -231,6 +231,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/teachers/{slug}/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a teacher's reviews
+         * @description Public. Newest first. A seeded catalog also returns a sample of booking-less rows that stand in for the teacher's historical review history behind the hand-set `rating` / `review_count` aggregate.
+         */
+        get: operations["listTeacherReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/bookings": {
         parameters: {
             query?: never;
@@ -375,6 +395,27 @@ export interface paths {
          *     `party = "teacher"` — the teacher self-reports they could not attend: the booking moves to `cancelled`, `no_show_party = teacher`, and the student is refunded (identical to `cancel`).
          */
         post: operations["recordBookingNoShow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review a completed lesson
+         * @description Student-only — only the `student_id` on the booking may call this (403 otherwise). The booking must be `completed` (409 `booking_not_completed`) and may be reviewed only once (409 `already_reviewed`).
+         *     On success the review is inserted and the teacher's display aggregate is nudged in the same transaction: `review_count += 1` and `rating = round((rating*review_count + new_rating) / (review_count + 1), 1)`, clamped to [0, 5]. `comment` is trimmed, optional, and capped at 2000 characters.
+         */
+        post: operations["createBookingReview"];
         delete?: never;
         options?: never;
         head?: never;
@@ -716,6 +757,10 @@ export interface components {
              * @enum {string}
              */
             no_show_party: "" | "student" | "teacher";
+            /** @description True only when the caller is the student, `status` is `completed`, and no review exists yet — the frontend shows the post-lesson review prompt off this without a second call. */
+            can_review: boolean;
+            /** @description The caller's review of this booking if one exists (visible to both participants); null otherwise. */
+            review: components["schemas"]["BookingReview"] | null;
             teacher: components["schemas"]["BookingTeacherSummary"];
             student: components["schemas"]["BookingStudentSummary"];
             /** @description The booking's payment intent. Null when there is none yet, and omitted from list responses (only single-booking responses embed it). */
@@ -818,6 +863,53 @@ export interface components {
              * @enum {string}
              */
             party: "student" | "teacher";
+        };
+        /** @description The review attached to a booking, embedded in booking responses. */
+        BookingReview: {
+            rating: number;
+            comment: string;
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC.
+             */
+            created_at: string;
+        };
+        CreateReviewRequest: {
+            rating: number;
+            /** @description Optional, trimmed, at most 2000 characters. */
+            comment?: string;
+        };
+        CreatedReview: {
+            /** Format: uuid */
+            id: string;
+            rating: number;
+            comment: string;
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC.
+             */
+            created_at: string;
+            student: {
+                display_name: string;
+            };
+            teacher_slug: string;
+        };
+        ReviewListItem: {
+            /** Format: uuid */
+            id: string;
+            rating: number;
+            comment: string;
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC.
+             */
+            created_at: string;
+            student_display_name: string;
+        };
+        ReviewList: {
+            reviews: components["schemas"]["ReviewListItem"][];
+            /** @description Total reviews for the teacher (not just this page). */
+            total: number;
         };
     };
     responses: {
@@ -1271,6 +1363,33 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listTeacherReviews: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the teacher's reviews. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listBookings: {
         parameters: {
             query?: {
@@ -1576,6 +1695,53 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             /** @description The booking is not `confirmed` (`invalid_state`) or the lesson has not started yet (`too_early`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createBookingReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description The created review. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedReview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The caller is not the student on this booking (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The booking is not `completed` (`booking_not_completed`) or has already been reviewed (`already_reviewed`). */
             409: {
                 headers: {
                     [name: string]: unknown;
