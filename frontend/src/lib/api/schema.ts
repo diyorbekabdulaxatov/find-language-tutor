@@ -208,6 +208,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/teachers/{slug}/slots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a teacher's concrete bookable start times
+         * @description Projects the teacher's recurring weekly availability (`teacher_availability_slots`, stored as UTC minutes-from-midnight on a UTC weekday) onto real UTC datetimes across `[from, to]`, then removes any start that collides with an existing non-cancelled booking.
+         *     Window rules: `from` defaults to now (and is clamped forward to now), `to` defaults to `from + 14 days`, and `to - from` may not exceed 21 days (400 otherwise). Slots are never generated in the past.
+         *     A start time is included only if `[start, start + duration]` fits entirely inside one availability window. Windows the frontend split across 00:00 UTC are stitched back together first, so a lesson may legitimately straddle UTC midnight. Candidate starts step every 30 minutes from the start of each window.
+         *     `price.amount_minor = round(price_per_hour_minor * duration / 60)` in integer minor units, rounded half-up.
+         */
+        get: operations["listTeacherSlots"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the caller's bookings
+         * @description With no `role`, returns every booking the caller participates in (as student or as the owner of the teacher profile). `role=student` limits it to bookings the caller booked; `role=teacher` to bookings for the teacher profile the caller owns (empty if they own none). Newest lesson first. Optional `status` filter.
+         */
+        get: operations["listBookings"];
+        put?: never;
+        /**
+         * Book a lesson
+         * @description Creates a booking in `pending_payment`. The server re-derives the bookable slot set and rejects a `start_at` that is not a real, currently free slot; it never trusts a client-supplied price.
+         *     `duration_minutes` must be one of 30/60/90/120. When `is_trial` is true the duration is forced to 30 minutes and the price is the teacher's `trial_price_minor` (400 if the teacher offers no trial). You cannot book your own teacher profile.
+         */
+        post: operations["createBooking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one booking */
+        get: operations["getBooking"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm a booking
+         * @description Moves `pending_payment` -> `confirmed`. Participant-only (student or teacher-owner). A later phase moves this behind payment success. Any other current state -> 409.
+         */
+        post: operations["confirmBooking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a booking
+         * @description Moves `pending_payment` or `confirmed` -> `cancelled`, recording `cancelled_at` and the optional `reason`. Participant-only. For the MVP cancellation is allowed at any time (no window / penalties yet). Already `completed` or `cancelled` -> 409.
+         */
+        post: operations["cancelBooking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -414,6 +519,108 @@ export interface components {
         /** @description The full weekly set to store. An empty array clears availability. */
         AvailabilityReplacement: {
             slots: components["schemas"]["AvailabilitySlot"][];
+        };
+        /** @enum {string} */
+        BookingStatus: "pending_payment" | "confirmed" | "completed" | "cancelled";
+        /** @description One concrete bookable start time with its price. */
+        Slot: {
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC.
+             */
+            start_at: string;
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC — start_at + duration.
+             */
+            end_at: string;
+            price: components["schemas"]["Money"];
+        };
+        TeacherSlots: {
+            teacher_slug: string;
+            /** @description The teacher's IANA timezone, for display only — the slot math is pure UTC. */
+            timezone: string;
+            /**
+             * Format: date-time
+             * @description Effective window start (RFC3339 UTC).
+             */
+            from: string;
+            /**
+             * Format: date-time
+             * @description Effective window end (RFC3339 UTC).
+             */
+            to: string;
+            /** @enum {integer} */
+            duration_minutes: 30 | 60 | 90 | 120;
+            /** @description Ordered by start_at. */
+            slots: components["schemas"]["Slot"][];
+        };
+        /** @description Light teacher summary embedded in a booking so lists avoid N+1 calls. */
+        BookingTeacherSummary: {
+            slug: string;
+            display_name: string;
+            /** @description IANA name. */
+            timezone: string;
+            avatar_url: string;
+        };
+        BookingStudentSummary: {
+            /** Format: uuid */
+            id: string;
+            display_name: string;
+        };
+        Booking: {
+            /** Format: uuid */
+            id: string;
+            status: components["schemas"]["BookingStatus"];
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC.
+             */
+            start_at: string;
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC.
+             */
+            end_at: string;
+            duration_minutes: number;
+            is_trial: boolean;
+            price: components["schemas"]["Money"];
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description Set when status is `cancelled`, otherwise null.
+             */
+            cancelled_at: string | null;
+            /** @description Present (may be empty) only once cancelled; omitted otherwise. */
+            cancellation_reason?: string;
+            teacher: components["schemas"]["BookingTeacherSummary"];
+            student: components["schemas"]["BookingStudentSummary"];
+        };
+        BookingList: {
+            bookings: components["schemas"]["Booking"][];
+        };
+        CreateBookingRequest: {
+            teacher_slug: string;
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC. Must be in the future and a real bookable slot.
+             */
+            start_at: string;
+            /**
+             * @description Ignored when is_trial is true (forced to 30).
+             * @enum {integer}
+             */
+            duration_minutes: 30 | 60 | 90 | 120;
+            /**
+             * @description A trial lesson — 30 minutes, priced at the teacher's trial_price.
+             * @default false
+             */
+            is_trial: boolean;
+        };
+        /** @description Optional body. Omit entirely for a reason-less cancellation. */
+        CancelBookingRequest: {
+            reason?: string;
         };
     };
     responses: {
@@ -834,6 +1041,194 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listTeacherSlots: {
+        parameters: {
+            query?: {
+                /** @description RFC3339 UTC. Defaults to now. */
+                from?: string;
+                /** @description RFC3339 UTC. Defaults to from + 14 days. Max span 21 days. */
+                to?: string;
+                /** @description Lesson length in minutes. */
+                duration?: 30 | 60 | 90 | 120;
+            };
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The bookable start times in the window. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeacherSlots"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listBookings: {
+        parameters: {
+            query?: {
+                role?: "student" | "teacher";
+                status?: components["schemas"]["BookingStatus"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The matching bookings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createBooking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBookingRequest"];
+            };
+        };
+        responses: {
+            /** @description The created booking. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Booking"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The slot is not bookable (`slot_unavailable` — outside availability, misaligned, in the past, or already taken) or was taken by a concurrent request between the check and the insert (`slot_taken`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getBooking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The booking. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Booking"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    confirmBooking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The confirmed booking. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Booking"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The booking is not in a state that allows confirmation (`invalid_state`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    cancelBooking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CancelBookingRequest"];
+            };
+        };
+        responses: {
+            /** @description The cancelled booking. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Booking"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The booking is already completed or cancelled (`invalid_state`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
 }

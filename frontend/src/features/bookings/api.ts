@@ -1,22 +1,15 @@
 /**
  * Bookings data-access (browser). Slots is public; everything else needs auth.
- *
- * NOTE: `POST /v1/bookings`, `GET /v1/bookings`, etc. are being added to the
- * backend (Phase 3). Until they land in openapi.yaml + `npm run gen:api`, this
- * uses `authedFetch` with hand-written wire types that match the agreed
- * contract; swap to the typed `browserApi` once the schema regenerates.
+ * All calls go through the generated `browserApi` (Bearer + cookie + 401
+ * refresh-retry); the mappers turn the snake_case wire shapes into camelCase
+ * view-models.
  */
 
-import { authedFetch } from "@/features/auth/browser-client";
+import { browserApi } from "@/features/auth/browser-client";
+import type { components } from "@/lib/api/schema";
 import type { Money } from "@/types/teacher";
 
-const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
-
-export type BookingStatus =
-  | "pending_payment"
-  | "confirmed"
-  | "completed"
-  | "cancelled";
+export type BookingStatus = components["schemas"]["BookingStatus"];
 
 export const DURATION_OPTIONS = [30, 60, 90, 120] as const;
 export type Duration = (typeof DURATION_OPTIONS)[number];
@@ -68,44 +61,22 @@ export class BookingError extends Error {
   }
 }
 
-/* ---- wire (snake_case) shapes ---- */
+type ErrorBody = { error?: { code?: string; message?: string } };
 
-interface WireMoney {
-  amount_minor: number;
-  currency: Money["currency"];
+function toError(error: unknown, status: number, fallback: string): BookingError {
+  const b = error as ErrorBody | undefined;
+  return new BookingError(
+    b?.error?.message ?? fallback,
+    b?.error?.code ?? "unknown",
+    status,
+  );
 }
-interface WireSlot {
-  start_at: string;
-  end_at: string;
-  price: WireMoney;
-}
-interface WireSlots {
-  teacher_slug: string;
-  timezone: string;
-  from: string;
-  to: string;
-  duration_minutes: number;
-  slots: WireSlot[];
-}
-interface WireBooking {
-  id: string;
-  status: BookingStatus;
-  start_at: string;
-  end_at: string;
-  duration_minutes: number;
-  is_trial: boolean;
-  price: WireMoney;
-  created_at: string;
-  cancelled_at: string | null;
-  cancellation_reason?: string;
-  teacher: {
-    slug: string;
-    display_name: string;
-    timezone: string;
-    avatar_url: string;
-  };
-  student: { id: string; display_name: string };
-}
+
+/* ---- wire -> view-model ---- */
+
+type WireMoney = components["schemas"]["Money"];
+type WireSlot = components["schemas"]["Slot"];
+type WireBooking = components["schemas"]["Booking"];
 
 const money = (m: WireMoney): Money => ({
   amountMinor: m.amount_minor,
@@ -134,46 +105,29 @@ function toBooking(b: WireBooking): Booking {
   };
 }
 
-async function call<T>(
-  path: string,
-  init: RequestInit,
-  fallback: string,
-): Promise<T> {
-  const res = await authedFetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init.headers },
-  });
-  const body = res.status === 204 ? undefined : await res.json().catch(() => undefined);
-  if (!res.ok) {
-    const err = body as { error?: { code?: string; message?: string } } | undefined;
-    throw new BookingError(
-      err?.error?.message ?? fallback,
-      err?.error?.code ?? "unknown",
-      res.status,
-    );
-  }
-  return body as T;
-}
-
 export async function getSlots(
   slug: string,
-  opts: { from?: string; to?: string; duration: number },
+  opts: { from?: string; to?: string; duration: Duration },
 ): Promise<SlotsResult> {
-  const q = new URLSearchParams({ duration: String(opts.duration) });
-  if (opts.from) q.set("from", opts.from);
-  if (opts.to) q.set("to", opts.to);
-  const w = await call<WireSlots>(
-    `/v1/teachers/${encodeURIComponent(slug)}/slots?${q}`,
-    { method: "GET" },
-    "Could not load available times.",
+  const { data, error, response } = await browserApi.GET(
+    "/v1/teachers/{slug}/slots",
+    {
+      params: {
+        path: { slug },
+        query: { from: opts.from, to: opts.to, duration: opts.duration },
+      },
+    },
   );
+  if (error || !data) {
+    throw toError(error, response.status, "Could not load available times.");
+  }
   return {
-    teacherSlug: w.teacher_slug,
-    timezone: w.timezone,
-    from: w.from,
-    to: w.to,
-    durationMinutes: w.duration_minutes,
-    slots: w.slots.map((s) => ({
+    teacherSlug: data.teacher_slug,
+    timezone: data.timezone,
+    from: data.from,
+    to: data.to,
+    durationMinutes: data.duration_minutes,
+    slots: data.slots.map((s: WireSlot) => ({
       startAt: s.start_at,
       endAt: s.end_at,
       price: money(s.price),
@@ -184,63 +138,66 @@ export async function getSlots(
 export async function createBooking(input: {
   teacherSlug: string;
   startAt: string;
-  durationMinutes: number;
+  durationMinutes: Duration;
   isTrial?: boolean;
 }): Promise<Booking> {
-  const w = await call<WireBooking>(
-    "/v1/bookings",
-    {
-      method: "POST",
-      body: JSON.stringify({
-        teacher_slug: input.teacherSlug,
-        start_at: input.startAt,
-        duration_minutes: input.durationMinutes,
-        is_trial: input.isTrial ?? false,
-      }),
+  const { data, error, response } = await browserApi.POST("/v1/bookings", {
+    body: {
+      teacher_slug: input.teacherSlug,
+      start_at: input.startAt,
+      duration_minutes: input.durationMinutes,
+      is_trial: input.isTrial ?? false,
     },
-    "Could not create the booking.",
-  );
-  return toBooking(w);
+  });
+  if (error || !data) {
+    throw toError(error, response.status, "Could not create the booking.");
+  }
+  return toBooking(data);
 }
 
 export async function listBookings(
   role?: "student" | "teacher",
 ): Promise<Booking[]> {
-  const q = role ? `?role=${role}` : "";
-  const w = await call<{ bookings: WireBooking[] }>(
-    `/v1/bookings${q}`,
-    { method: "GET" },
-    "Could not load your bookings.",
-  );
-  return w.bookings.map(toBooking);
+  const { data, error, response } = await browserApi.GET("/v1/bookings", {
+    params: { query: role ? { role } : {} },
+  });
+  if (error || !data) {
+    throw toError(error, response.status, "Could not load your bookings.");
+  }
+  return data.bookings.map(toBooking);
 }
 
 export async function getBooking(id: string): Promise<Booking> {
-  const w = await call<WireBooking>(
-    `/v1/bookings/${encodeURIComponent(id)}`,
-    { method: "GET" },
-    "Could not load that booking.",
-  );
-  return toBooking(w);
+  const { data, error, response } = await browserApi.GET("/v1/bookings/{id}", {
+    params: { path: { id } },
+  });
+  if (error || !data) {
+    throw toError(error, response.status, "Could not load that booking.");
+  }
+  return toBooking(data);
 }
 
 export async function confirmBooking(id: string): Promise<Booking> {
-  const w = await call<WireBooking>(
-    `/v1/bookings/${encodeURIComponent(id)}/confirm`,
-    { method: "POST", body: "{}" },
-    "Could not confirm the booking.",
+  const { data, error, response } = await browserApi.POST(
+    "/v1/bookings/{id}/confirm",
+    { params: { path: { id } } },
   );
-  return toBooking(w);
+  if (error || !data) {
+    throw toError(error, response.status, "Could not confirm the booking.");
+  }
+  return toBooking(data);
 }
 
 export async function cancelBooking(
   id: string,
   reason?: string,
 ): Promise<Booking> {
-  const w = await call<WireBooking>(
-    `/v1/bookings/${encodeURIComponent(id)}/cancel`,
-    { method: "POST", body: JSON.stringify({ reason: reason ?? "" }) },
-    "Could not cancel the booking.",
+  const { data, error, response } = await browserApi.POST(
+    "/v1/bookings/{id}/cancel",
+    { params: { path: { id } }, body: reason ? { reason } : {} },
   );
-  return toBooking(w);
+  if (error || !data) {
+    throw toError(error, response.status, "Could not cancel the booking.");
+  }
+  return toBooking(data);
 }

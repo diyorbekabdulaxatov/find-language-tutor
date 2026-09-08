@@ -8,6 +8,7 @@ import {
   DURATION_OPTIONS,
   getSlots,
   type BookableSlot,
+  type Duration,
 } from "@/features/bookings/api";
 import {
   formatTime,
@@ -20,7 +21,7 @@ const TRIAL_DURATION = 30;
 
 export interface SlotSelection {
   slot: BookableSlot;
-  durationMinutes: number;
+  durationMinutes: Duration;
   isTrial: boolean;
 }
 
@@ -36,7 +37,7 @@ export function SlotPicker({
   onPick: (sel: SlotSelection) => void;
 }) {
   const viewerTz = useMemo(() => viewerTimezone(), []);
-  const [duration, setDuration] = useState<number>(
+  const [duration, setDuration] = useState<Duration>(
     isTrial ? TRIAL_DURATION : 60,
   );
   const [slots, setSlots] = useState<BookableSlot[]>([]);

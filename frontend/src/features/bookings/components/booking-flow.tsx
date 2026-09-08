@@ -69,8 +69,13 @@ export function BookingFlow({
       setStep("done");
     } catch (err) {
       setSubmitting(false);
-      if (err instanceof BookingError && err.code === "slot_taken") {
-        setError("Sorry — someone just booked that time. Pick another.");
+      if (
+        err instanceof BookingError &&
+        (err.code === "slot_taken" || err.code === "slot_unavailable")
+      ) {
+        setError(
+          "That time isn't available any more — someone may have just booked it. Pick another.",
+        );
         setStep("pick");
         return;
       }
