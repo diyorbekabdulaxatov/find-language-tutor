@@ -8,6 +8,7 @@ export interface AuthUser {
   id: string;
   email: string;
   displayName: string;
+  role: "user" | "admin";
 }
 
 /** What a successful register / login / refresh gives the client. */

@@ -11,6 +11,7 @@ import { LocalTime } from "@/features/teachers/components/local-time";
 import { IntroVideo } from "@/features/teachers/components/intro-video";
 import { BookingPanel } from "@/features/teachers/components/booking-panel";
 import { ReviewsSection } from "@/features/reviews/components/reviews-section";
+import { VerifiedBadge } from "@/features/teachers/components/verified-badge";
 import { photoUrl } from "@/features/teachers/components/teacher-avatar";
 import { greetingFor, localTimeIn } from "@/lib/i18n";
 import { flagEmoji } from "@/lib/country";
@@ -98,7 +99,10 @@ export default async function TeacherProfilePage({
                   {flagEmoji(teacher.countryCode)}
                 </span>
               </h1>
-              <p className="mt-1 text-muted-foreground">{kindLabel}</p>
+              <p className="mt-1 flex items-center gap-2 text-muted-foreground">
+                {kindLabel}
+                {teacher.verified && <VerifiedBadge withLabel />}
+              </p>
 
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
                 <Rating value={teacher.rating} reviewCount={teacher.reviewCount} />

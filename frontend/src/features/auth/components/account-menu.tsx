@@ -13,6 +13,7 @@ import {
   CalendarDays,
   LayoutDashboard,
   LogOut,
+  Shield,
   User as UserIcon,
 } from "lucide-react";
 import { useAuth } from "@/features/auth/auth-context";
@@ -105,6 +106,17 @@ export function AccountMenu() {
             Account settings
           </Link>
         </DropdownMenuItem>
+        {user.role === "admin" && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href="/admin">
+                <Shield />
+                Admin
+              </Link>
+            </DropdownMenuItem>
+          </>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={handleLogout}>
           <LogOut />

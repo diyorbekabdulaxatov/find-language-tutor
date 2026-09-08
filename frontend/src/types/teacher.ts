@@ -74,7 +74,15 @@ export interface TeacherSummary {
   responseTimeHours: number;
   /** teacher currently accepting new students */
   acceptingStudents: boolean;
+  /** platform-verified teacher (badge) */
+  verified: boolean;
 }
+
+export type TeacherModerationStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "suspended";
 
 /** Everything on a full profile page. Extends the summary with long-form content. */
 export interface TeacherProfile extends TeacherSummary {
@@ -89,6 +97,11 @@ export interface TeacherProfile extends TeacherSummary {
   trialPrice?: Money;
   /** default video-room link; surfaced on a booking only once confirmed */
   meetingUrl: string;
+  /** moderation status — "approved" for any publicly visible profile; the
+   *  owner's own /me response also returns pending/rejected/suspended */
+  status: TeacherModerationStatus;
+  /** admin's reason on reject/suspend (shown to the owner) */
+  moderationNote: string;
 }
 
 export interface ExperienceItem {

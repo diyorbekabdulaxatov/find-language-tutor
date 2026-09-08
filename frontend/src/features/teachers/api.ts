@@ -1,4 +1,9 @@
-import type { TeacherProfile, TeacherSummary, Money } from "@/types/teacher";
+import type {
+  Money,
+  TeacherModerationStatus,
+  TeacherProfile,
+  TeacherSummary,
+} from "@/types/teacher";
 import { api, type ApiSchemas } from "@/lib/api/client";
 
 /**
@@ -135,10 +140,16 @@ export function toSummary(t: ApiSchemas["TeacherSummary"]): TeacherSummary {
     focus: t.focus,
     responseTimeHours: t.response_time_hours,
     acceptingStudents: t.accepting_students,
+    // `verified` / `status` land with the admin-phase schema regen.
+    verified: (t as { verified?: boolean }).verified ?? false,
   };
 }
 
 export function toProfile(t: ApiSchemas["TeacherProfile"]): TeacherProfile {
+  const extra = t as {
+    status?: TeacherModerationStatus;
+    moderation_note?: string;
+  };
   return {
     ...toSummary(t),
     introVideoUrl: t.intro_video_url,
@@ -147,6 +158,8 @@ export function toProfile(t: ApiSchemas["TeacherProfile"]): TeacherProfile {
     experience: t.experience,
     trialPrice: t.trial_price ? toMoney(t.trial_price) : undefined,
     meetingUrl: t.meeting_url ?? "",
+    status: extra.status ?? "approved",
+    moderationNote: extra.moderation_note ?? "",
   };
 }
 

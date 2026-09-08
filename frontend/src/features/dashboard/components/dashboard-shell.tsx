@@ -62,6 +62,8 @@ export function DashboardShell() {
         </p>
       )}
 
+      {state === "ready" && profile && <ModerationBanner profile={profile} />}
+
       {state === "ready" && (
         <Tabs defaultValue="profile">
           <TabsList>
@@ -97,6 +99,41 @@ export function DashboardShell() {
           </TabsContent>
         </Tabs>
       )}
+    </div>
+  );
+}
+
+function ModerationBanner({ profile }: { profile: TeacherProfile }) {
+  if (profile.status === "approved") return null;
+
+  const copy: Record<string, { title: string; body: string; tone: string }> = {
+    pending: {
+      title: "Your profile is awaiting review",
+      body: "It isn't visible to students yet. We usually review new profiles within a day.",
+      tone: "bg-star/10 text-star",
+    },
+    rejected: {
+      title: "Your profile wasn't approved",
+      body:
+        profile.moderationNote ||
+        "Please update your profile and it will be reviewed again.",
+      tone: "bg-destructive/10 text-destructive",
+    },
+    suspended: {
+      title: "Your profile is suspended",
+      body:
+        profile.moderationNote ||
+        "Contact support to resolve this. Existing bookings are unaffected.",
+      tone: "bg-destructive/10 text-destructive",
+    },
+  };
+  const c = copy[profile.status];
+  if (!c) return null;
+
+  return (
+    <div className={`mb-6 rounded-xl px-4 py-3 text-sm ${c.tone}`}>
+      <div className="font-semibold">{c.title}</div>
+      <div className="mt-0.5 opacity-90">{c.body}</div>
     </div>
   );
 }

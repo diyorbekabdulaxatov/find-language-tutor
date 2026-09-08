@@ -7,6 +7,7 @@ import { flagEmoji } from "@/lib/country";
 import { formatMoney } from "@/lib/format";
 import { photoUrl } from "./teacher-avatar";
 import { Rating } from "./rating";
+import { VerifiedBadge } from "./verified-badge";
 
 /**
  * Grid card for the listing and the home page. The whole card is a link; the
@@ -58,8 +59,9 @@ export function TeacherCard({
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="font-display text-lg leading-tight text-foreground">
+          <h3 className="inline-flex items-center gap-1 font-display text-lg leading-tight text-foreground">
             {teacher.displayName}
+            {teacher.verified && <VerifiedBadge />}
           </h3>
           <span className="mt-0.5 shrink-0 text-base" title={teacher.countryName}>
             {flagEmoji(teacher.countryCode)}
