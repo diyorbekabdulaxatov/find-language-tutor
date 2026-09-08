@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import type { LanguageLevel } from "@/types/teacher";
 import {
@@ -37,6 +38,7 @@ export function ProfileEditor({
   initial: TeacherProfile | null;
   onSaved: (p: TeacherProfile) => void;
 }) {
+  const router = useRouter();
   const isCreate = initial === null;
   const [values, setValues] = useState<ProfileFormValues>(
     initial ? profileToForm(initial) : emptyProfileForm(),
@@ -63,6 +65,11 @@ export function ProfileEditor({
       setValues(profileToForm(saved));
       setStatus("saved");
       onSaved(saved);
+      // Show the live public profile so the teacher sees the result.
+      // refresh() re-renders the destination's server components with fresh
+      // data instead of a cached copy.
+      router.push(`/teachers/${saved.slug}`);
+      router.refresh();
     } catch (err) {
       setStatus("idle");
       setError(
