@@ -1,14 +1,13 @@
+import Link from "next/link";
 import { CalendarCheck, Clock, ShieldCheck } from "lucide-react";
 import type { TeacherProfile } from "@/types/teacher";
 import { formatMoney, formatResponseTime } from "@/lib/format";
 
 /**
  * The price + book actions. Sticky on desktop (positioned by the profile page),
- * a plain block on mobile. The buttons are inert until the booking flow exists.
+ * a plain block on mobile. "Book" links into the /teachers/[slug]/book flow.
  */
 export function BookingPanel({ teacher }: { teacher: TeacherProfile }) {
-  const firstName = teacher.displayName.split(" ")[0];
-
   return (
     <div className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-card">
       <div className="flex items-end gap-1.5">
@@ -27,27 +26,28 @@ export function BookingPanel({ teacher }: { teacher: TeacherProfile }) {
       <div className="mt-5 space-y-2.5">
         {teacher.acceptingStudents ? (
           <>
-            <button className="h-12 w-full rounded-xl bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
+            <Link
+              href={`/teachers/${teacher.slug}/book`}
+              className="flex h-12 w-full items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+            >
               Book a lesson
-            </button>
+            </Link>
             {teacher.trialPrice && (
-              <button className="h-12 w-full rounded-xl bg-coral/12 text-sm font-semibold text-coral transition-colors hover:bg-coral/20">
+              <Link
+                href={`/teachers/${teacher.slug}/book?trial=1`}
+                className="flex h-12 w-full items-center justify-center rounded-xl bg-coral/12 text-sm font-semibold text-coral transition-colors hover:bg-coral/20"
+              >
                 Book a trial lesson
-              </button>
+              </Link>
             )}
           </>
         ) : (
-          <>
-            <button
-              disabled
-              className="h-12 w-full cursor-not-allowed rounded-xl bg-secondary text-sm font-semibold text-muted-foreground"
-            >
-              Not taking new students
-            </button>
-            <button className="h-12 w-full rounded-xl bg-secondary text-sm font-semibold text-foreground transition-colors hover:bg-accent">
-              Message {firstName}
-            </button>
-          </>
+          <button
+            disabled
+            className="h-12 w-full cursor-not-allowed rounded-xl bg-secondary text-sm font-semibold text-muted-foreground"
+          >
+            Not taking new students
+          </button>
         )}
       </div>
 

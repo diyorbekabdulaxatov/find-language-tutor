@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { SlidersHorizontal, X } from "lucide-react";
 import type { TeacherListResult, TeacherSort } from "@/features/teachers/api";
@@ -12,6 +12,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
 const SORT_OPTIONS: { value: TeacherSort; label: string }[] = [
@@ -43,6 +50,7 @@ export function TeacherFilters({
   const pathname = usePathname();
   const params = useSearchParams();
   const [isPending, startTransition] = useTransition();
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const commit = useCallback(
     (mutate: (next: URLSearchParams) => void) => {
@@ -73,14 +81,108 @@ export function TeacherFilters({
   const max = Number(params.get("max") ?? PRICE_MAX);
   const priceActive = Boolean(params.get("max"));
   const hasFilters = Boolean(lang || kind || priceActive);
+  const activeCount = [lang, kind, priceActive ? "1" : ""].filter(
+    Boolean,
+  ).length;
+
+  const controls = (
+    <FilterControls
+      facets={facets}
+      lang={lang}
+      kind={kind}
+      sort={sort}
+      max={max}
+      priceActive={priceActive}
+      hasFilters={hasFilters}
+      params={params}
+      pathname={pathname}
+      router={router}
+      commit={commit}
+      setParam={setParam}
+    />
+  );
 
   return (
-    <div
-      className={cn(
-        "rounded-2xl bg-card p-4 ring-1 ring-border shadow-soft transition-opacity sm:p-5",
-        isPending && "opacity-60",
-      )}
-    >
+    <>
+      {/* Mobile: a bar that opens the filters in a bottom sheet. */}
+      <div className="lg:hidden">
+        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+          <SheetTrigger asChild>
+            <button
+              type="button"
+              className="flex w-full items-center justify-between rounded-2xl bg-card px-4 py-3 text-sm font-medium ring-1 ring-border shadow-soft"
+            >
+              <span className="inline-flex items-center gap-2">
+                <SlidersHorizontal className="size-4" />
+                Filters &amp; sort
+              </span>
+              {activeCount > 0 && (
+                <span className="inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                  {activeCount}
+                </span>
+              )}
+            </button>
+          </SheetTrigger>
+          <SheetContent side="bottom">
+            <SheetHeader>
+              <SheetTitle>Filters &amp; sort</SheetTitle>
+            </SheetHeader>
+            {controls}
+            <button
+              type="button"
+              onClick={() => setSheetOpen(false)}
+              className="mt-2 h-10 w-full rounded-lg bg-primary text-sm font-semibold text-primary-foreground"
+            >
+              Show results
+            </button>
+          </SheetContent>
+        </Sheet>
+      </div>
+
+      {/* Desktop: the panel inline. */}
+      <div
+        className={cn(
+          "hidden rounded-2xl bg-card p-4 ring-1 ring-border shadow-soft transition-opacity sm:p-5 lg:block",
+          isPending && "opacity-60",
+        )}
+      >
+        {controls}
+      </div>
+    </>
+  );
+}
+
+type Commit = (mutate: (next: URLSearchParams) => void) => void;
+
+function FilterControls({
+  facets,
+  lang,
+  kind,
+  sort,
+  max,
+  priceActive,
+  hasFilters,
+  params,
+  pathname,
+  router,
+  commit,
+  setParam,
+}: {
+  facets: TeacherListResult["facets"];
+  lang: string;
+  kind: string;
+  sort: TeacherSort;
+  max: number;
+  priceActive: boolean;
+  hasFilters: boolean;
+  params: URLSearchParams;
+  pathname: string;
+  router: ReturnType<typeof useRouter>;
+  commit: Commit;
+  setParam: (key: string, value: string) => void;
+}) {
+  return (
+    <div>
       {/* Language chips */}
       <div className="flex flex-wrap gap-2">
         <Chip active={!lang} onClick={() => setParam("lang", "")}>
@@ -93,7 +195,14 @@ export function TeacherFilters({
             onClick={() => setParam("lang", lang === l.code ? "" : l.code)}
           >
             {l.name}
-            <span className={cn("ml-1", lang === l.code ? "text-primary-foreground/70" : "text-muted-foreground")}>
+            <span
+              className={cn(
+                "ml-1",
+                lang === l.code
+                  ? "text-primary-foreground/70"
+                  : "text-muted-foreground",
+              )}
+            >
               {l.count}
             </span>
           </Chip>
@@ -140,7 +249,9 @@ export function TeacherFilters({
                 next.set("max", String(v));
                 router.replace(`${pathname}?${next}`, { scroll: false });
               }}
-              onValueCommit={([v]) => setParam("max", v >= PRICE_MAX ? "" : String(v))}
+              onValueCommit={([v]) =>
+                setParam("max", v >= PRICE_MAX ? "" : String(v))
+              }
               className="mt-1.5"
             />
           </div>
