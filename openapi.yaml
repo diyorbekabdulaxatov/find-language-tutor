@@ -33,6 +33,13 @@ tags:
       Concrete scheduled lessons. Slots are derived by projecting a teacher's
       recurring weekly availability (UTC minutes) onto real UTC datetimes; every
       create re-checks availability server-side. All datetimes are RFC3339 UTC.
+  - name: payments
+    description: >
+      Payment intents (one per booking) and the teacher earnings ledger. The
+      MVP uses a deterministic in-process fake provider behind a
+      provider-agnostic port (Stripe does not operate in Uzbekistan; a real
+      Payme / Click / Uzum adapter drops in later). Money is integer minor
+      units.
   - name: system
 
 paths:
@@ -472,14 +479,18 @@ paths:
       tags: [bookings]
       summary: Book a lesson
       description: >
-        Creates a booking in `pending_payment`. The server re-derives the
-        bookable slot set and rejects a `start_at` that is not a real, currently
-        free slot; it never trusts a client-supplied price.
+        Creates a booking in `pending_payment` and opens a `requires_payment`
+        payment intent for its price. The server re-derives the bookable slot
+        set and rejects a `start_at` that is not a real, currently free slot; it
+        never trusts a client-supplied price.
 
         `duration_minutes` must be one of 30/60/90/120. When `is_trial` is true
         the duration is forced to 30 minutes and the price is the teacher's
         `trial_price_minor` (400 if the teacher offers no trial). You cannot
         book your own teacher profile.
+
+        The student then calls `POST /v1/bookings/{id}/pay` to authorise
+        payment, which confirms the booking.
       operationId: createBooking
       security:
         - bearerAuth: []
@@ -563,15 +574,78 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /v1/bookings/{id}/confirm:
+  /v1/bookings/{id}/pay:
     post:
       tags: [bookings]
-      summary: Confirm a booking
+      summary: Pay for a booking
       description: >
-        Moves `pending_payment` -> `confirmed`. Participant-only (student or
-        teacher-owner). A later phase moves this behind payment success. Any
-        other current state -> 409.
-      operationId: confirmBooking
+        Authorises payment for a `pending_payment` booking and, on success,
+        moves it to `confirmed` (the payment webhook performs the transition).
+        Student-only — only the account that booked the lesson may pay.
+
+        The `method_token` is an opaque payment-method handle. The MVP ships a
+        deterministic fake provider (Stripe does not operate in Uzbekistan);
+        its tokens drive the outcome:
+        `pm_ok` authorises, `pm_decline` is refused (402 `payment_failed`),
+        `pm_capture_fail` authorises but fails the first capture at completion.
+
+        Response is the booking with its embedded `payment` (now `authorized`).
+      operationId: payBooking
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PayBookingRequest" }
+      responses:
+        "200":
+          description: The confirmed booking with its authorised payment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not the student who booked this lesson (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "402":
+          description: The payment method was declined (`payment_failed`). The booking stays `pending_payment`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The booking is already paid (`already_paid`) or is cancelled
+            (`invalid_state`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/bookings/{id}/complete:
+    post:
+      tags: [bookings]
+      summary: Complete a lesson
+      description: >
+        Moves a `confirmed` booking to `completed` and captures the payment,
+        then writes the teacher's payout-ledger entry. Teacher-owner only.
+        Allowed only once the lesson's `end_at` is in the past (409 `too_early`
+        otherwise).
+
+        Capture happens before the status flips, so a capture failure leaves
+        the booking `confirmed` and retryable (502 `capture_failed`).
+      operationId: completeBooking
       security:
         - bearerAuth: []
       parameters:
@@ -581,18 +655,28 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         "200":
-          description: The confirmed booking.
+          description: The completed booking with its captured payment.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Booking" }
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/Forbidden"
+          description: The caller is not the teacher for this lesson (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: The booking is not in a state that allows confirmation (`invalid_state`).
+          description: >
+            The booking is not `confirmed` (`invalid_state`) or the lesson has
+            not ended yet (`too_early`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: The provider could not capture the hold (`capture_failed`). The booking stays `confirmed`.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -606,6 +690,10 @@ paths:
         `cancelled_at` and the optional `reason`. Participant-only. For the MVP
         cancellation is allowed at any time (no window / penalties yet). Already
         `completed` or `cancelled` -> 409.
+
+        Payment side effects: an `authorized` intent is refunded in full (the
+        hold is released); an intent that was never authorised is voided. If a
+        payout-ledger row exists it is reversed.
       operationId: cancelBooking
       security:
         - bearerAuth: []
@@ -636,6 +724,74 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/payments/webhook:
+    post:
+      tags: [payments]
+      summary: Payment provider webhook
+      description: >
+        Receives one provider state-change event. Unauthenticated — a real
+        provider signs the body and the handler verifies the
+        `X-Payment-Signature` header (HMAC-SHA256) when a secret is configured.
+
+        Idempotent by `event_id`: the id is inserted into `payment_events`
+        under its primary key, and a duplicate is treated as already processed.
+        A well-formed event always returns 200, with `applied` telling whether
+        this delivery was the one that ran the effect.
+
+        Events: `payment.authorized` (payment -> authorized, booking
+        `pending_payment` -> `confirmed`), `payment.captured` (payment ->
+        captured, payout-ledger row `held` -> `available`), `payment.refunded`
+        (payment -> refunded, ledger row -> `reversed`), `payment.failed`
+        (payment -> failed).
+
+        The MVP's in-process fake provider reaches the same handler code via an
+        internal sink rather than an HTTP call.
+      operationId: paymentsWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentWebhookEvent" }
+      responses:
+        "200":
+          description: The event was accepted (newly applied or a recognised duplicate).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentWebhookAck" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: The webhook signature did not verify.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/payments/me:
+    get:
+      tags: [payments]
+      summary: The caller's teacher earnings summary
+      description: >
+        Aggregates the caller-owned teacher profile's payout-ledger. `held` is
+        money captured but not yet payable, `available` is payable now (the MVP
+        has no clearing window, so a lesson lands `available` the moment it is
+        captured), and reversed lessons are excluded from the totals.
+        404 if the caller owns no teacher profile.
+      operationId: getMyEarnings
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The earnings summary.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeacherEarnings" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
 components:
   securitySchemes:
@@ -1091,6 +1247,7 @@ components:
         - cancelled_at
         - teacher
         - student
+        - payment
       properties:
         id: { type: string, format: uuid }
         status: { $ref: "#/components/schemas/BookingStatus" }
@@ -1110,6 +1267,86 @@ components:
           description: Present (may be empty) only once cancelled; omitted otherwise.
         teacher: { $ref: "#/components/schemas/BookingTeacherSummary" }
         student: { $ref: "#/components/schemas/BookingStudentSummary" }
+        payment:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/BookingPayment" }]
+          description: >
+            The booking's payment intent. Null when there is none yet, and
+            omitted from list responses (only single-booking responses embed
+            it).
+
+    BookingPayment:
+      type: object
+      description: The payment intent embedded in a booking.
+      required: [status, amount_minor, currency]
+      properties:
+        status:
+          type: string
+          enum: [requires_payment, authorized, captured, refunded, failed]
+        amount_minor: { type: integer, format: int64, description: Integer minor units. }
+        currency: { type: string }
+
+    PayBookingRequest:
+      type: object
+      required: [method_token]
+      properties:
+        method_token:
+          type: string
+          description: >
+            Opaque payment-method handle. Fake-provider tokens: `pm_ok`,
+            `pm_decline`, `pm_capture_fail`.
+
+    PaymentWebhookEvent:
+      type: object
+      required: [event_id, type, payment_id]
+      properties:
+        event_id:
+          type: string
+          description: Stable per state change; replaying it is a no-op.
+        type:
+          type: string
+          enum: [payment.authorized, payment.captured, payment.refunded, payment.failed]
+        payment_id: { type: string, format: uuid }
+        provider_ref: { type: string, description: The provider's reference for the intent/charge. }
+        amount_minor: { type: integer, format: int64 }
+        currency: { type: string }
+        message: { type: string, description: Human-readable detail, used as last_error on payment.failed. }
+
+    PaymentWebhookAck:
+      type: object
+      required: [received, applied]
+      properties:
+        received: { type: boolean }
+        applied:
+          type: boolean
+          description: True when this delivery ran the effect; false for a recognised duplicate.
+
+    TeacherEarnings:
+      type: object
+      required: [total_earned_minor, held_minor, available_minor, currency, lessons]
+      properties:
+        total_earned_minor:
+          type: integer
+          format: int64
+          description: held + available (integer minor units); excludes reversed lessons.
+        held_minor: { type: integer, format: int64 }
+        available_minor: { type: integer, format: int64 }
+        currency: { type: string }
+        lessons:
+          type: array
+          items: { $ref: "#/components/schemas/EarningLesson" }
+
+    EarningLesson:
+      type: object
+      required: [booking_id, student_display_name, start_at, amount_minor, state]
+      properties:
+        booking_id: { type: string, format: uuid }
+        student_display_name: { type: string }
+        start_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        amount_minor: { type: integer, format: int64 }
+        state:
+          type: string
+          enum: [held, available, reversed]
 
     BookingList:
       type: object

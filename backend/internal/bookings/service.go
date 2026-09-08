@@ -3,6 +3,7 @@ package bookings
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -112,12 +113,26 @@ type Repository interface {
 // Service holds the booking business rules. Handlers call it; it never sees a
 // *gin.Context.
 type Service struct {
-	repo Repository
-	now  func() time.Time
+	repo     Repository
+	now      func() time.Time
+	payments PaymentGateway // nil until SetPaymentGateway; guarded at every use
+	logger   *slog.Logger
 }
 
 func NewService(repo Repository) *Service {
-	return &Service{repo: repo, now: time.Now}
+	return &Service{repo: repo, now: time.Now, logger: slog.Default()}
+}
+
+// SetPaymentGateway wires the payments adapter in. Called once at startup
+// (cmd/api / internal/httpapi). Without it, pay / complete return
+// ErrPaymentRequired and cancel skips the refund.
+func (s *Service) SetPaymentGateway(gw PaymentGateway) { s.payments = gw }
+
+func (s *Service) log() *slog.Logger {
+	if s.logger == nil {
+		return slog.Default()
+	}
+	return s.logger
 }
 
 // Slots lists the concrete bookable start times for a teacher over [from, to].
@@ -233,7 +248,7 @@ func (s *Service) Create(ctx context.Context, studentID uuid.UUID, in CreateInpu
 		return Booking{}, ErrSlotUnavailable
 	}
 
-	return s.repo.CreateBooking(ctx, CreateBookingParams{
+	b, err := s.repo.CreateBooking(ctx, CreateBookingParams{
 		TeacherID:       tc.ID,
 		StudentID:       studentID,
 		StartAt:         start,
@@ -243,6 +258,19 @@ func (s *Service) Create(ctx context.Context, studentID uuid.UUID, in CreateInpu
 		Currency:        price.Currency,
 		IsTrial:         in.IsTrial,
 	})
+	if err != nil {
+		return Booking{}, err
+	}
+
+	// Open the payment intent for the new booking. The student pays it via
+	// POST /v1/bookings/{id}/pay. A rare failure here leaves a pending_payment
+	// booking with no intent; the pay call re-tries the intent creation.
+	if s.payments != nil {
+		if perr := s.payments.InitiatePayment(ctx, b.ID, b.Price.AmountMinor, b.Price.Currency); perr != nil {
+			s.log().Error("initiate payment", slog.String("booking_id", b.ID.String()), slog.Any("error", perr))
+		}
+	}
+	return b, nil
 }
 
 // List returns the bookings the caller participates in, filtered by role and
@@ -295,23 +323,110 @@ func (s *Service) Get(ctx context.Context, callerID, bookingID uuid.UUID) (Booki
 	return b, nil
 }
 
-// Confirm moves pending_payment -> confirmed. Participant-only. (Phase 4 will
-// move this behind payment success.)
-func (s *Service) Confirm(ctx context.Context, callerID, bookingID uuid.UUID) (Booking, error) {
-	b, err := s.repo.GetBooking(ctx, bookingID)
+// GetWithPayment is Get plus the embedded payment snapshot (nil when the
+// booking has no intent). Used by GET /v1/bookings/{id}.
+func (s *Service) GetWithPayment(ctx context.Context, callerID, bookingID uuid.UUID) (Booking, *PaymentSnapshot, error) {
+	b, err := s.Get(ctx, callerID, bookingID)
 	if err != nil {
-		return Booking{}, err
+		return Booking{}, nil, err
 	}
-	if !participant(b, callerID) {
-		return Booking{}, ErrForbidden
-	}
-	if b.Status != StatusPendingPayment {
-		return Booking{}, ErrInvalidTransition
-	}
-	return s.repo.SetStatus(ctx, bookingID, StatusConfirmed)
+	return b, s.snapshot(ctx, bookingID), nil
 }
 
-// Cancel moves pending_payment | confirmed -> cancelled. Participant-only.
+// snapshot best-effort loads the payment snapshot; a lookup error is logged and
+// treated as "no payment" so it never fails a booking read.
+func (s *Service) snapshot(ctx context.Context, bookingID uuid.UUID) *PaymentSnapshot {
+	if s.payments == nil {
+		return nil
+	}
+	snap, found, err := s.payments.SnapshotForBooking(ctx, bookingID)
+	if err != nil {
+		s.log().Error("load payment snapshot", slog.String("booking_id", bookingID.String()), slog.Any("error", err))
+		return nil
+	}
+	if !found {
+		return nil
+	}
+	return &snap
+}
+
+// Pay authorizes payment for a booking and, on success, moves it
+// pending_payment -> confirmed (the payment webhook performs the transition).
+// Student-only. Returns ErrAlreadyPaid (409) if already confirmed/paid,
+// PaymentFailedError (402) on a provider decline.
+func (s *Service) Pay(ctx context.Context, callerID, bookingID uuid.UUID, methodToken string) (Booking, *PaymentSnapshot, error) {
+	if s.payments == nil {
+		return Booking{}, nil, ErrPaymentRequired
+	}
+	b, err := s.repo.GetBooking(ctx, bookingID)
+	if err != nil {
+		return Booking{}, nil, err
+	}
+	if b.Student.ID != callerID {
+		return Booking{}, nil, ErrNotStudent
+	}
+	switch b.Status {
+	case StatusConfirmed, StatusCompleted:
+		return Booking{}, nil, ErrAlreadyPaid
+	case StatusPendingPayment:
+		// the payable state
+	default: // cancelled
+		return Booking{}, nil, ErrInvalidTransition
+	}
+
+	snap, err := s.payments.Authorize(ctx, bookingID, strings.TrimSpace(methodToken))
+	if err != nil {
+		return Booking{}, nil, err
+	}
+
+	b, err = s.repo.GetBooking(ctx, bookingID)
+	if err != nil {
+		return Booking{}, nil, err
+	}
+	return b, &snap, nil
+}
+
+// Complete moves confirmed -> completed and captures the payment, then writes
+// the teacher's payout-ledger entry (done inside the capture webhook).
+// Teacher-owner only. Allowed only once the lesson's end_at is in the past
+// (ErrTooEarly / 409 otherwise).
+//
+// Ordering note: we capture BEFORE flipping the status, so a capture failure
+// leaves the booking confirmed and retryable rather than completed-but-unpaid.
+// (Phase 5 layers reminders / meeting links / emails on top of this.)
+func (s *Service) Complete(ctx context.Context, callerID, bookingID uuid.UUID) (Booking, *PaymentSnapshot, error) {
+	if s.payments == nil {
+		return Booking{}, nil, ErrPaymentRequired
+	}
+	b, err := s.repo.GetBooking(ctx, bookingID)
+	if err != nil {
+		return Booking{}, nil, err
+	}
+	if b.TeacherOwnerID == uuid.Nil || b.TeacherOwnerID != callerID {
+		return Booking{}, nil, ErrNotTeacherOwner
+	}
+	if b.Status != StatusConfirmed {
+		return Booking{}, nil, ErrInvalidTransition
+	}
+	if !s.now().UTC().After(b.EndAt) {
+		return Booking{}, nil, ErrTooEarly
+	}
+
+	snap, err := s.payments.Capture(ctx, bookingID)
+	if err != nil {
+		return Booking{}, nil, err
+	}
+
+	b, err = s.repo.SetStatus(ctx, bookingID, StatusCompleted)
+	if err != nil {
+		return Booking{}, nil, err
+	}
+	return b, &snap, nil
+}
+
+// Cancel moves pending_payment | confirmed -> cancelled. Participant-only. When
+// a payment gateway is wired, the booking's intent is also refunded/voided (a
+// full refund releases the hold; if a payout-ledger row exists it is reversed).
 //
 // TODO(phase-5): cancellation window / penalties. For the MVP a participant may
 // cancel at any time; we only record who (implicitly, via the caller) and when.
@@ -326,7 +441,20 @@ func (s *Service) Cancel(ctx context.Context, callerID, bookingID uuid.UUID, rea
 	if b.Status != StatusPendingPayment && b.Status != StatusConfirmed {
 		return Booking{}, ErrInvalidTransition
 	}
-	return s.repo.Cancel(ctx, bookingID, strings.TrimSpace(reason))
+
+	cancelled, err := s.repo.Cancel(ctx, bookingID, strings.TrimSpace(reason))
+	if err != nil {
+		return Booking{}, err
+	}
+
+	if s.payments != nil {
+		if _, rerr := s.payments.Refund(ctx, bookingID); rerr != nil {
+			// The booking is already cancelled; a stuck refund must not fail the
+			// request. TODO(payments): enqueue a refund retry.
+			s.log().Error("refund on cancel", slog.String("booking_id", bookingID.String()), slog.Any("error", rerr))
+		}
+	}
+	return cancelled, nil
 }
 
 func participant(b Booking, callerID uuid.UUID) bool {

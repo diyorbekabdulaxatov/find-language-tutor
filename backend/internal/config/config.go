@@ -37,6 +37,14 @@ type Config struct {
 
 	// ShutdownTimeout bounds graceful shutdown.
 	ShutdownTimeout time.Duration
+
+	// Payments. PaymentsProvider selects the payments.Provider implementation
+	// ("fake" is the only one for the MVP — Stripe does not operate in
+	// Uzbekistan). PaymentsWebhookSecret, when set, is the HMAC-SHA256 key the
+	// POST /v1/payments/webhook handler verifies against the X-Payment-Signature
+	// header; empty disables verification (dev only).
+	PaymentsProvider      string
+	PaymentsWebhookSecret string
 }
 
 // devJWTSecret is used only when APP_ENV != production and AUTH_JWT_SECRET is
@@ -69,6 +77,9 @@ func Load() (*Config, error) {
 		CookieDomain:    os.Getenv("AUTH_COOKIE_DOMAIN"),
 		CookieSecure:    getenvBool("AUTH_COOKIE_SECURE", env == "production"),
 		ShutdownTimeout: getenvDuration("SHUTDOWN_TIMEOUT", 10*time.Second),
+
+		PaymentsProvider:      getenv("PAYMENTS_PROVIDER", "fake"),
+		PaymentsWebhookSecret: os.Getenv("PAYMENTS_WEBHOOK_SECRET"),
 	}
 
 	if cfg.DatabaseURL == "" {

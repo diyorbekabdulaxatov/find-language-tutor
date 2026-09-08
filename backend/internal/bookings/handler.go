@@ -32,7 +32,8 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler, requireAuth gin.HandlerFunc
 	rg.POST("", requireAuth, h.Create)
 	rg.GET("", requireAuth, h.List)
 	rg.GET("/:id", requireAuth, h.Get)
-	rg.POST("/:id/confirm", requireAuth, h.Confirm)
+	rg.POST("/:id/pay", requireAuth, h.Pay)
+	rg.POST("/:id/complete", requireAuth, h.Complete)
 	rg.POST("/:id/cancel", requireAuth, h.Cancel)
 }
 
@@ -123,25 +124,47 @@ func (h *Handler) Get(c *gin.Context) {
 		return
 	}
 
-	b, err := h.svc.Get(c.Request.Context(), uid, id)
+	b, snap, err := h.svc.GetWithPayment(c.Request.Context(), uid, id)
 	if h.rendered(c, err, "get booking", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, toBookingDTO(b))
+	c.JSON(http.StatusOK, toBookingDTOWithPayment(b, snap))
 }
 
-// Confirm handles POST /v1/bookings/:id/confirm.
-func (h *Handler) Confirm(c *gin.Context) {
+// Pay handles POST /v1/bookings/:id/pay. Body {"method_token": "..."}.
+// Student-only: authorize payment, which confirms the booking on success.
+func (h *Handler) Pay(c *gin.Context) {
 	uid, id, ok := h.callerAndID(c)
 	if !ok {
 		return
 	}
 
-	b, err := h.svc.Confirm(c.Request.Context(), uid, id)
-	if h.rendered(c, err, "confirm booking", slog.String("id", id.String())) {
+	var req payBookingRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.MethodToken == "" {
+		web.BadRequest(c, `Request body must be {"method_token": string}.`)
 		return
 	}
-	c.JSON(http.StatusOK, toBookingDTO(b))
+
+	b, snap, err := h.svc.Pay(c.Request.Context(), uid, id, req.MethodToken)
+	if h.rendered(c, err, "pay booking", slog.String("id", id.String())) {
+		return
+	}
+	c.JSON(http.StatusOK, toBookingDTOWithPayment(b, snap))
+}
+
+// Complete handles POST /v1/bookings/:id/complete. Teacher-owner only: capture
+// the payment and mark the lesson completed.
+func (h *Handler) Complete(c *gin.Context) {
+	uid, id, ok := h.callerAndID(c)
+	if !ok {
+		return
+	}
+
+	b, snap, err := h.svc.Complete(c.Request.Context(), uid, id)
+	if h.rendered(c, err, "complete booking", slog.String("id", id.String())) {
+		return
+	}
+	c.JSON(http.StatusOK, toBookingDTOWithPayment(b, snap))
 }
 
 // Cancel handles POST /v1/bookings/:id/cancel.
@@ -192,6 +215,7 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 	}
 
 	var ve ValidationError
+	var payFailed PaymentFailedError
 	switch {
 	case errors.Is(err, ErrTeacherNotFound):
 		web.NotFound(c, "No teacher with that slug.")
@@ -199,14 +223,28 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 		web.NotFound(c, "No booking with that id.")
 	case errors.Is(err, ErrForbidden):
 		web.Forbidden(c, "You are not a participant in this booking.")
+	case errors.Is(err, ErrNotStudent):
+		web.Forbidden(c, "Only the student who booked this lesson can pay for it.")
+	case errors.Is(err, ErrNotTeacherOwner):
+		web.Forbidden(c, "Only the teacher for this lesson can complete it.")
 	case errors.Is(err, ErrCannotBookSelf):
 		web.BadRequest(c, "You cannot book a lesson with your own teacher profile.")
 	case errors.Is(err, ErrSlotUnavailable):
 		web.WriteError(c, http.StatusConflict, "slot_unavailable", "That start time is not currently bookable for this teacher.")
 	case errors.Is(err, ErrSlotTaken):
 		web.WriteError(c, http.StatusConflict, "slot_taken", "That slot was just taken. Pick another time.")
+	case errors.Is(err, ErrAlreadyPaid):
+		web.WriteError(c, http.StatusConflict, "already_paid", "This booking has already been paid for.")
+	case errors.Is(err, ErrTooEarly):
+		web.WriteError(c, http.StatusConflict, "too_early", "The lesson has not ended yet.")
+	case errors.Is(err, ErrPaymentRequired):
+		web.WriteError(c, http.StatusConflict, "payment_required", "This booking has not been paid for yet.")
 	case errors.Is(err, ErrInvalidTransition):
 		web.WriteError(c, http.StatusConflict, "invalid_state", "The booking is not in a state that allows this action.")
+	case errors.As(err, &payFailed):
+		web.WriteError(c, http.StatusPaymentRequired, "payment_failed", payFailed.Error())
+	case errors.Is(err, ErrCaptureFailed):
+		web.WriteError(c, http.StatusBadGateway, "capture_failed", "The payment could not be captured. Please try again.")
 	case errors.As(err, &ve):
 		web.BadRequest(c, ve.Error())
 	default:

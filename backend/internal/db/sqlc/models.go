@@ -202,6 +202,40 @@ type Booking struct {
 	UpdatedAt          pgtype.Timestamptz
 }
 
+type Payment struct {
+	ID           uuid.UUID
+	BookingID    uuid.UUID
+	Provider     string
+	ProviderRef  pgtype.Text
+	Status       string
+	AmountMinor  int64
+	Currency     string
+	LastError    string
+	AuthorizedAt pgtype.Timestamptz
+	CapturedAt   pgtype.Timestamptz
+	RefundedAt   pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type PaymentEvent struct {
+	EventID    string
+	PaymentID  uuid.UUID
+	Type       string
+	ReceivedAt pgtype.Timestamptz
+}
+
+type PayoutLedger struct {
+	ID          uuid.UUID
+	TeacherID   uuid.UUID
+	BookingID   uuid.UUID
+	AmountMinor int64
+	Currency    string
+	State       string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
 type Session struct {
 	ID               uuid.UUID
 	UserID           uuid.UUID

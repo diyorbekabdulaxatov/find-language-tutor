@@ -19,6 +19,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/httpapi"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payments"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/teachers"
 )
 
@@ -85,10 +86,22 @@ func run(logger *slog.Logger) error {
 		logger,
 	)
 
-	bookingHandler := bookings.NewHandler(
-		bookings.NewService(bookings.NewPostgresRepository(pool)),
+	bookingService := bookings.NewService(bookings.NewPostgresRepository(pool))
+	bookingHandler := bookings.NewHandler(bookingService, logger)
+
+	// Payments. The MVP uses a deterministic in-process fake (Stripe does not
+	// operate in Uzbekistan); a real Payme / Click / Uzum adapter drops in
+	// behind payments.Provider later. The fake's event sink is the payments
+	// service's own HandleWebhook, so the idempotent webhook path runs on every
+	// operation.
+	paymentService := payments.NewService(
+		payments.NewPostgresRepository(pool),
+		cfg.PaymentsProvider,
 		logger,
 	)
+	paymentService.SetProvider(payments.NewFakeProvider(paymentService.Emit))
+	bookingService.SetPaymentGateway(payments.NewGateway(paymentService))
+	paymentHandler := payments.NewHandler(paymentService, cfg.PaymentsWebhookSecret, logger)
 
 	router := httpapi.NewRouter(httpapi.Deps{
 		Config:              cfg,
@@ -100,6 +113,7 @@ func run(logger *slog.Logger) error {
 		TeacherHandler:      teacherHandler,
 		AvailabilityHandler: availabilityHandler,
 		BookingHandler:      bookingHandler,
+		PaymentHandler:      paymentHandler,
 	})
 
 	srv := &http.Server{
