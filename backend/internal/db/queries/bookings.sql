@@ -8,7 +8,7 @@
 -- Slug -> everything the booking flow needs: identity, timezone, pricing, and
 -- the owning account (drives the "can't book yourself" check).
 SELECT id, slug, display_name, timezone, avatar_url,
-       price_per_hour_minor, trial_price_minor, currency, user_id
+       price_per_hour_minor, trial_price_minor, currency, user_id, meeting_url
 FROM teachers
 WHERE slug = $1;
 
@@ -42,15 +42,21 @@ SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
     b.cancelled_at, b.cancellation_reason, b.created_at, b.updated_at,
+    b.meeting_url_override,
+    b.no_show_party,
     t.slug            AS teacher_slug,
     t.display_name    AS teacher_display_name,
     t.timezone        AS teacher_timezone,
     t.avatar_url      AS teacher_avatar_url,
     t.user_id         AS teacher_user_id,
-    u.display_name    AS student_display_name
+    t.meeting_url     AS teacher_meeting_url,
+    COALESCE(tu.email, '')::text AS teacher_email,
+    u.display_name    AS student_display_name,
+    u.email::text     AS student_email
 FROM bookings b
 JOIN teachers t ON t.id = b.teacher_id
 JOIN users    u ON u.id = b.student_id
+LEFT JOIN users tu ON tu.id = t.user_id
 WHERE b.id = $1;
 
 -- name: ListBookings :many
@@ -61,21 +67,38 @@ SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
     b.cancelled_at, b.cancellation_reason, b.created_at, b.updated_at,
+    b.meeting_url_override,
+    b.no_show_party,
     t.slug            AS teacher_slug,
     t.display_name    AS teacher_display_name,
     t.timezone        AS teacher_timezone,
     t.avatar_url      AS teacher_avatar_url,
     t.user_id         AS teacher_user_id,
-    u.display_name    AS student_display_name
+    t.meeting_url     AS teacher_meeting_url,
+    COALESCE(tu.email, '')::text AS teacher_email,
+    u.display_name    AS student_display_name,
+    u.email::text     AS student_email
 FROM bookings b
 JOIN teachers t ON t.id = b.teacher_id
 JOIN users    u ON u.id = b.student_id
+LEFT JOIN users tu ON tu.id = t.user_id
 WHERE (b.student_id = sqlc.arg('student_filter') OR b.teacher_id = sqlc.arg('teacher_filter'))
   AND (sqlc.narg('status')::text IS NULL OR b.status = sqlc.narg('status')::text)
 ORDER BY b.start_at DESC, b.id;
 
 -- name: SetBookingStatus :exec
 UPDATE bookings SET status = $2, updated_at = now() WHERE id = $1;
+
+-- name: SetBookingMeetingLinkOverride :exec
+-- Per-booking meeting link override. An empty string clears it (fall back to the
+-- teacher's default meeting_url).
+UPDATE bookings SET meeting_url_override = $2, updated_at = now() WHERE id = $1;
+
+-- name: SetBookingNoShowParty :exec
+-- Records who missed the lesson. The status transition (completed on a student
+-- no-show, cancelled on a teacher no-show) is applied separately via
+-- SetBookingStatus / CancelBooking so the capture / refund path is reused.
+UPDATE bookings SET no_show_party = $2, updated_at = now() WHERE id = $1;
 
 -- name: CancelBooking :exec
 UPDATE bookings

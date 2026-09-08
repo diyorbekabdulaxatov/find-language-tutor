@@ -725,6 +725,103 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /v1/bookings/{id}/meeting-link:
+    put:
+      tags: [bookings]
+      summary: Set or clear a booking's meeting link
+      description: >
+        Sets the per-booking meeting-link override. Teacher-owner only. A
+        non-empty `url` must be an http(s) URL; an empty string clears the
+        override so the booking falls back to the teacher's default
+        `meeting_url`.
+
+        The link is still only revealed on the booking (`Booking.meeting_url`)
+        once the booking is `confirmed` / `completed` and to a participant.
+      operationId: setBookingMeetingLink
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MeetingLinkRequest" }
+      responses:
+        "200":
+          description: The booking with the override applied.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not the teacher for this lesson (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/bookings/{id}/no-show:
+    post:
+      tags: [bookings]
+      summary: Record a no-show
+      description: >
+        Teacher-owner only (MVP). Allowed only from `confirmed` and only once
+        `start_at` is in the past (409 `too_early` otherwise — a lesson has not
+        been missed until it has started).
+
+        `party = "student"` — the teacher attended, the student did not: the
+        booking moves to `completed`, `no_show_party = student`, the payment is
+        captured and the payout-ledger row written (identical to `complete`).
+
+        `party = "teacher"` — the teacher self-reports they could not attend:
+        the booking moves to `cancelled`, `no_show_party = teacher`, and the
+        student is refunded (identical to `cancel`).
+      operationId: recordBookingNoShow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NoShowRequest" }
+      responses:
+        "200":
+          description: The updated booking (completed or cancelled).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not the teacher for this lesson (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The booking is not `confirmed` (`invalid_state`) or the lesson has
+            not started yet (`too_early`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /v1/payments/webhook:
     post:
       tags: [payments]
@@ -1031,11 +1128,18 @@ components:
         - type: object
           required:
             - intro_video_url
+            - meeting_url
             - about
             - teaching_style
             - experience
           properties:
             intro_video_url: { type: string, format: uri }
+            meeting_url:
+              type: string
+              description: >
+                The teacher's default video room for lessons (may be empty). Set
+                via `PATCH /v1/teachers/{slug}`; surfaced on a booking only once
+                it is confirmed (see `Booking.meeting_url`).
             about:
               type: string
               description: Long-form, plain text; paragraphs separated by "\n\n".
@@ -1095,6 +1199,11 @@ components:
         avatar_url: { type: string }
         intro_video_url: { type: string }
         video_thumbnail_url: { type: string }
+        meeting_url:
+          type: string
+          description: >
+            Default video room for this teacher's lessons. Must be an http(s)
+            URL, or empty. Never revealed to students until a lesson is confirmed.
         languages:
           type: array
           items: { $ref: "#/components/schemas/LanguageEntry" }
@@ -1245,6 +1354,7 @@ components:
         - price
         - created_at
         - cancelled_at
+        - no_show_party
         - teacher
         - student
         - payment
@@ -1265,6 +1375,22 @@ components:
         cancellation_reason:
           type: string
           description: Present (may be empty) only once cancelled; omitted otherwise.
+        meeting_url:
+          type: string
+          description: >
+            The effective video link (the per-booking override if set, else the
+            teacher's default `meeting_url`). Present ONLY when the caller is a
+            participant AND `status` is `confirmed` or `completed`; omitted for
+            everyone else (it never leaks to a `pending_payment` booking or a
+            non-participant).
+        no_show_party:
+          type: string
+          enum: ["", student, teacher]
+          description: >
+            Empty normally. `student` when the student missed a lesson the
+            teacher attended (booking `completed`, payment captured); `teacher`
+            when the teacher self-reported they could not attend (booking
+            `cancelled`, student refunded).
         teacher: { $ref: "#/components/schemas/BookingTeacherSummary" }
         student: { $ref: "#/components/schemas/BookingStudentSummary" }
         payment:
@@ -1379,3 +1505,22 @@ components:
       description: Optional body. Omit entirely for a reason-less cancellation.
       properties:
         reason: { type: string }
+
+    MeetingLinkRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          description: >
+            An http(s) URL for the lesson's video room, or an empty string to
+            clear the per-booking override.
+
+    NoShowRequest:
+      type: object
+      required: [party]
+      properties:
+        party:
+          type: string
+          enum: [student, teacher]
+          description: Who missed the lesson.

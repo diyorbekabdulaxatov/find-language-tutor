@@ -50,6 +50,7 @@ type summaryDTO struct {
 type profileDTO struct {
 	summaryDTO
 	IntroVideoURL string          `json:"intro_video_url"`
+	MeetingURL    string          `json:"meeting_url"`
 	About         string          `json:"about"`
 	TeachingStyle string          `json:"teaching_style"`
 	Experience    []experienceDTO `json:"experience"`
@@ -86,6 +87,7 @@ type createProfileRequest struct {
 	AvatarURL         string             `json:"avatar_url"`
 	IntroVideoURL     string             `json:"intro_video_url"`
 	VideoThumbnailURL string             `json:"video_thumbnail_url"`
+	MeetingURL        string             `json:"meeting_url"`
 	Languages         []languageEntryDTO `json:"languages"`
 	Focus             []string           `json:"focus"`
 	Experience        []experienceDTO    `json:"experience"`
@@ -110,6 +112,7 @@ type patchProfileRequest struct {
 	AvatarURL         *string             `json:"avatar_url"`
 	IntroVideoURL     *string             `json:"intro_video_url"`
 	VideoThumbnailURL *string             `json:"video_thumbnail_url"`
+	MeetingURL        *string             `json:"meeting_url"`
 	Languages         *[]languageEntryDTO `json:"languages"`
 	Focus             *[]string           `json:"focus"`
 	Experience        *[]experienceDTO    `json:"experience"`
@@ -159,6 +162,7 @@ func (r createProfileRequest) toInput() ProfileInput {
 		AvatarURL:         r.AvatarURL,
 		IntroVideoURL:     r.IntroVideoURL,
 		VideoThumbnailURL: r.VideoThumbnailURL,
+		MeetingURL:        r.MeetingURL,
 		Languages:         languageEntries(r.Languages),
 		Focus:             r.Focus,
 		Experience:        experienceEntries(r.Experience),
@@ -184,6 +188,7 @@ func (r patchProfileRequest) toPatch() ProfilePatch {
 		AvatarURL:         r.AvatarURL,
 		IntroVideoURL:     r.IntroVideoURL,
 		VideoThumbnailURL: r.VideoThumbnailURL,
+		MeetingURL:        r.MeetingURL,
 	}
 	if r.Languages != nil {
 		entries := languageEntries(*r.Languages)
@@ -269,6 +274,7 @@ func toProfile(t Teacher) profileDTO {
 	p := profileDTO{
 		summaryDTO:    toSummary(t),
 		IntroVideoURL: t.IntroVideoURL,
+		MeetingURL:    t.MeetingURL,
 		About:         t.About,
 		TeachingStyle: t.TeachingStyle,
 		Experience:    exp,

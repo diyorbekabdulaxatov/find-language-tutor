@@ -32,6 +32,10 @@ internal/
   teachers/   first domain module — teacher.go, service.go, repository_postgres.go,
               handler.go, dto.go
   availability/  teacher weekly recurring slots (UTC) — same module layout
+  bookings/   concrete scheduled lessons — slots, booking lifecycle, meeting links, no-show
+  payments/   payment intents + fake provider + payout ledger
+  email/      transactional email (Resend / logging backend) + booking templates
+  lessons/    phase-5 wiring: asynq reminder scheduler + email notifier (bookings ports)
 migrations/   golang-migrate SQL files
 ```
 
@@ -74,7 +78,7 @@ See `../openapi.yaml`. Currently implemented:
 | POST | `/v1/teachers` | claim/create the caller's profile; Bearer token; 409 if they already own one |
 | GET | `/v1/teachers/me` | the caller's own profile; Bearer token; 404 if not created yet |
 | GET | `/v1/teachers/{slug}` | full profile, 404 if missing |
-| PATCH | `/v1/teachers/{slug}` | edit own profile (partial); Bearer token, must own it; 403/404 otherwise |
+| PATCH | `/v1/teachers/{slug}` | edit own profile (partial); Bearer token, must own it; 403/404 otherwise. Now also accepts `meeting_url` (default video room; http(s) or empty) |
 | GET | `/v1/teachers/{slug}/availability` | weekly recurring slots (UTC), 404 if missing |
 | PUT | `/v1/teachers/{slug}/availability` | replace the full weekly set; Bearer token, must own the profile |
 | GET | `/v1/teachers/{slug}/slots` | `?from&to&duration` — concrete bookable start times (UTC); public; 400 if the window > 21 days |
@@ -83,7 +87,9 @@ See `../openapi.yaml`. Currently implemented:
 | GET | `/v1/bookings/{id}` | full booking (with embedded `payment`); Bearer token; 404 if missing, 403 if not a participant |
 | POST | `/v1/bookings/{id}/pay` | `{method_token}`; student only; authorize → `pending_payment → confirmed`; 402 `payment_failed`, 409 `already_paid` |
 | POST | `/v1/bookings/{id}/complete` | teacher-owner only; `confirmed → completed` + capture + payout-ledger row; 409 `too_early`, 502 `capture_failed` |
-| POST | `/v1/bookings/{id}/cancel` | `{reason?}`; `pending_payment\|confirmed → cancelled`; participant only; refunds/voids the intent; 409 if already done |
+| POST | `/v1/bookings/{id}/cancel` | `{reason?}`; `pending_payment\|confirmed → cancelled`; participant only; refunds/voids the intent; cancels reminders + emails the other party; 409 if already done |
+| PUT | `/v1/bookings/{id}/meeting-link` | `{url}`; teacher-owner only; sets the per-booking link override (empty clears it); 403/404 |
+| POST | `/v1/bookings/{id}/no-show` | `{party}`; teacher-owner only; from `confirmed` once started (409 `too_early`); `student` → `completed` + capture, `teacher` → `cancelled` + refund |
 | POST | `/v1/payments/webhook` | provider event; unauthenticated (signed); idempotent by `event_id`; 200 on a well-formed duplicate |
 | GET | `/v1/payments/me` | the caller's teacher earnings summary; Bearer token; 404 if they own no profile |
 
@@ -219,6 +225,55 @@ Config: `PAYMENTS_PROVIDER` (default `fake`), `PAYMENTS_WEBHOOK_SECRET` (when
 set, the webhook verifies an `X-Payment-Signature` HMAC-SHA256 header; empty
 disables verification for dev).
 
+### Lessons: meeting links, no-show, reminders, email (phase 5)
+
+**Meeting links.** A teacher has a default `meeting_url` (`PATCH
+/v1/teachers/{slug}`), and a booking can carry a `meeting_url_override` (`PUT
+/v1/bookings/{id}/meeting-link`, teacher-owner only, empty string clears it).
+The *effective* link (override if set, else the teacher default) is exposed on
+`Booking.meeting_url` **only when the caller is a participant AND the booking is
+`confirmed` or `completed`** — it never leaks to a `pending_payment` booking or
+a non-participant. The rule lives in one place, `meetingURLFor` in
+`internal/bookings/dto.go`, and every response goes through it.
+
+**No-show** (`POST /v1/bookings/{id}/no-show`, teacher-owner only, MVP). Allowed
+from `confirmed` once `start_at` is past (else 409 `too_early`).
+`party="student"` reuses the phase-4 complete/capture path (→ `completed`,
+`no_show_party=student`, payment captured, payout-ledger row);
+`party="teacher"` reuses the cancel/refund path (→ `cancelled`,
+`no_show_party=teacher`, student refunded). Both drop any pending reminders.
+
+**Reminders.** `bookings.ReminderScheduler` (a port, like `PaymentGateway`) is
+implemented in `internal/lessons` over an `*asynq.Client` + `*asynq.Inspector`.
+`Pay` → `Schedule` enqueues **two** `lesson:reminder` tasks with deterministic
+ids `reminder:24h:<id>` / `reminder:1h:<id>` at `ProcessAt(start-24h)` /
+`ProcessAt(start-1h)` on the `default` queue; a run time already in the past is
+skipped. `Cancel` (`cancel` / teacher no-show) deletes both ids via the
+inspector (not-found is fine). "Reschedule" = `Cancel` then `Schedule`.
+
+**Worker** (`cmd/worker`). The `lesson:reminder` handler loads the booking,
+sends only if it is still `confirmed` (cancelled/completed → log + no retry),
+renders the `lesson_reminder` template with the effective meeting link, and
+mails the student + teacher; a send error is returned so asynq retries.
+
+**Email** (`internal/email`). `Emailer.Send(ctx, Message)` with two backends:
+`resendEmailer` (POSTs `https://api.resend.com/emails`, `Authorization: Bearer
+RESEND_API_KEY`, `from` = `EMAIL_FROM`) and `logEmailer` (logs to / subject /
+first body line at INFO). `email.New` picks `logEmailer` when `RESEND_API_KEY`
+is empty (the dev default). Templates: **booking_confirmed** (both participants,
+right after `pay`), **booking_cancelled** (the other party, on cancel / teacher
+no-show, with a refund note), **lesson_reminder** (worker; one template, a
+`Kind` selects "in 24 hours" / "in 1 hour"). All times render in the **teacher's
+timezone** — a student account has no timezone yet, so student mail also uses
+the teacher's tz and shows the zone name so it is unambiguous. `internal/lessons`
+implements `bookings.Notifier`, maps a `bookings.Booking` to the template data,
+and fans each message out to both participants.
+
+Both ports are optional on the booking service: a nil `ReminderScheduler` /
+`Notifier` makes every call a guarded no-op, so `cmd/api` without Redis and the
+unit tests keep working. Config: `RESEND_API_KEY` (empty → `logEmailer`),
+`EMAIL_FROM` (default `findtutor <noreply@findtutor.local>`).
+
 ## Tests
 
 ```bash
@@ -227,13 +282,20 @@ make vet
 ```
 
 `internal/auth`, `internal/teachers`, `internal/availability`,
-`internal/bookings` and `internal/payments` have service tests (fake
-repository) and handler tests (httptest); `internal/bookings` also has a
-slot-generation table test covering the tricky timezone / weekday / midnight-wrap
-cases. The payments tests cover authorize-ok, decline (402), double-pay (409),
-complete-too-early (409), complete → ledger, cancel-with-refund → ledger
-reversed, webhook idempotency (same `event_id` twice = one effect), and the
-earnings summary math. No DB is required for the test suite.
+`internal/bookings`, `internal/payments`, `internal/email`, `internal/lessons`
+and `cmd/worker` have unit tests (fakes + httptest); `internal/bookings` also
+has a slot-generation table test covering the tricky timezone / weekday /
+midnight-wrap cases. The payments tests cover authorize-ok, decline (402),
+double-pay (409), complete-too-early (409), complete → ledger,
+cancel-with-refund → ledger reversed, webhook idempotency (same `event_id` twice
+= one effect), and the earnings summary math. The phase-5 tests cover the
+meeting-link visibility rule (hidden pre-payment / from non-participants, shown
+to a participant of a confirmed booking), no-show student → completed + capture,
+no-show teacher → cancelled + refund, no-show too-early → 409, the reminder
+scheduler + notifier being called on `pay` / `cancel` / teacher no-show, nil
+port safety, the email backend selection + templates, and the worker handler
+(skips a cancelled booking, mails both parties for a confirmed one, retries on a
+send error). No DB is required for the test suite.
 
 ## Not done yet
 
@@ -246,9 +308,15 @@ earnings summary math. No DB is required for the test suite.
   signing key rotation, no refund-retry queue (a failed refund on cancel is
   logged, not retried), and the `payout_ledger` has no clearing window or payout
   run (`held` → `available` is instant).
-- Lesson reminders, meeting links, and completion emails (phase 5 — this phase
-  is only the money side of `complete`).
-- Any cancellation window / penalty rules.
-- The worker only has a stub `lesson:reminder` handler to show the pattern.
+- Any cancellation window / penalty rules (no-show has no dispute / appeal flow
+  — the teacher's report is final for the MVP, and only the teacher can file it).
+- Reminders are enqueued from the synchronous `pay` request path; a real async
+  payment provider would enqueue them from the `payment.authorized` webhook
+  instead. There is no reschedule endpoint yet (only `Cancel` on cancel /
+  teacher no-show).
+- Email has no retry queue of its own (lifecycle mail is best-effort + logged;
+  only the worker's reminder task retries, via asynq). No bounce handling, no
+  per-user email preferences, no student-account timezone (student mail borrows
+  the teacher's).
 - `cmd/migrate` pulls in golang-migrate's transitive test deps (dktest/docker)
   as indirect modules — a known cost of using it as a library.

@@ -91,8 +91,9 @@ func (f *fakeRepo) CreateBooking(_ context.Context, p CreateBookingParams) (Book
 			Slug: f.tc.Slug, DisplayName: f.tc.DisplayName,
 			Timezone: f.tc.Timezone, AvatarURL: f.tc.AvatarURL,
 		},
-		Student:        StudentSummary{ID: p.StudentID, DisplayName: "Student"},
-		TeacherOwnerID: f.tc.OwnerID,
+		Student:           StudentSummary{ID: p.StudentID, DisplayName: "Student"},
+		TeacherOwnerID:    f.tc.OwnerID,
+		TeacherMeetingURL: f.tc.MeetingURL,
 	}
 	f.store[id] = b
 	return b, nil
@@ -132,6 +133,57 @@ func (f *fakeRepo) Cancel(_ context.Context, id uuid.UUID, reason string) (Booki
 	b.CancellationReason = reason
 	f.store[id] = b
 	return b, nil
+}
+
+func (f *fakeRepo) SetMeetingLinkOverride(_ context.Context, id uuid.UUID, url string) (Booking, error) {
+	b := f.store[id]
+	b.MeetingURLOverride = url
+	f.store[id] = b
+	return b, nil
+}
+
+func (f *fakeRepo) SetNoShowParty(_ context.Context, id uuid.UUID, party string) error {
+	b := f.store[id]
+	b.NoShowParty = party
+	f.store[id] = b
+	return nil
+}
+
+// fakeScheduler records Schedule / Cancel calls for assertions.
+type fakeScheduler struct {
+	scheduled []uuid.UUID
+	cancelled []uuid.UUID
+	err       error
+}
+
+func (s *fakeScheduler) Schedule(_ context.Context, id uuid.UUID, _ time.Time) error {
+	s.scheduled = append(s.scheduled, id)
+	return s.err
+}
+
+func (s *fakeScheduler) Cancel(_ context.Context, id uuid.UUID) error {
+	s.cancelled = append(s.cancelled, id)
+	return s.err
+}
+
+// fakeNotifier records the lifecycle emails the service asked for.
+type fakeNotifier struct {
+	confirmed []uuid.UUID
+	cancelled []uuid.UUID
+	refunded  map[uuid.UUID]bool
+}
+
+func newFakeNotifier() *fakeNotifier {
+	return &fakeNotifier{refunded: map[uuid.UUID]bool{}}
+}
+
+func (n *fakeNotifier) BookingConfirmed(_ context.Context, b Booking) {
+	n.confirmed = append(n.confirmed, b.ID)
+}
+
+func (n *fakeNotifier) BookingCancelled(_ context.Context, b Booking, _ uuid.UUID, refunded bool) {
+	n.cancelled = append(n.cancelled, b.ID)
+	n.refunded[b.ID] = refunded
 }
 
 // newService builds a Service over the fake repo with a frozen clock and a

@@ -108,6 +108,13 @@ type Querier interface {
 	// Marks a session revoked and records the session that replaced it (rotation).
 	// No-op if it was already revoked.
 	RevokeSession(ctx context.Context, arg RevokeSessionParams) error
+	// Per-booking meeting link override. An empty string clears it (fall back to the
+	// teacher's default meeting_url).
+	SetBookingMeetingLinkOverride(ctx context.Context, arg SetBookingMeetingLinkOverrideParams) error
+	// Records who missed the lesson. The status transition (completed on a student
+	// no-show, cancelled on a teacher no-show) is applied separately via
+	// SetBookingStatus / CancelBooking so the capture / refund path is reused.
+	SetBookingNoShowParty(ctx context.Context, arg SetBookingNoShowPartyParams) error
 	SetBookingStatus(ctx context.Context, arg SetBookingStatusParams) error
 	// The teacher profile owned by a user (one per user), or no rows.
 	TeacherRefByOwner(ctx context.Context, userID uuid.NullUUID) (TeacherRefByOwnerRow, error)

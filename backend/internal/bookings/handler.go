@@ -35,6 +35,8 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler, requireAuth gin.HandlerFunc
 	rg.POST("/:id/pay", requireAuth, h.Pay)
 	rg.POST("/:id/complete", requireAuth, h.Complete)
 	rg.POST("/:id/cancel", requireAuth, h.Cancel)
+	rg.PUT("/:id/meeting-link", requireAuth, h.SetMeetingLink)
+	rg.POST("/:id/no-show", requireAuth, h.NoShow)
 }
 
 // RegisterTeacherSlotRoute mounts GET /:slug/slots onto the "/v1/teachers"
@@ -93,7 +95,7 @@ func (h *Handler) Create(c *gin.Context) {
 	if h.rendered(c, err, "create booking", slog.String("slug", req.TeacherSlug)) {
 		return
 	}
-	c.JSON(http.StatusCreated, toBookingDTO(b))
+	c.JSON(http.StatusCreated, toBookingDTO(b, uid))
 }
 
 // List handles GET /v1/bookings?role&status.
@@ -114,7 +116,7 @@ func (h *Handler) List(c *gin.Context) {
 	if h.rendered(c, err, "list bookings") {
 		return
 	}
-	c.JSON(http.StatusOK, toBookingListDTO(bs))
+	c.JSON(http.StatusOK, toBookingListDTO(bs, uid))
 }
 
 // Get handles GET /v1/bookings/:id.
@@ -128,7 +130,7 @@ func (h *Handler) Get(c *gin.Context) {
 	if h.rendered(c, err, "get booking", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, toBookingDTOWithPayment(b, snap))
+	c.JSON(http.StatusOK, toBookingDTOWithPayment(b, snap, uid))
 }
 
 // Pay handles POST /v1/bookings/:id/pay. Body {"method_token": "..."}.
@@ -149,7 +151,7 @@ func (h *Handler) Pay(c *gin.Context) {
 	if h.rendered(c, err, "pay booking", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, toBookingDTOWithPayment(b, snap))
+	c.JSON(http.StatusOK, toBookingDTOWithPayment(b, snap, uid))
 }
 
 // Complete handles POST /v1/bookings/:id/complete. Teacher-owner only: capture
@@ -164,7 +166,7 @@ func (h *Handler) Complete(c *gin.Context) {
 	if h.rendered(c, err, "complete booking", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, toBookingDTOWithPayment(b, snap))
+	c.JSON(http.StatusOK, toBookingDTOWithPayment(b, snap, uid))
 }
 
 // Cancel handles POST /v1/bookings/:id/cancel.
@@ -187,7 +189,49 @@ func (h *Handler) Cancel(c *gin.Context) {
 	if h.rendered(c, err, "cancel booking", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, toBookingDTO(b))
+	c.JSON(http.StatusOK, toBookingDTO(b, uid))
+}
+
+// SetMeetingLink handles PUT /v1/bookings/:id/meeting-link. Body {"url": "..."}.
+// Teacher-owner only; an empty url clears the per-booking override.
+func (h *Handler) SetMeetingLink(c *gin.Context) {
+	uid, id, ok := h.callerAndID(c)
+	if !ok {
+		return
+	}
+
+	var req meetingLinkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		web.BadRequest(c, `Request body must be {"url": string}.`)
+		return
+	}
+
+	b, err := h.svc.SetMeetingLink(c.Request.Context(), uid, id, req.URL)
+	if h.rendered(c, err, "set meeting link", slog.String("id", id.String())) {
+		return
+	}
+	c.JSON(http.StatusOK, toBookingDTO(b, uid))
+}
+
+// NoShow handles POST /v1/bookings/:id/no-show. Body {"party": "student"|"teacher"}.
+// Teacher-owner only; allowed from confirmed once the lesson has started.
+func (h *Handler) NoShow(c *gin.Context) {
+	uid, id, ok := h.callerAndID(c)
+	if !ok {
+		return
+	}
+
+	var req noShowRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		web.BadRequest(c, `Request body must be {"party": "student" | "teacher"}.`)
+		return
+	}
+
+	b, snap, err := h.svc.NoShow(c.Request.Context(), uid, id, req.Party)
+	if h.rendered(c, err, "record no-show", slog.String("id", id.String())) {
+		return
+	}
+	c.JSON(http.StatusOK, toBookingDTOWithPayment(b, snap, uid))
 }
 
 // callerAndID pulls the authenticated user id and the :id path param, writing
@@ -237,6 +281,8 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 		web.WriteError(c, http.StatusConflict, "already_paid", "This booking has already been paid for.")
 	case errors.Is(err, ErrTooEarly):
 		web.WriteError(c, http.StatusConflict, "too_early", "The lesson has not ended yet.")
+	case errors.Is(err, ErrLessonNotStarted):
+		web.WriteError(c, http.StatusConflict, "too_early", "The lesson has not started yet, so a no-show cannot be recorded.")
 	case errors.Is(err, ErrPaymentRequired):
 		web.WriteError(c, http.StatusConflict, "payment_required", "This booking has not been paid for yet.")
 	case errors.Is(err, ErrInvalidTransition):

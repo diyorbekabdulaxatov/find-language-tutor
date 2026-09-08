@@ -204,6 +204,7 @@ func rowToTeacher(row sqlc.Teacher) Teacher {
 		AvatarURL:         row.AvatarUrl,
 		VideoThumbnailURL: row.VideoThumbnailUrl,
 		IntroVideoURL:     row.IntroVideoUrl,
+		MeetingURL:        row.MeetingUrl,
 		About:             row.About,
 		TeachingStyle:     row.TeachingStyle,
 	}
@@ -329,6 +330,7 @@ func (r *repositoryPostgres) Update(ctx context.Context, teacherID uuid.UUID, up
 		AvatarUrl:         in.AvatarURL,
 		VideoThumbnailUrl: in.VideoThumbnailURL,
 		IntroVideoUrl:     in.IntroVideoURL,
+		MeetingUrl:        in.MeetingURL,
 	}); err != nil {
 		return fmt.Errorf("update teacher: %w", err)
 	}

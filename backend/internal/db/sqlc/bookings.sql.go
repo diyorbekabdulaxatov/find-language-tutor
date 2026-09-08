@@ -84,15 +84,21 @@ SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
     b.cancelled_at, b.cancellation_reason, b.created_at, b.updated_at,
+    b.meeting_url_override,
+    b.no_show_party,
     t.slug            AS teacher_slug,
     t.display_name    AS teacher_display_name,
     t.timezone        AS teacher_timezone,
     t.avatar_url      AS teacher_avatar_url,
     t.user_id         AS teacher_user_id,
-    u.display_name    AS student_display_name
+    t.meeting_url     AS teacher_meeting_url,
+    COALESCE(tu.email, '')::text AS teacher_email,
+    u.display_name    AS student_display_name,
+    u.email::text     AS student_email
 FROM bookings b
 JOIN teachers t ON t.id = b.teacher_id
 JOIN users    u ON u.id = b.student_id
+LEFT JOIN users tu ON tu.id = t.user_id
 WHERE b.id = $1
 `
 
@@ -111,12 +117,17 @@ type GetBookingByIDRow struct {
 	CancellationReason string
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
+	MeetingUrlOverride string
+	NoShowParty        string
 	TeacherSlug        string
 	TeacherDisplayName string
 	TeacherTimezone    string
 	TeacherAvatarUrl   string
 	TeacherUserID      uuid.NullUUID
+	TeacherMeetingUrl  string
+	TeacherEmail       string
 	StudentDisplayName string
+	StudentEmail       string
 }
 
 func (q *Queries) GetBookingByID(ctx context.Context, id uuid.UUID) (GetBookingByIDRow, error) {
@@ -137,12 +148,17 @@ func (q *Queries) GetBookingByID(ctx context.Context, id uuid.UUID) (GetBookingB
 		&i.CancellationReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MeetingUrlOverride,
+		&i.NoShowParty,
 		&i.TeacherSlug,
 		&i.TeacherDisplayName,
 		&i.TeacherTimezone,
 		&i.TeacherAvatarUrl,
 		&i.TeacherUserID,
+		&i.TeacherMeetingUrl,
+		&i.TeacherEmail,
 		&i.StudentDisplayName,
+		&i.StudentEmail,
 	)
 	return i, err
 }
@@ -150,7 +166,7 @@ func (q *Queries) GetBookingByID(ctx context.Context, id uuid.UUID) (GetBookingB
 const getBookingTeacherContext = `-- name: GetBookingTeacherContext :one
 
 SELECT id, slug, display_name, timezone, avatar_url,
-       price_per_hour_minor, trial_price_minor, currency, user_id
+       price_per_hour_minor, trial_price_minor, currency, user_id, meeting_url
 FROM teachers
 WHERE slug = $1
 `
@@ -165,6 +181,7 @@ type GetBookingTeacherContextRow struct {
 	TrialPriceMinor   pgtype.Int8
 	Currency          CurrencyCode
 	UserID            uuid.NullUUID
+	MeetingUrl        string
 }
 
 // Booking module: concrete scheduled lessons. Times are UTC timestamptz. The
@@ -187,6 +204,7 @@ func (q *Queries) GetBookingTeacherContext(ctx context.Context, slug string) (Ge
 		&i.TrialPriceMinor,
 		&i.Currency,
 		&i.UserID,
+		&i.MeetingUrl,
 	)
 	return i, err
 }
@@ -208,15 +226,21 @@ SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
     b.cancelled_at, b.cancellation_reason, b.created_at, b.updated_at,
+    b.meeting_url_override,
+    b.no_show_party,
     t.slug            AS teacher_slug,
     t.display_name    AS teacher_display_name,
     t.timezone        AS teacher_timezone,
     t.avatar_url      AS teacher_avatar_url,
     t.user_id         AS teacher_user_id,
-    u.display_name    AS student_display_name
+    t.meeting_url     AS teacher_meeting_url,
+    COALESCE(tu.email, '')::text AS teacher_email,
+    u.display_name    AS student_display_name,
+    u.email::text     AS student_email
 FROM bookings b
 JOIN teachers t ON t.id = b.teacher_id
 JOIN users    u ON u.id = b.student_id
+LEFT JOIN users tu ON tu.id = t.user_id
 WHERE (b.student_id = $1 OR b.teacher_id = $2)
   AND ($3::text IS NULL OR b.status = $3::text)
 ORDER BY b.start_at DESC, b.id
@@ -243,12 +267,17 @@ type ListBookingsRow struct {
 	CancellationReason string
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
+	MeetingUrlOverride string
+	NoShowParty        string
 	TeacherSlug        string
 	TeacherDisplayName string
 	TeacherTimezone    string
 	TeacherAvatarUrl   string
 	TeacherUserID      uuid.NullUUID
+	TeacherMeetingUrl  string
+	TeacherEmail       string
 	StudentDisplayName string
+	StudentEmail       string
 }
 
 // Bookings the caller participates in. Pass the caller's user id as
@@ -278,12 +307,17 @@ func (q *Queries) ListBookings(ctx context.Context, arg ListBookingsParams) ([]L
 			&i.CancellationReason,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.MeetingUrlOverride,
+			&i.NoShowParty,
 			&i.TeacherSlug,
 			&i.TeacherDisplayName,
 			&i.TeacherTimezone,
 			&i.TeacherAvatarUrl,
 			&i.TeacherUserID,
+			&i.TeacherMeetingUrl,
+			&i.TeacherEmail,
 			&i.StudentDisplayName,
+			&i.StudentEmail,
 		); err != nil {
 			return nil, err
 		}
@@ -336,6 +370,39 @@ func (q *Queries) ListTeacherBookingIntervals(ctx context.Context, arg ListTeach
 		return nil, err
 	}
 	return items, nil
+}
+
+const setBookingMeetingLinkOverride = `-- name: SetBookingMeetingLinkOverride :exec
+UPDATE bookings SET meeting_url_override = $2, updated_at = now() WHERE id = $1
+`
+
+type SetBookingMeetingLinkOverrideParams struct {
+	ID                 uuid.UUID
+	MeetingUrlOverride string
+}
+
+// Per-booking meeting link override. An empty string clears it (fall back to the
+// teacher's default meeting_url).
+func (q *Queries) SetBookingMeetingLinkOverride(ctx context.Context, arg SetBookingMeetingLinkOverrideParams) error {
+	_, err := q.db.Exec(ctx, setBookingMeetingLinkOverride, arg.ID, arg.MeetingUrlOverride)
+	return err
+}
+
+const setBookingNoShowParty = `-- name: SetBookingNoShowParty :exec
+UPDATE bookings SET no_show_party = $2, updated_at = now() WHERE id = $1
+`
+
+type SetBookingNoShowPartyParams struct {
+	ID          uuid.UUID
+	NoShowParty string
+}
+
+// Records who missed the lesson. The status transition (completed on a student
+// no-show, cancelled on a teacher no-show) is applied separately via
+// SetBookingStatus / CancelBooking so the capture / refund path is reused.
+func (q *Queries) SetBookingNoShowParty(ctx context.Context, arg SetBookingNoShowPartyParams) error {
+	_, err := q.db.Exec(ctx, setBookingNoShowParty, arg.ID, arg.NoShowParty)
+	return err
 }
 
 const setBookingStatus = `-- name: SetBookingStatus :exec

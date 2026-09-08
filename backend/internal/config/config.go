@@ -45,6 +45,12 @@ type Config struct {
 	// header; empty disables verification (dev only).
 	PaymentsProvider      string
 	PaymentsWebhookSecret string
+
+	// Email. ResendAPIKey selects the transactional-email backend: when empty
+	// (the dev default) a logging emailer is used; when set, mail is POSTed to
+	// the Resend API. EmailFrom is the From header.
+	ResendAPIKey string
+	EmailFrom    string
 }
 
 // devJWTSecret is used only when APP_ENV != production and AUTH_JWT_SECRET is
@@ -80,6 +86,9 @@ func Load() (*Config, error) {
 
 		PaymentsProvider:      getenv("PAYMENTS_PROVIDER", "fake"),
 		PaymentsWebhookSecret: os.Getenv("PAYMENTS_WEBHOOK_SECRET"),
+
+		ResendAPIKey: os.Getenv("RESEND_API_KEY"),
+		EmailFrom:    getenv("EMAIL_FROM", "findtutor <noreply@findtutor.local>"),
 	}
 
 	if cfg.DatabaseURL == "" {
