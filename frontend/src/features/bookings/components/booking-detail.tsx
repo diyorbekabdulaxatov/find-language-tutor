@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Video } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 import { useAuth } from "@/features/auth/auth-context";
 import {
@@ -10,13 +10,17 @@ import {
   cancelBooking,
   completeBooking,
   getBooking,
+  reportNoShow,
+  setMeetingLink,
   type Booking,
   type PaymentStatus,
 } from "@/features/bookings/api";
 import { formatFull, viewerTimezone } from "@/features/bookings/datetime";
 import { BookingStatusBadge } from "./booking-status-badge";
 import { PaymentForm } from "./payment-form";
+import { LessonJoinCard } from "./lesson-join-card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 const PAYMENT_LABEL: Record<PaymentStatus, string> = {
   requires_payment: "Not paid",
@@ -31,8 +35,11 @@ export function BookingDetail({ id }: { id: string }) {
   const [booking, setBooking] = useState<Booking | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"complete" | "cancel" | null>(null);
+  const [busy, setBusy] = useState<
+    "complete" | "cancel" | "no_show_student" | "no_show_teacher" | "link" | null
+  >(null);
   const [payOpen, setPayOpen] = useState(false);
+  const [linkDraft, setLinkDraft] = useState("");
   const [now] = useState(() => Date.now());
   const viewerTz = viewerTimezone();
 
@@ -42,6 +49,7 @@ export function BookingDetail({ id }: { id: string }) {
       .then((b) => {
         if (!alive) return;
         setBooking(b);
+        setLinkDraft(b.meetingUrl);
         setState("ready");
       })
       .catch((err) => {
@@ -58,13 +66,18 @@ export function BookingDetail({ id }: { id: string }) {
     };
   }, [id]);
 
-  async function run(action: "complete" | "cancel", fn: () => Promise<Booking>) {
+  async function run(
+    action: NonNullable<typeof busy>,
+    fn: () => Promise<Booking>,
+  ) {
     setBusy(action);
     setErrorMsg(null);
     try {
       await fn();
-      // Re-fetch: cancel's response body omits the embedded payment.
-      setBooking(await getBooking(id));
+      // Re-fetch: some responses (cancel) omit the embedded payment.
+      const fresh = await getBooking(id);
+      setBooking(fresh);
+      setLinkDraft(fresh.meetingUrl);
     } catch (err) {
       setErrorMsg(
         err instanceof BookingError
@@ -104,13 +117,12 @@ export function BookingDetail({ id }: { id: string }) {
   const isTeacher = !isStudent; // only participants reach this page
   const ended = new Date(booking.endAt).getTime() < now;
 
+  const started = new Date(booking.startAt).getTime() < now;
   const canPay = isStudent && booking.status === "pending_payment";
   const canComplete = isTeacher && booking.status === "confirmed" && ended;
+  const canNoShow = isTeacher && booking.status === "confirmed" && started;
   const canCancel =
     booking.status === "pending_payment" || booking.status === "confirmed";
-  const startsSoon =
-    new Date(booking.startAt).getTime() - now < 10 * 60_000 &&
-    new Date(booking.endAt).getTime() > now;
 
   return (
     <div className="mx-auto max-w-xl px-4 py-10 sm:px-6">
@@ -152,23 +164,60 @@ export function BookingDetail({ id }: { id: string }) {
           {booking.payment && (
             <Row label="Payment">{PAYMENT_LABEL[booking.payment.status]}</Row>
           )}
+          {booking.noShowParty && (
+            <Row label="No-show">
+              {booking.noShowParty === "student"
+                ? "Student didn't attend"
+                : "Teacher didn't attend"}
+            </Row>
+          )}
           {booking.status === "cancelled" && booking.cancellationReason && (
             <Row label="Cancellation reason">{booking.cancellationReason}</Row>
           )}
         </dl>
 
         {booking.status === "confirmed" && (
-          <div className="mt-5 rounded-xl bg-primary/8 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Video className="size-4" /> Video call
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {startsSoon
-                ? "The meeting link will appear here — joining opens near the start time."
-                : "A join button will appear here shortly before the lesson."}
-            </p>
-          </div>
+          <LessonJoinCard
+            startAt={booking.startAt}
+            endAt={booking.endAt}
+            meetingUrl={booking.meetingUrl}
+            isTeacher={isTeacher}
+          />
         )}
+
+        {isTeacher &&
+          (booking.status === "confirmed" || booking.status === "pending_payment") && (
+            <form
+              className="mt-4 flex flex-col gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                run("link", () => setMeetingLink(booking.id, linkDraft.trim()));
+              }}
+            >
+              <label htmlFor="meeting-link" className="text-sm font-medium">
+                Meeting link for this lesson
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  id="meeting-link"
+                  type="url"
+                  placeholder="https://meet.example.com/your-room"
+                  value={linkDraft}
+                  onChange={(e) => setLinkDraft(e.target.value)}
+                />
+                <Button
+                  type="submit"
+                  variant="outline"
+                  disabled={busy !== null || linkDraft.trim() === booking.meetingUrl}
+                >
+                  {busy === "link" ? "Saving…" : "Save"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Overrides your profile&apos;s default room for this booking only.
+              </p>
+            </form>
+          )}
 
         {errorMsg && (
           <p className="mt-4 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -176,7 +225,7 @@ export function BookingDetail({ id }: { id: string }) {
           </p>
         )}
 
-        {(canPay || canComplete || canCancel) && (
+        {(canPay || canComplete || canNoShow || canCancel) && (
           <div className="mt-6 flex flex-wrap gap-3">
             {canPay && !payOpen && (
               <Button onClick={() => setPayOpen(true)}>Pay now</Button>
@@ -190,6 +239,36 @@ export function BookingDetail({ id }: { id: string }) {
               >
                 {busy === "complete" ? "Completing…" : "Mark lesson complete"}
               </Button>
+            )}
+            {canNoShow && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    run("no_show_student", () =>
+                      reportNoShow(booking.id, "student"),
+                    )
+                  }
+                  disabled={busy !== null}
+                >
+                  {busy === "no_show_student"
+                    ? "Reporting…"
+                    : "Student didn't show"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    run("no_show_teacher", () =>
+                      reportNoShow(booking.id, "teacher"),
+                    )
+                  }
+                  disabled={busy !== null}
+                >
+                  {busy === "no_show_teacher"
+                    ? "Reporting…"
+                    : "I couldn't make it"}
+                </Button>
+              </>
             )}
             {canCancel && (
               <Button

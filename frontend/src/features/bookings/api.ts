@@ -5,9 +5,11 @@
  * view-models.
  */
 
-import { browserApi } from "@/features/auth/browser-client";
+import { authedFetch, browserApi } from "@/features/auth/browser-client";
 import type { components } from "@/lib/api/schema";
 import type { Money } from "@/types/teacher";
+
+const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 export type BookingStatus = components["schemas"]["BookingStatus"];
 
@@ -42,6 +44,8 @@ export interface PaymentInfo {
   amount: Money;
 }
 
+export type NoShowParty = "" | "student" | "teacher";
+
 export interface Booking {
   id: string;
   status: BookingStatus;
@@ -54,6 +58,9 @@ export interface Booking {
   cancelledAt: string | null;
   cancellationReason?: string;
   payment: PaymentInfo | null;
+  /** Effective video link. Only populated for a participant once confirmed. */
+  meetingUrl: string;
+  noShowParty: NoShowParty;
   teacher: {
     slug: string;
     displayName: string;
@@ -117,8 +124,12 @@ const money = (m: WireMoney): Money => ({
 });
 
 function toBooking(b: WireBooking): Booking {
-  const wp = (b as { payment?: components["schemas"]["BookingPayment"] | null })
-    .payment;
+  const extra = b as {
+    payment?: components["schemas"]["BookingPayment"] | null;
+    meeting_url?: string;
+    no_show_party?: NoShowParty;
+  };
+  const wp = extra.payment;
   return {
     id: b.id,
     status: b.status,
@@ -139,6 +150,8 @@ function toBooking(b: WireBooking): Booking {
           },
         }
       : null,
+    meetingUrl: extra.meeting_url ?? "",
+    noShowParty: extra.no_show_party ?? "",
     teacher: {
       slug: b.teacher.slug,
       displayName: b.teacher.display_name,
@@ -268,6 +281,54 @@ export async function getEarnings(): Promise<EarningsSummary> {
       state: l.state,
     })),
   };
+}
+
+/* ---- Phase 5 — lessons. Hand-typed over authedFetch until these land in     */
+/* openapi.yaml; swap to browserApi after `npm run gen:api`.                   */
+
+async function raw<T>(
+  path: string,
+  init: RequestInit,
+  fallback: string,
+): Promise<T> {
+  const res = await authedFetch(`${baseUrl}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init.headers },
+  });
+  const body =
+    res.status === 204 ? undefined : await res.json().catch(() => undefined);
+  if (!res.ok) {
+    const e = body as ErrorBody | undefined;
+    throw new BookingError(
+      e?.error?.message ?? fallback,
+      e?.error?.code ?? "unknown",
+      res.status,
+    );
+  }
+  return body as T;
+}
+
+/** Teacher sets (or clears, with "") the per-booking meeting link. */
+export async function setMeetingLink(id: string, url: string): Promise<Booking> {
+  const b = await raw<WireBooking>(
+    `/v1/bookings/${encodeURIComponent(id)}/meeting-link`,
+    { method: "PUT", body: JSON.stringify({ url }) },
+    "Could not update the meeting link.",
+  );
+  return toBooking(b);
+}
+
+/** Teacher reports a no-show for a lesson that has started. */
+export async function reportNoShow(
+  id: string,
+  party: "student" | "teacher",
+): Promise<Booking> {
+  const b = await raw<WireBooking>(
+    `/v1/bookings/${encodeURIComponent(id)}/no-show`,
+    { method: "POST", body: JSON.stringify({ party }) },
+    "Could not report the no-show.",
+  );
+  return toBooking(b);
 }
 
 export async function cancelBooking(
