@@ -45,6 +45,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/refresh", h.Refresh)
 	rg.POST("/logout", h.Logout)
 	rg.GET("/me", RequireAuth(h.tokens), h.Me)
+	rg.PATCH("/me", RequireAuth(h.tokens), h.UpdateMe)
 }
 
 // Register handles POST /v1/auth/register.
@@ -126,6 +127,39 @@ func (h *Handler) Me(c *gin.Context) {
 		return
 	case err != nil:
 		h.logger.Error("current user", slog.Any("error", err))
+		web.Internal(c)
+		return
+	}
+
+	c.JSON(http.StatusOK, toUserDTO(user))
+}
+
+// UpdateMe handles PATCH /v1/auth/me — edit the authenticated account.
+// RequireAuth has run.
+func (h *Handler) UpdateMe(c *gin.Context) {
+	uid, ok := UserID(c)
+	if !ok {
+		web.Unauthorized(c, "A valid access token is required.")
+		return
+	}
+
+	var req updateMeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		web.BadRequest(c, `Request body must be {"display_name": "..."}.`)
+		return
+	}
+
+	user, err := h.svc.UpdateCurrentUser(c.Request.Context(), uid, req.DisplayName)
+	var ve ValidationError
+	switch {
+	case errors.As(err, &ve):
+		web.BadRequest(c, ve.Error())
+		return
+	case errors.Is(err, ErrUserNotFound):
+		web.Unauthorized(c, "Account no longer exists.")
+		return
+	case err != nil:
+		h.logger.Error("update current user", slog.Any("error", err))
 		web.Internal(c)
 		return
 	}

@@ -38,6 +38,9 @@ type Repository interface {
 	UserWithHashByEmail(ctx context.Context, email string) (User, string, error)
 	// UserByID returns the account, or ErrUserNotFound.
 	UserByID(ctx context.Context, id uuid.UUID) (User, error)
+	// UpdateUser edits the mutable account fields (currently just the display
+	// name) and returns the updated account, or ErrUserNotFound.
+	UpdateUser(ctx context.Context, id uuid.UUID, displayName string) (User, error)
 
 	// CreateSession stores a new refresh-token session.
 	CreateSession(ctx context.Context, in NewSession) (Session, error)
@@ -185,6 +188,21 @@ func (s *Service) Logout(ctx context.Context, rawRefreshToken string) error {
 // CurrentUser loads the account for an authenticated request.
 func (s *Service) CurrentUser(ctx context.Context, id uuid.UUID) (User, error) {
 	return s.repo.UserByID(ctx, id)
+}
+
+// UpdateCurrentUser edits the caller's own account. displayName is nil when the
+// client did not send the field (a no-op that just returns the current account);
+// an empty/whitespace display name is a ValidationError. Email changes are out
+// of scope and silently ignored by the handler.
+func (s *Service) UpdateCurrentUser(ctx context.Context, id uuid.UUID, displayName *string) (User, error) {
+	if displayName == nil {
+		return s.repo.UserByID(ctx, id)
+	}
+	name := strings.TrimSpace(*displayName)
+	if name == "" {
+		return User{}, invalid("A display name is required.")
+	}
+	return s.repo.UpdateUser(ctx, id, name)
 }
 
 // sessionResult carries the new session id back to Refresh without exposing it

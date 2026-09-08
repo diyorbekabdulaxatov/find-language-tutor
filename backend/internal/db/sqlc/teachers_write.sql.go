@@ -79,7 +79,6 @@ func (q *Queries) AddTeacherLanguage(ctx context.Context, arg AddTeacherLanguage
 }
 
 const createTeacher = `-- name: CreateTeacher :one
-
 INSERT INTO teachers (
     slug, display_name, headline, kind,
     country_code, country_name, city, timezone,
@@ -126,8 +125,6 @@ type CreateTeacherParams struct {
 	UserID            uuid.NullUUID
 }
 
-// Write queries — currently only used by cmd/seed. Real teacher-profile
-// mutations (create/update from the dashboard) will live here too.
 func (q *Queries) CreateTeacher(ctx context.Context, arg CreateTeacherParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, createTeacher,
 		arg.Slug,
@@ -165,5 +162,146 @@ DELETE FROM teachers
 
 func (q *Queries) DeleteAllTeachers(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, deleteAllTeachers)
+	return err
+}
+
+const deleteTeacherExperience = `-- name: DeleteTeacherExperience :exec
+DELETE FROM teacher_experience WHERE teacher_id = $1
+`
+
+func (q *Queries) DeleteTeacherExperience(ctx context.Context, teacherID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteTeacherExperience, teacherID)
+	return err
+}
+
+const deleteTeacherFocus = `-- name: DeleteTeacherFocus :exec
+DELETE FROM teacher_focus WHERE teacher_id = $1
+`
+
+func (q *Queries) DeleteTeacherFocus(ctx context.Context, teacherID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteTeacherFocus, teacherID)
+	return err
+}
+
+const deleteTeacherLanguages = `-- name: DeleteTeacherLanguages :exec
+DELETE FROM teacher_languages WHERE teacher_id = $1
+`
+
+func (q *Queries) DeleteTeacherLanguages(ctx context.Context, teacherID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteTeacherLanguages, teacherID)
+	return err
+}
+
+const teacherRefByOwner = `-- name: TeacherRefByOwner :one
+SELECT id, slug, user_id FROM teachers WHERE user_id = $1
+`
+
+type TeacherRefByOwnerRow struct {
+	ID     uuid.UUID
+	Slug   string
+	UserID uuid.NullUUID
+}
+
+// The teacher profile owned by a user (one per user), or no rows.
+func (q *Queries) TeacherRefByOwner(ctx context.Context, userID uuid.NullUUID) (TeacherRefByOwnerRow, error) {
+	row := q.db.QueryRow(ctx, teacherRefByOwner, userID)
+	var i TeacherRefByOwnerRow
+	err := row.Scan(&i.ID, &i.Slug, &i.UserID)
+	return i, err
+}
+
+const teacherRefBySlug = `-- name: TeacherRefBySlug :one
+
+SELECT id, slug, user_id FROM teachers WHERE slug = $1
+`
+
+type TeacherRefBySlugRow struct {
+	ID     uuid.UUID
+	Slug   string
+	UserID uuid.NullUUID
+}
+
+// Write queries: the demo seed plus the dashboard's create/update-profile flow.
+// Slug -> id + owning user, for the ownership check on PATCH /v1/teachers/{slug}.
+func (q *Queries) TeacherRefBySlug(ctx context.Context, slug string) (TeacherRefBySlugRow, error) {
+	row := q.db.QueryRow(ctx, teacherRefBySlug, slug)
+	var i TeacherRefBySlugRow
+	err := row.Scan(&i.ID, &i.Slug, &i.UserID)
+	return i, err
+}
+
+const teacherSlugExists = `-- name: TeacherSlugExists :one
+SELECT EXISTS (SELECT 1 FROM teachers WHERE slug = $1)
+`
+
+func (q *Queries) TeacherSlugExists(ctx context.Context, slug string) (bool, error) {
+	row := q.db.QueryRow(ctx, teacherSlugExists, slug)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const updateTeacher = `-- name: UpdateTeacher :exec
+UPDATE teachers SET
+    display_name         = $2,
+    headline             = $3,
+    kind                 = $4,
+    country_code         = $5,
+    country_name         = $6,
+    city                 = $7,
+    timezone             = $8,
+    price_per_hour_minor = $9,
+    trial_price_minor    = $10,
+    currency             = $11,
+    about                = $12,
+    teaching_style       = $13,
+    avatar_url           = $14,
+    video_thumbnail_url  = $15,
+    intro_video_url      = $16,
+    updated_at           = now()
+WHERE id = $1
+`
+
+type UpdateTeacherParams struct {
+	ID                uuid.UUID
+	DisplayName       string
+	Headline          string
+	Kind              TeacherKind
+	CountryCode       string
+	CountryName       string
+	City              string
+	Timezone          string
+	PricePerHourMinor int64
+	TrialPriceMinor   pgtype.Int8
+	Currency          CurrencyCode
+	About             string
+	TeachingStyle     string
+	AvatarUrl         string
+	VideoThumbnailUrl string
+	IntroVideoUrl     string
+}
+
+// Edit the caller-editable profile fields. Server-controlled aggregates (rating,
+// review_count, lessons_completed, student_count, response_time_hours,
+// accepting_students) and the slug are intentionally left untouched.
+func (q *Queries) UpdateTeacher(ctx context.Context, arg UpdateTeacherParams) error {
+	_, err := q.db.Exec(ctx, updateTeacher,
+		arg.ID,
+		arg.DisplayName,
+		arg.Headline,
+		arg.Kind,
+		arg.CountryCode,
+		arg.CountryName,
+		arg.City,
+		arg.Timezone,
+		arg.PricePerHourMinor,
+		arg.TrialPriceMinor,
+		arg.Currency,
+		arg.About,
+		arg.TeachingStyle,
+		arg.AvatarUrl,
+		arg.VideoThumbnailUrl,
+		arg.IntroVideoUrl,
+	)
 	return err
 }

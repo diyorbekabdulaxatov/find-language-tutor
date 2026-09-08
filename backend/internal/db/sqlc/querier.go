@@ -17,8 +17,6 @@ type Querier interface {
 	AddTeacherLanguage(ctx context.Context, arg AddTeacherLanguageParams) error
 	CountTeachers(ctx context.Context, arg CountTeachersParams) (int64, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
-	// Write queries — currently only used by cmd/seed. Real teacher-profile
-	// mutations (create/update from the dashboard) will live here too.
 	CreateTeacher(ctx context.Context, arg CreateTeacherParams) (uuid.UUID, error)
 	// Auth module: user accounts and refresh-token sessions.
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
@@ -27,6 +25,9 @@ type Querier interface {
 	// first.
 	DeleteAllUsers(ctx context.Context) error
 	DeleteAvailabilitySlots(ctx context.Context, teacherID uuid.UUID) error
+	DeleteTeacherExperience(ctx context.Context, teacherID uuid.UUID) error
+	DeleteTeacherFocus(ctx context.Context, teacherID uuid.UUID) error
+	DeleteTeacherLanguages(ctx context.Context, teacherID uuid.UUID) error
 	GetSessionByRefreshHash(ctx context.Context, refreshTokenHash []byte) (Session, error)
 	// Availability module: a teacher's weekly recurring slots (UTC minutes).
 	// Resolve a slug to the teacher id, timezone, and owning user the availability
@@ -52,6 +53,19 @@ type Querier interface {
 	// Marks a session revoked and records the session that replaced it (rotation).
 	// No-op if it was already revoked.
 	RevokeSession(ctx context.Context, arg RevokeSessionParams) error
+	// The teacher profile owned by a user (one per user), or no rows.
+	TeacherRefByOwner(ctx context.Context, userID uuid.NullUUID) (TeacherRefByOwnerRow, error)
+	// Write queries: the demo seed plus the dashboard's create/update-profile flow.
+	// Slug -> id + owning user, for the ownership check on PATCH /v1/teachers/{slug}.
+	TeacherRefBySlug(ctx context.Context, slug string) (TeacherRefBySlugRow, error)
+	TeacherSlugExists(ctx context.Context, slug string) (bool, error)
+	// Edit the caller-editable profile fields. Server-controlled aggregates (rating,
+	// review_count, lessons_completed, student_count, response_time_hours,
+	// accepting_students) and the slug are intentionally left untouched.
+	UpdateTeacher(ctx context.Context, arg UpdateTeacherParams) error
+	// Edit the caller's own account. Email is immutable here (changing it needs a
+	// verification flow that does not exist yet).
+	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
 }
 
 var _ Querier = (*Queries)(nil)

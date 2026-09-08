@@ -47,7 +47,7 @@ func NewRouter(d Deps) *gin.Engine {
 	auth.RegisterRoutes(v1.Group("/auth"), d.AuthHandler)
 
 	teacherRoutes := v1.Group("/teachers")
-	teachers.RegisterRoutes(teacherRoutes, d.TeacherHandler)
+	teachers.RegisterRoutes(teacherRoutes, d.TeacherHandler, d.AuthMiddleware)
 	availability.RegisterRoutes(teacherRoutes, d.AvailabilityHandler, d.AuthMiddleware)
 
 	return r
