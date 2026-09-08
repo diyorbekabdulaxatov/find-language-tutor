@@ -29,6 +29,10 @@ func BadRequest(c *gin.Context, message string) {
 	WriteError(c, http.StatusBadRequest, "bad_request", message)
 }
 
+func Unauthorized(c *gin.Context, message string) {
+	WriteError(c, http.StatusUnauthorized, "unauthorized", message)
+}
+
 func Forbidden(c *gin.Context, message string) {
 	WriteError(c, http.StatusForbidden, "forbidden", message)
 }

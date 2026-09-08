@@ -44,21 +44,28 @@ func (q *Queries) DeleteAvailabilitySlots(ctx context.Context, teacherID uuid.UU
 
 const getTeacherAvailabilityContext = `-- name: GetTeacherAvailabilityContext :one
 
-SELECT id, slug, timezone FROM teachers WHERE slug = $1
+SELECT id, slug, timezone, user_id FROM teachers WHERE slug = $1
 `
 
 type GetTeacherAvailabilityContextRow struct {
 	ID       uuid.UUID
 	Slug     string
 	Timezone string
+	UserID   uuid.NullUUID
 }
 
 // Availability module: a teacher's weekly recurring slots (UTC minutes).
-// Resolve a slug to the teacher id and timezone the availability endpoints need.
+// Resolve a slug to the teacher id, timezone, and owning user the availability
+// endpoints need (user_id drives the ownership check on PUT).
 func (q *Queries) GetTeacherAvailabilityContext(ctx context.Context, slug string) (GetTeacherAvailabilityContextRow, error) {
 	row := q.db.QueryRow(ctx, getTeacherAvailabilityContext, slug)
 	var i GetTeacherAvailabilityContextRow
-	err := row.Scan(&i.ID, &i.Slug, &i.Timezone)
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Timezone,
+		&i.UserID,
+	)
 	return i, err
 }
 

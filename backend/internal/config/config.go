@@ -27,14 +27,22 @@ type Config struct {
 	// Redis — used for the asynq job queue and for caching later.
 	RedisURL string
 
-	// Auth (placeholder — no verification wired yet).
-	// When we add Clerk/Auth0 this becomes the issuer + JWKS URL.
-	AuthIssuer   string
-	AuthAudience string
+	// Auth. Access tokens are stateless HS256 JWTs signed with JWTSecret;
+	// refresh tokens are opaque and stored (hashed) as sessions rows.
+	JWTSecret       string        // AUTH_JWT_SECRET — HS256 signing key
+	AccessTokenTTL  time.Duration // AUTH_ACCESS_TTL  (default 15m)
+	RefreshTokenTTL time.Duration // AUTH_REFRESH_TTL (default 720h / 30d)
+	CookieDomain    string        // AUTH_COOKIE_DOMAIN — empty in dev
+	CookieSecure    bool          // Secure flag on the refresh cookie
 
 	// ShutdownTimeout bounds graceful shutdown.
 	ShutdownTimeout time.Duration
 }
+
+// devJWTSecret is used only when APP_ENV != production and AUTH_JWT_SECRET is
+// unset, so `make run` works out of the box. Tokens signed with it are not
+// secure — production must set AUTH_JWT_SECRET.
+const devJWTSecret = "dev-only-insecure-secret-change-me"
 
 // Load reads configuration. It loads a .env file if one exists next to the
 // binary's working directory, then reads the environment. Missing required
@@ -47,19 +55,31 @@ func Load() (*Config, error) {
 		}
 	}
 
+	env := getenv("APP_ENV", "development")
+
 	cfg := &Config{
-		Env:             getenv("APP_ENV", "development"),
+		Env:             env,
 		Port:            getenv("PORT", "8080"),
 		AllowedOrigins:  splitAndTrim(getenv("ALLOWED_ORIGINS", "http://localhost:3000")),
 		DatabaseURL:     os.Getenv("DATABASE_URL"),
 		RedisURL:        getenv("REDIS_URL", "redis://localhost:6379/0"),
-		AuthIssuer:      os.Getenv("AUTH_ISSUER"),
-		AuthAudience:    os.Getenv("AUTH_AUDIENCE"),
+		JWTSecret:       os.Getenv("AUTH_JWT_SECRET"),
+		AccessTokenTTL:  getenvDuration("AUTH_ACCESS_TTL", 15*time.Minute),
+		RefreshTokenTTL: getenvDuration("AUTH_REFRESH_TTL", 30*24*time.Hour),
+		CookieDomain:    os.Getenv("AUTH_COOKIE_DOMAIN"),
+		CookieSecure:    getenvBool("AUTH_COOKIE_SECURE", env == "production"),
 		ShutdownTimeout: getenvDuration("SHUTDOWN_TIMEOUT", 10*time.Second),
 	}
 
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+
+	if cfg.JWTSecret == "" {
+		if cfg.IsProduction() {
+			return nil, fmt.Errorf("AUTH_JWT_SECRET is required in production")
+		}
+		cfg.JWTSecret = devJWTSecret
 	}
 
 	return cfg, nil
@@ -72,6 +92,17 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getenvBool(key string, fallback bool) bool {
+	switch strings.ToLower(os.Getenv(key)) {
+	case "":
+		return fallback
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func getenvDuration(key string, fallback time.Duration) time.Duration {

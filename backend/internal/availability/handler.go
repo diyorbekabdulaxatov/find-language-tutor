@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/auth"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/web"
 )
 
@@ -23,10 +24,12 @@ func NewHandler(svc *Service, logger *slog.Logger) *Handler {
 }
 
 // RegisterRoutes mounts the availability endpoints onto the given group
-// (expected to be "/v1/teachers"), alongside the teacher-profile routes.
-func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
+// (expected to be "/v1/teachers"), alongside the teacher-profile routes. The
+// PUT route is gated by requireAuth (auth.RequireAuth) and an ownership check
+// in the handler.
+func RegisterRoutes(rg *gin.RouterGroup, h *Handler, requireAuth gin.HandlerFunc) {
 	rg.GET("/:slug/availability", h.Get)
-	rg.PUT("/:slug/availability", h.Replace)
+	rg.PUT("/:slug/availability", requireAuth, h.Replace)
 }
 
 // Get handles GET /v1/teachers/:slug/availability.
@@ -47,18 +50,14 @@ func (h *Handler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, toAvailabilityDTO(wa))
 }
 
-// Replace handles PUT /v1/teachers/:slug/availability — replace the full weekly set.
+// Replace handles PUT /v1/teachers/:slug/availability — replace the full weekly
+// set. RequireAuth has run; the service checks that the caller owns the profile.
 func (h *Handler) Replace(c *gin.Context) {
 	slug := c.Param("slug")
 
-	// TODO(auth): the backend README calls for a RequireAuth() middleware in
-	// internal/httpapi guarding the mutating routes once Clerk/Auth0 is wired.
-	// Until real JWT verification exists, a teacher proves ownership of the
-	// profile by sending an X-Teacher-Slug header matching the slug being
-	// edited. Replace this stand-in with the middleware + a caller-identity
-	// check when auth lands.
-	if c.GetHeader("X-Teacher-Slug") != slug {
-		web.Forbidden(c, "You can only edit your own availability.")
+	userID, ok := auth.UserID(c)
+	if !ok {
+		web.Unauthorized(c, "A valid access token is required.")
 		return
 	}
 
@@ -68,11 +67,14 @@ func (h *Handler) Replace(c *gin.Context) {
 		return
 	}
 
-	wa, err := h.svc.Replace(c.Request.Context(), slug, fromSlotDTOs(req.Slots))
+	wa, err := h.svc.Replace(c.Request.Context(), slug, userID, fromSlotDTOs(req.Slots))
 	var ve ValidationError
 	switch {
 	case errors.Is(err, ErrTeacherNotFound):
 		web.NotFound(c, "No teacher with that slug.")
+		return
+	case errors.Is(err, ErrNotOwner):
+		web.Forbidden(c, "You can only edit your own availability.")
 		return
 	case errors.As(err, &ve):
 		web.BadRequest(c, ve.Error())

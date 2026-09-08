@@ -1,8 +1,9 @@
 -- Availability module: a teacher's weekly recurring slots (UTC minutes).
 
 -- name: GetTeacherAvailabilityContext :one
--- Resolve a slug to the teacher id and timezone the availability endpoints need.
-SELECT id, slug, timezone FROM teachers WHERE slug = $1;
+-- Resolve a slug to the teacher id, timezone, and owning user the availability
+-- endpoints need (user_id drives the ownership check on PUT).
+SELECT id, slug, timezone, user_id FROM teachers WHERE slug = $1;
 
 -- name: ListAvailabilitySlots :many
 SELECT weekday, start_minute, end_minute

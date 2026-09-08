@@ -13,6 +13,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/auth"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/availability"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db"
@@ -59,6 +60,20 @@ func run(logger *slog.Logger) error {
 		logger.Info("connected to redis")
 	}
 
+	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTL)
+	authHandler := auth.NewHandler(
+		auth.NewService(auth.NewPostgresRepository(pool), tokenManager, cfg.RefreshTokenTTL),
+		tokenManager,
+		auth.CookieConfig{
+			Name:   "ftr_session",
+			Path:   "/v1/auth",
+			Domain: cfg.CookieDomain,
+			Secure: cfg.CookieSecure,
+			MaxAge: cfg.RefreshTokenTTL,
+		},
+		logger,
+	)
+
 	teacherHandler := teachers.NewHandler(
 		teachers.NewService(teachers.NewPostgresRepository(pool)),
 		logger,
@@ -74,6 +89,8 @@ func run(logger *slog.Logger) error {
 		Logger:              logger,
 		Pool:                pool,
 		Redis:               rdb,
+		AuthHandler:         authHandler,
+		AuthMiddleware:      auth.RequireAuth(tokenManager),
 		TeacherHandler:      teacherHandler,
 		AvailabilityHandler: availabilityHandler,
 	})

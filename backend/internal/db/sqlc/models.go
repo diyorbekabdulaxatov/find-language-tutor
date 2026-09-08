@@ -185,6 +185,17 @@ func (ns NullTeacherKind) Value() (driver.Value, error) {
 	return string(ns.TeacherKind), nil
 }
 
+type Session struct {
+	ID               uuid.UUID
+	UserID           uuid.UUID
+	RefreshTokenHash []byte
+	ExpiresAt        pgtype.Timestamptz
+	RevokedAt        pgtype.Timestamptz
+	ReplacedBy       uuid.NullUUID
+	UserAgent        string
+	CreatedAt        pgtype.Timestamptz
+}
+
 type Teacher struct {
 	ID                uuid.UUID
 	Slug              string
@@ -211,6 +222,7 @@ type Teacher struct {
 	TeachingStyle     string
 	CreatedAt         pgtype.Timestamptz
 	UpdatedAt         pgtype.Timestamptz
+	UserID            uuid.NullUUID
 }
 
 type TeacherAvailabilitySlot struct {
@@ -245,4 +257,13 @@ type TeacherLanguage struct {
 	Name      string
 	Level     LanguageLevel
 	Position  int32
+}
+
+type User struct {
+	ID           uuid.UUID
+	Email        string
+	PasswordHash string
+	DisplayName  string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
 }

@@ -8,14 +8,16 @@ INSERT INTO teachers (
     price_per_hour_minor, trial_price_minor, currency,
     rating, review_count, lessons_completed, student_count,
     response_time_hours, accepting_students,
-    avatar_url, video_thumbnail_url, intro_video_url, about, teaching_style
+    avatar_url, video_thumbnail_url, intro_video_url, about, teaching_style,
+    user_id
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7, $8,
     $9, $10, $11,
     $12, $13, $14, $15,
     $16, $17,
-    $18, $19, $20, $21, $22
+    $18, $19, $20, $21, $22,
+    $23
 )
 RETURNING id;
 

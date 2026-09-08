@@ -68,7 +68,11 @@ func CORS(allowedOrigins []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
 		if _, ok := allowed[origin]; ok {
+			// Credentialed CORS: the refresh token is an HttpOnly cookie the
+			// browser only sends when the response echoes the specific origin
+			// (never "*") together with Allow-Credentials.
 			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Access-Control-Allow-Credentials", "true")
 			c.Header("Vary", "Origin")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
 			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, "+requestIDHeader)
