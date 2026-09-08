@@ -48,6 +48,7 @@ func (r *repositoryPostgres) TeacherContextBySlug(ctx context.Context, slug stri
 		AvatarURL:         row.AvatarUrl,
 		Currency:          string(row.Currency),
 		PricePerHourMinor: row.PricePerHourMinor,
+		MeetingURL:        row.MeetingUrl,
 	}
 	if row.TrialPriceMinor.Valid {
 		v := row.TrialPriceMinor.Int64
@@ -170,6 +171,20 @@ func (r *repositoryPostgres) Cancel(ctx context.Context, id uuid.UUID, reason st
 	return r.GetBooking(ctx, id)
 }
 
+func (r *repositoryPostgres) SetMeetingLinkOverride(ctx context.Context, id uuid.UUID, url string) (Booking, error) {
+	if err := r.q.SetBookingMeetingLinkOverride(ctx, sqlc.SetBookingMeetingLinkOverrideParams{ID: id, MeetingUrlOverride: url}); err != nil {
+		return Booking{}, fmt.Errorf("set meeting link: %w", err)
+	}
+	return r.GetBooking(ctx, id)
+}
+
+func (r *repositoryPostgres) SetNoShowParty(ctx context.Context, id uuid.UUID, party string) error {
+	if err := r.q.SetBookingNoShowParty(ctx, sqlc.SetBookingNoShowPartyParams{ID: id, NoShowParty: party}); err != nil {
+		return fmt.Errorf("set no-show party: %w", err)
+	}
+	return nil
+}
+
 func rowToBooking(row sqlc.GetBookingByIDRow) Booking {
 	b := Booking{
 		ID:                 row.ID,
@@ -181,6 +196,11 @@ func rowToBooking(row sqlc.GetBookingByIDRow) Booking {
 		Price:              Money{AmountMinor: row.PriceMinor, Currency: row.Currency},
 		CreatedAt:          row.CreatedAt.Time.UTC(),
 		CancellationReason: row.CancellationReason,
+		MeetingURLOverride: row.MeetingUrlOverride,
+		TeacherMeetingURL:  row.TeacherMeetingUrl,
+		NoShowParty:        row.NoShowParty,
+		StudentEmail:       row.StudentEmail,
+		TeacherEmail:       row.TeacherEmail,
 		Teacher: TeacherSummary{
 			Slug:        row.TeacherSlug,
 			DisplayName: row.TeacherDisplayName,

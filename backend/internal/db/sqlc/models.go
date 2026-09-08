@@ -200,6 +200,8 @@ type Booking struct {
 	CancellationReason string
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
+	MeetingUrlOverride string
+	NoShowParty        string
 }
 
 type Payment struct {
@@ -274,6 +276,7 @@ type Teacher struct {
 	CreatedAt         pgtype.Timestamptz
 	UpdatedAt         pgtype.Timestamptz
 	UserID            uuid.NullUUID
+	MeetingUrl        string
 }
 
 type TeacherAvailabilitySlot struct {

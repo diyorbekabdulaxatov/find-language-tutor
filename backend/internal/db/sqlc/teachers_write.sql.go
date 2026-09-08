@@ -258,6 +258,7 @@ UPDATE teachers SET
     avatar_url           = $14,
     video_thumbnail_url  = $15,
     intro_video_url      = $16,
+    meeting_url          = $17,
     updated_at           = now()
 WHERE id = $1
 `
@@ -279,6 +280,7 @@ type UpdateTeacherParams struct {
 	AvatarUrl         string
 	VideoThumbnailUrl string
 	IntroVideoUrl     string
+	MeetingUrl        string
 }
 
 // Edit the caller-editable profile fields. Server-controlled aggregates (rating,
@@ -302,6 +304,7 @@ func (q *Queries) UpdateTeacher(ctx context.Context, arg UpdateTeacherParams) er
 		arg.AvatarUrl,
 		arg.VideoThumbnailUrl,
 		arg.IntroVideoUrl,
+		arg.MeetingUrl,
 	)
 	return err
 }

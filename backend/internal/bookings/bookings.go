@@ -98,6 +98,7 @@ type TeacherContext struct {
 	PricePerHourMinor int64
 	TrialPriceMinor   *int64 // nil when the teacher offers no trial lesson
 	OwnerID           uuid.UUID
+	MeetingURL        string // teacher's default video room ("" when unset)
 }
 
 // TeacherSummary / StudentSummary are the light participant summaries embedded
@@ -127,12 +128,37 @@ type Booking struct {
 	CancelledAt        *time.Time
 	CancellationReason string
 
+	// MeetingURLOverride is an optional per-booking video link. When set it wins
+	// over the teacher's default; "" means "use the teacher default".
+	MeetingURLOverride string
+	// TeacherMeetingURL is the teacher's default video room, carried on the
+	// booking so the effective link can be computed without a second lookup.
+	TeacherMeetingURL string
+	// NoShowParty is "" normally, or "student" / "teacher" once a no-show has
+	// been recorded.
+	NoShowParty string
+
 	Teacher TeacherSummary
 	Student StudentSummary
 
 	// TeacherOwnerID is the account that owns the teacher profile. Used for the
 	// participant authorization check; never serialized.
 	TeacherOwnerID uuid.UUID
+
+	// StudentEmail / TeacherEmail are the participants' account emails, used to
+	// address transactional mail. Never serialized.
+	StudentEmail string
+	TeacherEmail string
+}
+
+// EffectiveMeetingURL is the per-booking override if present, else the teacher's
+// default room. It is NOT an authorization decision — the DTO layer decides
+// whether the caller may see it (participant + confirmed/completed only).
+func (b Booking) EffectiveMeetingURL() string {
+	if b.MeetingURLOverride != "" {
+		return b.MeetingURLOverride
+	}
+	return b.TeacherMeetingURL
 }
 
 // Slot is one concrete bookable start time with its price.

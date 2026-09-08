@@ -5,6 +5,7 @@ package teachers
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -104,6 +105,7 @@ type Teacher struct {
 	AvatarURL         string
 	VideoThumbnailURL string
 	IntroVideoURL     string
+	MeetingURL        string // default video room for this teacher's lessons ("" = none)
 	About             string
 	TeachingStyle     string
 
@@ -232,6 +234,7 @@ type ProfileInput struct {
 	AvatarURL         string
 	IntroVideoURL     string
 	VideoThumbnailURL string
+	MeetingURL        string
 	Languages         []LanguageEntry
 	Focus             []string
 	Experience        []Experience
@@ -256,6 +259,7 @@ type ProfilePatch struct {
 	AvatarURL         *string
 	IntroVideoURL     *string
 	VideoThumbnailURL *string
+	MeetingURL        *string
 	Languages         *[]LanguageEntry
 	Focus             *[]string
 	Experience        *[]Experience
@@ -289,6 +293,7 @@ func mergePatch(cur *Teacher, p ProfilePatch) ProfileInput {
 		AvatarURL:         cur.AvatarURL,
 		IntroVideoURL:     cur.IntroVideoURL,
 		VideoThumbnailURL: cur.VideoThumbnailURL,
+		MeetingURL:        cur.MeetingURL,
 	}
 	if cur.TrialPrice != nil {
 		v := cur.TrialPrice.AmountMinor
@@ -350,6 +355,9 @@ func mergePatch(cur *Teacher, p ProfilePatch) ProfileInput {
 	if p.VideoThumbnailURL != nil {
 		in.VideoThumbnailURL = *p.VideoThumbnailURL
 	}
+	if p.MeetingURL != nil {
+		in.MeetingURL = *p.MeetingURL
+	}
 	if p.Languages != nil {
 		in.Languages = *p.Languages
 	}
@@ -405,6 +413,11 @@ func validateProfile(in ProfileInput) error {
 	}
 	if _, err := time.LoadLocation(in.Timezone); err != nil {
 		return invalid("timezone %q is not a valid IANA timezone.", in.Timezone)
+	}
+	if in.MeetingURL != "" {
+		if u, err := url.Parse(in.MeetingURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return invalid("meeting_url must be an http(s) URL.")
+		}
 	}
 
 	seen := make(map[string]bool, len(in.Languages))

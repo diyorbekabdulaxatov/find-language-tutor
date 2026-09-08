@@ -31,6 +31,7 @@ UPDATE teachers SET
     avatar_url           = $14,
     video_thumbnail_url  = $15,
     intro_video_url      = $16,
+    meeting_url          = $17,
     updated_at           = now()
 WHERE id = $1;
 

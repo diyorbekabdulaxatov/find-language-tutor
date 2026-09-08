@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/auth"
@@ -18,7 +19,9 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/bookings"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/email"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/httpapi"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/lessons"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payments"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/teachers"
 )
@@ -88,6 +91,18 @@ func run(logger *slog.Logger) error {
 
 	bookingService := bookings.NewService(bookings.NewPostgresRepository(pool))
 	bookingHandler := bookings.NewHandler(bookingService, logger)
+
+	// Phase 5: lesson reminders (asynq) + transactional email. Both are optional
+	// ports on the booking service — a nil implementation is a safe no-op.
+	if redisOpt, rerr := asynq.ParseRedisURI(cfg.RedisURL); rerr != nil {
+		logger.Warn("reminders disabled: bad REDIS_URL", slog.Any("error", rerr))
+	} else {
+		reminderScheduler := lessons.NewScheduler(redisOpt)
+		defer reminderScheduler.Close()
+		bookingService.SetReminderScheduler(reminderScheduler)
+	}
+	mailer := email.New(email.Config{ResendAPIKey: cfg.ResendAPIKey, EmailFrom: cfg.EmailFrom}, logger)
+	bookingService.SetNotifier(lessons.NewNotifier(mailer, logger))
 
 	// Payments. The MVP uses a deterministic in-process fake (Stripe does not
 	// operate in Uzbekistan); a real Payme / Click / Uzum adapter drops in

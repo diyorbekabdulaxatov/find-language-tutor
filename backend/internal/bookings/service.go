@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -36,6 +37,10 @@ var (
 	// ErrInvalidTransition — the booking is not in a state this action allows.
 	// Rendered as 409.
 	ErrInvalidTransition = errors.New("booking is not in a state that allows this")
+
+	// ErrLessonNotStarted — a no-show was reported before start_at. Rendered as
+	// 409 too_early (a lesson can't be missed until it has started).
+	ErrLessonNotStarted = errors.New("the lesson has not started yet")
 )
 
 // Role filters GET /v1/bookings.
@@ -108,15 +113,25 @@ type Repository interface {
 	// Cancel marks a booking cancelled (status, cancelled_at, reason) and
 	// returns the hydrated booking.
 	Cancel(ctx context.Context, id uuid.UUID, reason string) (Booking, error)
+
+	// SetMeetingLinkOverride writes the per-booking meeting link ("" clears it)
+	// and returns the hydrated booking.
+	SetMeetingLinkOverride(ctx context.Context, id uuid.UUID, url string) (Booking, error)
+
+	// SetNoShowParty records who missed the lesson ("student" / "teacher"). The
+	// status transition is applied separately by the caller.
+	SetNoShowParty(ctx context.Context, id uuid.UUID, party string) error
 }
 
 // Service holds the booking business rules. Handlers call it; it never sees a
 // *gin.Context.
 type Service struct {
-	repo     Repository
-	now      func() time.Time
-	payments PaymentGateway // nil until SetPaymentGateway; guarded at every use
-	logger   *slog.Logger
+	repo      Repository
+	now       func() time.Time
+	payments  PaymentGateway    // nil until SetPaymentGateway; guarded at every use
+	reminders ReminderScheduler // nil until SetReminderScheduler; guarded
+	notifier  Notifier          // nil until SetNotifier; guarded
+	logger    *slog.Logger
 }
 
 func NewService(repo Repository) *Service {
@@ -127,6 +142,48 @@ func NewService(repo Repository) *Service {
 // (cmd/api / internal/httpapi). Without it, pay / complete return
 // ErrPaymentRequired and cancel skips the refund.
 func (s *Service) SetPaymentGateway(gw PaymentGateway) { s.payments = gw }
+
+// SetReminderScheduler wires the asynq-backed lesson-reminder scheduler in.
+// Optional: a nil scheduler makes every schedule/cancel call a no-op.
+func (s *Service) SetReminderScheduler(r ReminderScheduler) { s.reminders = r }
+
+// SetNotifier wires the transactional-email notifier in. Optional: a nil
+// notifier makes every send a no-op.
+func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
+
+// --- guarded port calls (all safe with a nil port) ---
+
+func (s *Service) scheduleReminders(ctx context.Context, b Booking) {
+	if s.reminders == nil {
+		return
+	}
+	if err := s.reminders.Schedule(ctx, b.ID, b.StartAt); err != nil {
+		s.log().Error("schedule reminders", slog.String("booking_id", b.ID.String()), slog.Any("error", err))
+	}
+}
+
+func (s *Service) cancelReminders(ctx context.Context, bookingID uuid.UUID) {
+	if s.reminders == nil {
+		return
+	}
+	if err := s.reminders.Cancel(ctx, bookingID); err != nil {
+		s.log().Error("cancel reminders", slog.String("booking_id", bookingID.String()), slog.Any("error", err))
+	}
+}
+
+func (s *Service) notifyConfirmed(ctx context.Context, b Booking) {
+	if s.notifier == nil {
+		return
+	}
+	s.notifier.BookingConfirmed(ctx, b)
+}
+
+func (s *Service) notifyCancelled(ctx context.Context, b Booking, cancelledBy uuid.UUID, refunded bool) {
+	if s.notifier == nil {
+		return
+	}
+	s.notifier.BookingCancelled(ctx, b, cancelledBy, refunded)
+}
 
 func (s *Service) log() *slog.Logger {
 	if s.logger == nil {
@@ -383,6 +440,17 @@ func (s *Service) Pay(ctx context.Context, callerID, bookingID uuid.UUID, method
 	if err != nil {
 		return Booking{}, nil, err
 	}
+
+	// NOTE: the MVP's fake payment provider is synchronous — Authorize has
+	// already run the payment.authorized webhook, so the booking is confirmed
+	// here and scheduling reminders + sending the confirmation mail from this
+	// request path is correct. A real async provider (Payme / Click / Uzum)
+	// would instead trigger this from HandleWebhook when the authorized event
+	// lands.
+	if b.Status == StatusConfirmed {
+		s.scheduleReminders(ctx, b)
+		s.notifyConfirmed(ctx, b)
+	}
 	return b, &snap, nil
 }
 
@@ -447,14 +515,120 @@ func (s *Service) Cancel(ctx context.Context, callerID, bookingID uuid.UUID, rea
 		return Booking{}, err
 	}
 
+	refunded := false
 	if s.payments != nil {
+		refunded = true
 		if _, rerr := s.payments.Refund(ctx, bookingID); rerr != nil {
 			// The booking is already cancelled; a stuck refund must not fail the
 			// request. TODO(payments): enqueue a refund retry.
 			s.log().Error("refund on cancel", slog.String("booking_id", bookingID.String()), slog.Any("error", rerr))
 		}
 	}
+
+	// Rescheduling cancels old jobs; a cancelled booking must drop its
+	// reminders, and the other party is told.
+	s.cancelReminders(ctx, bookingID)
+	s.notifyCancelled(ctx, cancelled, callerID, refunded)
 	return cancelled, nil
+}
+
+// SetMeetingLink sets (or clears, with "") the per-booking meeting-link
+// override. Teacher-owner only. A non-empty URL must parse as an http(s) URL.
+func (s *Service) SetMeetingLink(ctx context.Context, callerID, bookingID uuid.UUID, link string) (Booking, error) {
+	b, err := s.repo.GetBooking(ctx, bookingID)
+	if err != nil {
+		return Booking{}, err
+	}
+	if b.TeacherOwnerID == uuid.Nil || b.TeacherOwnerID != callerID {
+		return Booking{}, ErrNotTeacherOwner
+	}
+	link = strings.TrimSpace(link)
+	if link != "" && !validMeetingURL(link) {
+		return Booking{}, invalid("`url` must be an http(s) URL, or empty to clear the link.")
+	}
+	return s.repo.SetMeetingLinkOverride(ctx, bookingID, link)
+}
+
+// NoShow records that a participant missed a confirmed lesson. Teacher-owner
+// only for the MVP. Allowed only from `confirmed` and only once start_at is in
+// the past (ErrLessonNotStarted / 409 too_early otherwise).
+//
+//	party == "student" — the teacher showed up, the student did not: treat like
+//	                     complete (booking -> completed, capture, payout ledger).
+//	party == "teacher" — the teacher self-reports they could not make it:
+//	                     booking -> cancelled, refund the student.
+func (s *Service) NoShow(ctx context.Context, callerID, bookingID uuid.UUID, party string) (Booking, *PaymentSnapshot, error) {
+	if party != NoShowStudent && party != NoShowTeacher {
+		return Booking{}, nil, invalid("`party` must be `student` or `teacher`.")
+	}
+
+	b, err := s.repo.GetBooking(ctx, bookingID)
+	if err != nil {
+		return Booking{}, nil, err
+	}
+	if b.TeacherOwnerID == uuid.Nil || b.TeacherOwnerID != callerID {
+		return Booking{}, nil, ErrNotTeacherOwner
+	}
+	if b.Status != StatusConfirmed {
+		return Booking{}, nil, ErrInvalidTransition
+	}
+	if !s.now().UTC().After(b.StartAt) {
+		return Booking{}, nil, ErrLessonNotStarted
+	}
+
+	if party == NoShowStudent {
+		// Same money path as Complete: capture BEFORE flipping status so a
+		// capture failure leaves the booking confirmed and retryable.
+		if s.payments == nil {
+			return Booking{}, nil, ErrPaymentRequired
+		}
+		snap, err := s.payments.Capture(ctx, bookingID)
+		if err != nil {
+			return Booking{}, nil, err
+		}
+		if err := s.repo.SetNoShowParty(ctx, bookingID, NoShowStudent); err != nil {
+			return Booking{}, nil, err
+		}
+		b, err = s.repo.SetStatus(ctx, bookingID, StatusCompleted)
+		if err != nil {
+			return Booking{}, nil, err
+		}
+		s.cancelReminders(ctx, bookingID)
+		return b, &snap, nil
+	}
+
+	// party == "teacher": cancel + refund, same path as Cancel.
+	if _, err := s.repo.Cancel(ctx, bookingID, "teacher no-show"); err != nil {
+		return Booking{}, nil, err
+	}
+	if err := s.repo.SetNoShowParty(ctx, bookingID, NoShowTeacher); err != nil {
+		return Booking{}, nil, err
+	}
+	refunded := false
+	if s.payments != nil {
+		refunded = true
+		if _, rerr := s.payments.Refund(ctx, bookingID); rerr != nil {
+			s.log().Error("refund on teacher no-show", slog.String("booking_id", bookingID.String()), slog.Any("error", rerr))
+		}
+	}
+	s.cancelReminders(ctx, bookingID)
+
+	b, err = s.repo.GetBooking(ctx, bookingID)
+	if err != nil {
+		return Booking{}, nil, err
+	}
+	s.notifyCancelled(ctx, b, callerID, refunded)
+	return b, nil, nil
+}
+
+// validMeetingURL reports whether s is a syntactically valid absolute http(s)
+// URL with a host.
+func validMeetingURL(s string) bool {
+	u, err := url.Parse(s)
+	if err != nil {
+		return false
+	}
+	return (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
 func participant(b Booking, callerID uuid.UUID) bool {
