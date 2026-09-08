@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { GraduationCap } from "lucide-react";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { AccountMenu } from "@/features/auth/components/account-menu";
 
 /**
- * Server component — no interactivity yet. When auth lands, the right-hand side
- * swaps to an account menu based on the session.
+ * Server component; the right-hand side (`<AccountMenu>`) is a client island
+ * that reflects the session — log in / sign up when signed out, account
+ * dropdown when signed in.
  */
 export function SiteHeader() {
   return (
@@ -33,18 +35,7 @@ export function SiteHeader() {
 
         <div className="ml-auto flex items-center gap-1.5">
           <ThemeToggle />
-          <Link
-            href="/login"
-            className="hidden rounded-lg px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary sm:inline-flex"
-          >
-            Log in
-          </Link>
-          <Link
-            href="/signup"
-            className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Get started
-          </Link>
+          <AccountMenu />
         </div>
       </div>
     </header>

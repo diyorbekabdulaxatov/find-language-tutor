@@ -4,6 +4,97 @@
  */
 
 export interface paths {
+    "/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an account and sign in */
+        post: operations["register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sign in */
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate the refresh token
+         * @description Reads the `ftr_session` cookie, issues a fresh access + refresh pair, revokes the presented refresh token, and sets the new cookie. A missing, expired, or already-revoked cookie returns 401 (and, on re-use of a revoked token, every session for that user is revoked).
+         */
+        post: operations["refresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign out
+         * @description Revokes the current session and clears the `ftr_session` cookie. Idempotent.
+         */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The signed-in user */
+        get: operations["getCurrentUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -69,8 +160,8 @@ export interface paths {
         get: operations["getTeacherAvailability"];
         /**
          * Replace a teacher's weekly availability
-         * @description Replaces the teacher's **entire** weekly set with the slots in the body (send `[]` to clear it). Teacher-owned.
-         *     Auth is not wired yet: until a `RequireAuth()` middleware exists, the caller proves ownership by sending an `X-Teacher-Slug` header equal to the `{slug}` in the path. This stand-in will be replaced by real token verification.
+         * @description Replaces the teacher's **entire** weekly set with the slots in the body (send `[]` to clear it).
+         *     Requires a Bearer access token whose user owns the teacher profile (`teachers.user_id`); otherwise 401 (no/invalid token) or 403 (not the owner).
          *     Validation: `weekday` in 0–6; `0 <= start_minute < end_minute <= 1440`; both bounds a multiple of `granularity_minutes` (15); no two slots on the same weekday may overlap (touching slots are allowed).
          */
         put: operations["replaceTeacherAvailability"];
@@ -92,6 +183,33 @@ export interface components {
                 /** @description Human-readable explanation, safe to surface to users. */
                 message: string;
             };
+        };
+        RegisterRequest: {
+            /** Format: email */
+            email: string;
+            /** @description Minimum 8 characters. */
+            password: string;
+            display_name: string;
+        };
+        LoginRequest: {
+            /** Format: email */
+            email: string;
+            password: string;
+        };
+        AuthUser: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            display_name: string;
+        };
+        /** @description The access token (hold in memory, send as `Authorization: Bearer`) plus the user. The refresh token is NOT here — it is the `ftr_session` cookie. */
+        AuthResponse: {
+            /** @description HS256 JWT. */
+            access_token: string;
+            /** @description Access-token lifetime in seconds. */
+            expires_in: number;
+            user: components["schemas"]["AuthUser"];
         };
         Health: {
             /** @enum {string} */
@@ -239,6 +357,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description Authentication is missing or invalid. */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description The caller is not allowed to perform this action. */
         Forbidden: {
             headers: {
@@ -256,6 +383,131 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Account created and signed in. Body carries the access token; the `ftr_session` refresh cookie is set. */
+            201: {
+                headers: {
+                    /** @description `ftr_session=<opaque>; HttpOnly; SameSite=Lax; Path=/v1/auth` */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description That email is already registered. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Signed in. Body carries the access token; the `ftr_session` refresh cookie is set. */
+            200: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    refresh: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New access token in the body; new `ftr_session` cookie set. */
+            200: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed out (cookie cleared). Returned even if no session was active. */
+            204: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The authenticated user. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthUser"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     getHealth: {
         parameters: {
             query?: never;
@@ -366,10 +618,7 @@ export interface operations {
     replaceTeacherAvailability: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Ownership stand-in until auth lands; must equal the path slug. */
-                "X-Teacher-Slug": string;
-            };
+            header?: never;
             path: {
                 slug: string;
             };
@@ -391,6 +640,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };

@@ -88,17 +88,20 @@ export async function getTeacherBySlug(
 
 /** For generateStaticParams — the set of profile pages to prerender. */
 export async function listTeacherSlugs(): Promise<string[]> {
-  const { data, error } = await api.GET("/v1/teachers", {
-    params: { query: { page_size: LIST_PAGE_SIZE } },
-  });
+  try {
+    const { data, error } = await api.GET("/v1/teachers", {
+      params: { query: { page_size: LIST_PAGE_SIZE } },
+    });
 
-  if (error || !data) {
-    // Don't fail the build if the backend is unreachable; pages still render
-    // on demand (dynamicParams stays true).
+    // Don't fail the build if the backend is unreachable (error return) or
+    // down entirely (fetch throws) — pages still render on demand because
+    // `dynamicParams` stays true.
+    if (error || !data) return [];
+
+    return data.teachers.map((t) => t.slug);
+  } catch {
     return [];
   }
-
-  return data.teachers.map((t) => t.slug);
 }
 
 /* -------------------------------------------------------------------------- */

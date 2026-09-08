@@ -16,3 +16,4 @@ node_modules/
 
 # Local git worktrees
 .worktrees/
+.claude/worktrees/
