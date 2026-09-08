@@ -69,8 +69,12 @@ See `../openapi.yaml`. Currently implemented:
 | POST | `/v1/auth/refresh` | rotate the refresh cookie, new access token |
 | POST | `/v1/auth/logout` | revoke session, clear cookie; 204 |
 | GET | `/v1/auth/me` | the signed-in user; needs `Authorization: Bearer` |
+| PATCH | `/v1/auth/me` | edit own account (`display_name` only; email is read-only) |
 | GET | `/v1/teachers` | `?language&kind&max_price_minor&q&sort&page&page_size` |
+| POST | `/v1/teachers` | claim/create the caller's profile; Bearer token; 409 if they already own one |
+| GET | `/v1/teachers/me` | the caller's own profile; Bearer token; 404 if not created yet |
 | GET | `/v1/teachers/{slug}` | full profile, 404 if missing |
+| PATCH | `/v1/teachers/{slug}` | edit own profile (partial); Bearer token, must own it; 403/404 otherwise |
 | GET | `/v1/teachers/{slug}/availability` | weekly recurring slots (UTC), 404 if missing |
 | PUT | `/v1/teachers/{slug}/availability` | replace the full weekly set; Bearer token, must own the profile |
 
@@ -83,6 +87,22 @@ ACCESS=$(curl -s -X POST localhost:8080/v1/auth/login -H 'Content-Type: applicat
   -d '{"email":"nodira@example.com","password":"password"}' | jq -r .access_token)
 
 curl localhost:8080/v1/auth/me -H "Authorization: Bearer $ACCESS"
+curl -X PATCH localhost:8080/v1/auth/me \
+  -H "Authorization: Bearer $ACCESS" -H 'Content-Type: application/json' \
+  -d '{"display_name":"Nodira K."}'
+
+# Own teacher profile (404 until created), then create / edit it.
+curl localhost:8080/v1/teachers/me -H "Authorization: Bearer $ACCESS"
+curl -X POST localhost:8080/v1/teachers \
+  -H "Authorization: Bearer $ACCESS" -H 'Content-Type: application/json' \
+  -d '{"display_name":"New Teacher","headline":"Conversational English",
+       "kind":"community","country_code":"UZ","country_name":"Uzbekistan",
+       "city":"Tashkent","timezone":"Asia/Tashkent","price_per_hour_minor":6000000,
+       "currency":"UZS",
+       "languages":[{"role":"teaches","code":"en","name":"English","level":"c1"}]}'
+curl -X PATCH localhost:8080/v1/teachers/new-teacher \
+  -H "Authorization: Bearer $ACCESS" -H 'Content-Type: application/json' \
+  -d '{"headline":"IELTS & Business English","focus":["IELTS","Business"]}'
 
 curl -X PUT localhost:8080/v1/teachers/nodira-karimova/availability \
   -H "Authorization: Bearer $ACCESS" -H 'Content-Type: application/json' \
@@ -122,8 +142,9 @@ test suite.
 ## Not done yet
 
 - Email verification, password reset, and rate-limiting on the auth endpoints.
-- Account ↔ teacher-profile claiming flow (the column and ownership check exist;
-  there is no endpoint to claim a profile yet — the seed links them directly).
+- Changing a profile's `slug` (immutable for now), and clearing a trial price
+  via `PATCH` (an omitted `trial_price_minor` is left unchanged; there is no way
+  yet to express "remove the trial").
 - Booking and payments modules.
 - The worker only has a stub `lesson:reminder` handler to show the pattern.
 - `cmd/migrate` pulls in golang-migrate's transitive test deps (dktest/docker)

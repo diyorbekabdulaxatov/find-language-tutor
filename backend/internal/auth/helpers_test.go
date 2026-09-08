@@ -77,6 +77,18 @@ func (r *fakeRepo) UserByID(_ context.Context, id uuid.UUID) (User, error) {
 	return su.user, nil
 }
 
+func (r *fakeRepo) UpdateUser(_ context.Context, id uuid.UUID, displayName string) (User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	su, ok := r.usersByID[id]
+	if !ok {
+		return User{}, ErrUserNotFound
+	}
+	su.user.DisplayName = displayName
+	su.user.UpdatedAt = time.Now()
+	return su.user, nil
+}
+
 func (r *fakeRepo) CreateSession(_ context.Context, in NewSession) (Session, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

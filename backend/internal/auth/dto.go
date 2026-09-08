@@ -15,6 +15,13 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+// updateMeRequest is the body of PATCH /v1/auth/me. Only display_name is
+// editable; a nil pointer means "field omitted" (no change). Email is read-only
+// here and any email key in the body is ignored.
+type updateMeRequest struct {
+	DisplayName *string `json:"display_name"`
+}
+
 type userDTO struct {
 	ID          string `json:"id"`
 	Email       string `json:"email"`

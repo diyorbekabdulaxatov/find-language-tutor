@@ -56,6 +56,150 @@ type profileDTO struct {
 	TrialPrice    *moneyDTO       `json:"trial_price,omitempty"`
 }
 
+// --- write request DTOs (POST /v1/teachers, PATCH /v1/teachers/{slug}) ---
+
+// languageEntryDTO is one row of the `languages` collection in a write body.
+// role is "teaches" or "also_speaks"; the read shape splits these back into the
+// `teaches` / `also_speaks` arrays.
+type languageEntryDTO struct {
+	Role  string `json:"role"`
+	Code  string `json:"code"`
+	Name  string `json:"name"`
+	Level string `json:"level"`
+}
+
+// createProfileRequest is the POST /v1/teachers body: the editable fields only.
+// Server-controlled aggregates and the slug are never accepted here.
+type createProfileRequest struct {
+	DisplayName       string             `json:"display_name"`
+	Headline          string             `json:"headline"`
+	Kind              string             `json:"kind"`
+	CountryCode       string             `json:"country_code"`
+	CountryName       string             `json:"country_name"`
+	City              string             `json:"city"`
+	Timezone          string             `json:"timezone"`
+	PricePerHourMinor int64              `json:"price_per_hour_minor"`
+	TrialPriceMinor   *int64             `json:"trial_price_minor"`
+	Currency          string             `json:"currency"`
+	About             string             `json:"about"`
+	TeachingStyle     string             `json:"teaching_style"`
+	AvatarURL         string             `json:"avatar_url"`
+	IntroVideoURL     string             `json:"intro_video_url"`
+	VideoThumbnailURL string             `json:"video_thumbnail_url"`
+	Languages         []languageEntryDTO `json:"languages"`
+	Focus             []string           `json:"focus"`
+	Experience        []experienceDTO    `json:"experience"`
+}
+
+// patchProfileRequest is the PATCH /v1/teachers/{slug} body. Every field is
+// optional: a nil pointer means "omitted, leave unchanged". A present
+// languages / focus / experience array (even empty) replaces that collection.
+type patchProfileRequest struct {
+	DisplayName       *string             `json:"display_name"`
+	Headline          *string             `json:"headline"`
+	Kind              *string             `json:"kind"`
+	CountryCode       *string             `json:"country_code"`
+	CountryName       *string             `json:"country_name"`
+	City              *string             `json:"city"`
+	Timezone          *string             `json:"timezone"`
+	PricePerHourMinor *int64              `json:"price_per_hour_minor"`
+	TrialPriceMinor   *int64              `json:"trial_price_minor"`
+	Currency          *string             `json:"currency"`
+	About             *string             `json:"about"`
+	TeachingStyle     *string             `json:"teaching_style"`
+	AvatarURL         *string             `json:"avatar_url"`
+	IntroVideoURL     *string             `json:"intro_video_url"`
+	VideoThumbnailURL *string             `json:"video_thumbnail_url"`
+	Languages         *[]languageEntryDTO `json:"languages"`
+	Focus             *[]string           `json:"focus"`
+	Experience        *[]experienceDTO    `json:"experience"`
+}
+
+func languageEntries(in []languageEntryDTO) []LanguageEntry {
+	out := make([]LanguageEntry, len(in))
+	for i, l := range in {
+		out[i] = LanguageEntry{
+			Role:  LanguageRole(l.Role),
+			Code:  l.Code,
+			Name:  l.Name,
+			Level: Level(l.Level),
+		}
+	}
+	return out
+}
+
+func experienceEntries(in []experienceDTO) []Experience {
+	out := make([]Experience, len(in))
+	for i, e := range in {
+		out[i] = Experience{Title: e.Title, Org: e.Org, Period: e.Period}
+	}
+	return out
+}
+
+// toInput maps a create request to the domain ProfileInput. An empty currency
+// defaults to UZS (the only supported currency), matching the seed.
+func (r createProfileRequest) toInput() ProfileInput {
+	currency := Currency(r.Currency)
+	if currency == "" {
+		currency = CurrencyUZS
+	}
+	return ProfileInput{
+		DisplayName:       r.DisplayName,
+		Headline:          r.Headline,
+		Kind:              Kind(r.Kind),
+		CountryCode:       r.CountryCode,
+		CountryName:       r.CountryName,
+		City:              r.City,
+		Timezone:          r.Timezone,
+		PricePerHourMinor: r.PricePerHourMinor,
+		TrialPriceMinor:   r.TrialPriceMinor,
+		Currency:          currency,
+		About:             r.About,
+		TeachingStyle:     r.TeachingStyle,
+		AvatarURL:         r.AvatarURL,
+		IntroVideoURL:     r.IntroVideoURL,
+		VideoThumbnailURL: r.VideoThumbnailURL,
+		Languages:         languageEntries(r.Languages),
+		Focus:             r.Focus,
+		Experience:        experienceEntries(r.Experience),
+	}
+}
+
+// toPatch maps a patch request to the domain ProfilePatch, preserving the
+// present/absent distinction of every field.
+func (r patchProfileRequest) toPatch() ProfilePatch {
+	p := ProfilePatch{
+		DisplayName:       r.DisplayName,
+		Headline:          r.Headline,
+		Kind:              r.Kind,
+		CountryCode:       r.CountryCode,
+		CountryName:       r.CountryName,
+		City:              r.City,
+		Timezone:          r.Timezone,
+		PricePerHourMinor: r.PricePerHourMinor,
+		TrialPriceMinor:   r.TrialPriceMinor,
+		Currency:          r.Currency,
+		About:             r.About,
+		TeachingStyle:     r.TeachingStyle,
+		AvatarURL:         r.AvatarURL,
+		IntroVideoURL:     r.IntroVideoURL,
+		VideoThumbnailURL: r.VideoThumbnailURL,
+	}
+	if r.Languages != nil {
+		entries := languageEntries(*r.Languages)
+		p.Languages = &entries
+	}
+	if r.Focus != nil {
+		focus := *r.Focus
+		p.Focus = &focus
+	}
+	if r.Experience != nil {
+		exp := experienceEntries(*r.Experience)
+		p.Experience = &exp
+	}
+	return p
+}
+
 type languageFacetDTO struct {
 	Code  string `json:"code"`
 	Name  string `json:"name"`

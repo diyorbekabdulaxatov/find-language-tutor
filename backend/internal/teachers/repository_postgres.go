@@ -9,18 +9,22 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db/sqlc"
 )
 
-// repositoryPostgres implements Repository over the sqlc-generated queries.
+// repositoryPostgres implements Repository over the sqlc-generated queries. It
+// holds the pool directly (not just sqlc.DBTX) because Create and Update run
+// inside a transaction.
 type repositoryPostgres struct {
-	q *sqlc.Queries
+	pool *pgxpool.Pool
+	q    *sqlc.Queries
 }
 
 // NewPostgresRepository builds a Repository backed by the given pgx pool.
-func NewPostgresRepository(db sqlc.DBTX) Repository {
-	return &repositoryPostgres{q: sqlc.New(db)}
+func NewPostgresRepository(pool *pgxpool.Pool) Repository {
+	return &repositoryPostgres{pool: pool, q: sqlc.New(pool)}
 }
 
 func (r *repositoryPostgres) List(ctx context.Context, p ListParams) ([]Teacher, int, error) {
@@ -210,6 +214,210 @@ func rowToTeacher(row sqlc.Teacher) Teacher {
 		}
 	}
 	return t
+}
+
+func (r *repositoryPostgres) RefBySlug(ctx context.Context, slug string) (Ref, error) {
+	row, err := r.q.TeacherRefBySlug(ctx, slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Ref{}, ErrNotFound
+		}
+		return Ref{}, fmt.Errorf("teacher ref by slug: %w", err)
+	}
+	ref := Ref{ID: row.ID, Slug: row.Slug}
+	if row.UserID.Valid {
+		ref.OwnerID = row.UserID.UUID
+	}
+	return ref, nil
+}
+
+func (r *repositoryPostgres) RefByOwner(ctx context.Context, ownerID uuid.UUID) (Ref, error) {
+	row, err := r.q.TeacherRefByOwner(ctx, uuid.NullUUID{UUID: ownerID, Valid: true})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Ref{}, ErrNotFound
+		}
+		return Ref{}, fmt.Errorf("teacher ref by owner: %w", err)
+	}
+	ref := Ref{ID: row.ID, Slug: row.Slug}
+	if row.UserID.Valid {
+		ref.OwnerID = row.UserID.UUID
+	}
+	return ref, nil
+}
+
+func (r *repositoryPostgres) SlugExists(ctx context.Context, slug string) (bool, error) {
+	exists, err := r.q.TeacherSlugExists(ctx, slug)
+	if err != nil {
+		return false, fmt.Errorf("teacher slug exists: %w", err)
+	}
+	return exists, nil
+}
+
+func (r *repositoryPostgres) Create(ctx context.Context, ownerID uuid.UUID, slug string, in ProfileInput) (uuid.UUID, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
+
+	qtx := r.q.WithTx(tx)
+	id, err := qtx.CreateTeacher(ctx, sqlc.CreateTeacherParams{
+		Slug:              slug,
+		DisplayName:       in.DisplayName,
+		Headline:          in.Headline,
+		Kind:              sqlc.TeacherKind(in.Kind),
+		CountryCode:       in.CountryCode,
+		CountryName:       in.CountryName,
+		City:              in.City,
+		Timezone:          in.Timezone,
+		PricePerHourMinor: in.PricePerHourMinor,
+		TrialPriceMinor:   nullInt8(in.TrialPriceMinor),
+		Currency:          sqlc.CurrencyCode(in.Currency),
+		// Server-controlled aggregates start at zero; the profile is open to
+		// students by default.
+		Rating:            0,
+		ReviewCount:       0,
+		LessonsCompleted:  0,
+		StudentCount:      0,
+		ResponseTimeHours: 0,
+		AcceptingStudents: true,
+		AvatarUrl:         in.AvatarURL,
+		VideoThumbnailUrl: in.VideoThumbnailURL,
+		IntroVideoUrl:     in.IntroVideoURL,
+		About:             in.About,
+		TeachingStyle:     in.TeachingStyle,
+		UserID:            uuid.NullUUID{UUID: ownerID, Valid: true},
+	})
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("create teacher: %w", err)
+	}
+
+	if err := insertChildren(ctx, qtx, id, in); err != nil {
+		return uuid.Nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return uuid.Nil, fmt.Errorf("commit: %w", err)
+	}
+	return id, nil
+}
+
+func (r *repositoryPostgres) Update(ctx context.Context, teacherID uuid.UUID, upd ProfileUpdate) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
+
+	qtx := r.q.WithTx(tx)
+	in := upd.Fields
+	if err := qtx.UpdateTeacher(ctx, sqlc.UpdateTeacherParams{
+		ID:                teacherID,
+		DisplayName:       in.DisplayName,
+		Headline:          in.Headline,
+		Kind:              sqlc.TeacherKind(in.Kind),
+		CountryCode:       in.CountryCode,
+		CountryName:       in.CountryName,
+		City:              in.City,
+		Timezone:          in.Timezone,
+		PricePerHourMinor: in.PricePerHourMinor,
+		TrialPriceMinor:   nullInt8(in.TrialPriceMinor),
+		Currency:          sqlc.CurrencyCode(in.Currency),
+		About:             in.About,
+		TeachingStyle:     in.TeachingStyle,
+		AvatarUrl:         in.AvatarURL,
+		VideoThumbnailUrl: in.VideoThumbnailURL,
+		IntroVideoUrl:     in.IntroVideoURL,
+	}); err != nil {
+		return fmt.Errorf("update teacher: %w", err)
+	}
+
+	if upd.ReplaceLanguages {
+		if err := qtx.DeleteTeacherLanguages(ctx, teacherID); err != nil {
+			return fmt.Errorf("clear languages: %w", err)
+		}
+		if err := insertLanguages(ctx, qtx, teacherID, in.Languages); err != nil {
+			return err
+		}
+	}
+	if upd.ReplaceFocus {
+		if err := qtx.DeleteTeacherFocus(ctx, teacherID); err != nil {
+			return fmt.Errorf("clear focus: %w", err)
+		}
+		if err := insertFocus(ctx, qtx, teacherID, in.Focus); err != nil {
+			return err
+		}
+	}
+	if upd.ReplaceExperience {
+		if err := qtx.DeleteTeacherExperience(ctx, teacherID); err != nil {
+			return fmt.Errorf("clear experience: %w", err)
+		}
+		if err := insertExperience(ctx, qtx, teacherID, in.Experience); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
+
+// insertChildren writes all three child collections for a freshly created
+// teacher.
+func insertChildren(ctx context.Context, q *sqlc.Queries, teacherID uuid.UUID, in ProfileInput) error {
+	if err := insertLanguages(ctx, q, teacherID, in.Languages); err != nil {
+		return err
+	}
+	if err := insertFocus(ctx, q, teacherID, in.Focus); err != nil {
+		return err
+	}
+	return insertExperience(ctx, q, teacherID, in.Experience)
+}
+
+func insertLanguages(ctx context.Context, q *sqlc.Queries, teacherID uuid.UUID, langs []LanguageEntry) error {
+	for i, l := range langs {
+		if err := q.AddTeacherLanguage(ctx, sqlc.AddTeacherLanguageParams{
+			TeacherID: teacherID,
+			Role:      sqlc.LanguageRole(l.Role),
+			Code:      l.Code,
+			Name:      l.Name,
+			Level:     sqlc.LanguageLevel(l.Level),
+			Position:  int32(i),
+		}); err != nil {
+			return fmt.Errorf("insert language %q: %w", l.Code, err)
+		}
+	}
+	return nil
+}
+
+func insertFocus(ctx context.Context, q *sqlc.Queries, teacherID uuid.UUID, tags []string) error {
+	for i, tag := range tags {
+		if err := q.AddTeacherFocus(ctx, sqlc.AddTeacherFocusParams{
+			TeacherID: teacherID,
+			Tag:       tag,
+			Position:  int32(i),
+		}); err != nil {
+			return fmt.Errorf("insert focus %q: %w", tag, err)
+		}
+	}
+	return nil
+}
+
+func insertExperience(ctx context.Context, q *sqlc.Queries, teacherID uuid.UUID, exp []Experience) error {
+	for i, e := range exp {
+		if err := q.AddTeacherExperience(ctx, sqlc.AddTeacherExperienceParams{
+			TeacherID: teacherID,
+			Title:     e.Title,
+			Org:       e.Org,
+			Period:    e.Period,
+			Position:  int32(i),
+		}); err != nil {
+			return fmt.Errorf("insert experience %q: %w", e.Title, err)
+		}
+	}
+	return nil
 }
 
 func nullText(s string) pgtype.Text {

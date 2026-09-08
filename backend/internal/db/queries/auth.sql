@@ -15,6 +15,14 @@ SELECT id, email, password_hash, display_name, created_at, updated_at
 FROM users
 WHERE id = $1;
 
+-- name: UpdateUser :one
+-- Edit the caller's own account. Email is immutable here (changing it needs a
+-- verification flow that does not exist yet).
+UPDATE users
+SET display_name = $2, updated_at = now()
+WHERE id = $1
+RETURNING id, email, password_hash, display_name, created_at, updated_at;
+
 -- name: DeleteAllUsers :exec
 -- Seed-only. teachers.user_id references users, so callers must clear teachers
 -- first.

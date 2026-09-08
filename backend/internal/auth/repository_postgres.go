@@ -64,6 +64,17 @@ func (r *repositoryPostgres) UserByID(ctx context.Context, id uuid.UUID) (User, 
 	return userFromRow(row.ID, row.Email, row.DisplayName, row.CreatedAt, row.UpdatedAt), nil
 }
 
+func (r *repositoryPostgres) UpdateUser(ctx context.Context, id uuid.UUID, displayName string) (User, error) {
+	row, err := r.q.UpdateUser(ctx, sqlc.UpdateUserParams{ID: id, DisplayName: displayName})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return User{}, ErrUserNotFound
+		}
+		return User{}, fmt.Errorf("update user: %w", err)
+	}
+	return userFromRow(row.ID, row.Email, row.DisplayName, row.CreatedAt, row.UpdatedAt), nil
+}
+
 func (r *repositoryPostgres) CreateSession(ctx context.Context, in NewSession) (Session, error) {
 	row, err := r.q.CreateSession(ctx, sqlc.CreateSessionParams{
 		UserID:           in.UserID,

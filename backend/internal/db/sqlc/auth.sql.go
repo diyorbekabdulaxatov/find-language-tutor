@@ -176,3 +176,31 @@ func (q *Queries) RevokeSession(ctx context.Context, arg RevokeSessionParams) er
 	_, err := q.db.Exec(ctx, revokeSession, arg.ReplacedBy, arg.ID)
 	return err
 }
+
+const updateUser = `-- name: UpdateUser :one
+UPDATE users
+SET display_name = $2, updated_at = now()
+WHERE id = $1
+RETURNING id, email, password_hash, display_name, created_at, updated_at
+`
+
+type UpdateUserParams struct {
+	ID          uuid.UUID
+	DisplayName string
+}
+
+// Edit the caller's own account. Email is immutable here (changing it needs a
+// verification flow that does not exist yet).
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUser, arg.ID, arg.DisplayName)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.DisplayName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

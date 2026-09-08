@@ -190,6 +190,47 @@ func TestService_Logout_RevokesSession(t *testing.T) {
 	}
 }
 
+func TestService_UpdateCurrentUser(t *testing.T) {
+	repo := newFakeRepo()
+	svc, _ := newTestService(repo)
+	ctx := context.Background()
+
+	reg, _ := svc.Register(ctx, "edit@example.com", "password123", "Old Name", "")
+
+	// happy path: display name changes, email untouched.
+	name := "New Name"
+	u, err := svc.UpdateCurrentUser(ctx, reg.User.ID, &name)
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if u.DisplayName != "New Name" || u.Email != "edit@example.com" {
+		t.Fatalf("unexpected user: %+v", u)
+	}
+
+	// nil pointer is a no-op that returns the current account.
+	u, err = svc.UpdateCurrentUser(ctx, reg.User.ID, nil)
+	if err != nil || u.DisplayName != "New Name" {
+		t.Fatalf("nil update = (%+v, %v)", u, err)
+	}
+
+	// blank display name is a validation error.
+	blank := "   "
+	if _, err := svc.UpdateCurrentUser(ctx, reg.User.ID, &blank); err == nil {
+		t.Fatal("blank display name should be rejected")
+	} else {
+		var ve ValidationError
+		if !errors.As(err, &ve) {
+			t.Fatalf("err = %v, want ValidationError", err)
+		}
+	}
+
+	// unknown user.
+	valid := "X"
+	if _, err := svc.UpdateCurrentUser(ctx, testUser().ID, &valid); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("err = %v, want ErrUserNotFound", err)
+	}
+}
+
 func TestService_CurrentUser(t *testing.T) {
 	repo := newFakeRepo()
 	svc, _ := newTestService(repo)

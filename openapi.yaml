@@ -139,6 +139,32 @@ paths:
               schema: { $ref: "#/components/schemas/AuthUser" }
         "401":
           $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [auth]
+      summary: Edit the signed-in account
+      description: >
+        Updates the caller's own account. Only `display_name` is editable;
+        changing the email is out of scope and any `email` key in the body is
+        ignored. Omitting `display_name` is a no-op that returns the account
+        unchanged.
+      operationId: updateCurrentUser
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateMeRequest" }
+      responses:
+        "200":
+          description: The updated account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthUser" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /healthz:
     get:
@@ -196,6 +222,64 @@ paths:
               schema: { $ref: "#/components/schemas/TeacherListResult" }
         "400":
           $ref: "#/components/responses/BadRequest"
+    post:
+      tags: [teachers]
+      summary: Create the caller's teacher profile
+      description: >
+        Claims a teacher profile for the authenticated account. One profile per
+        account — a second attempt is 409. The new profile's owner is the caller.
+
+        The body carries only the editable fields; server-controlled aggregates
+        (`rating`, `review_count`, `lessons_completed`, `student_count`,
+        `response_time_hours`) start at 0, `accepting_students` starts true, and
+        the `slug` is generated from `display_name` (de-duplicated with a numeric
+        suffix). `languages` / `focus` / `experience` are stored as given.
+      operationId: createTeacherProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TeacherProfileCreate" }
+      responses:
+        "201":
+          description: The created profile (same shape as GET /v1/teachers/{slug}).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeacherProfile" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: The account already has a teacher profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/teachers/me:
+    get:
+      tags: [teachers]
+      summary: The caller's own teacher profile
+      description: >
+        Returns the teacher profile owned by the authenticated account, or 404
+        if they have not created one yet. The dashboard uses this to decide
+        between the "create profile" and the edit flow, and to get the slug for
+        the availability editor.
+      operationId: getMyTeacherProfile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller's full teacher profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeacherProfile" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /v1/teachers/{slug}:
     get:
@@ -213,6 +297,45 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TeacherProfile" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [teachers]
+      summary: Edit the caller's own teacher profile
+      description: >
+        Partial update of the profile at `slug`. Requires a Bearer token whose
+        account owns the profile (`teachers.user_id`); otherwise 401 (no/invalid
+        token) or 403 (not the owner — an unclaimed profile is never editable).
+
+        Every field is optional; an omitted field is left unchanged. A present
+        `languages` / `focus` / `experience` array (even `[]`) fully replaces
+        that collection. The `slug` is immutable and server-controlled
+        aggregates cannot be set here.
+      operationId: updateTeacherProfile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TeacherProfilePatch" }
+      responses:
+        "200":
+          description: The updated profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeacherProfile" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -351,6 +474,14 @@ components:
       properties:
         email: { type: string, format: email }
         password: { type: string }
+
+    UpdateMeRequest:
+      type: object
+      description: >
+        Fields to change on the caller's account. All optional; an omitted field
+        is left unchanged. `email` is not editable and is ignored if sent.
+      properties:
+        display_name: { type: string, minLength: 1 }
 
     AuthUser:
       type: object
@@ -525,6 +656,86 @@ components:
             trial_price:
               description: Present only when the teacher offers a trial lesson.
               $ref: "#/components/schemas/Money"
+
+    LanguageEntry:
+      type: object
+      description: >
+        One row of the `languages` collection in a write request. `role` splits
+        into the read shape's `teaches` / `also_speaks` arrays.
+      required: [role, code, name, level]
+      properties:
+        role:
+          type: string
+          enum: [teaches, also_speaks]
+        code: { type: string, description: ISO 639-1 }
+        name: { type: string }
+        level: { $ref: "#/components/schemas/LanguageLevel" }
+
+    TeacherProfileWritable:
+      type: object
+      description: >
+        The caller-editable profile fields shared by create and update. Money
+        stays in integer minor units. Server-controlled aggregates (`rating`,
+        `review_count`, `lessons_completed`, `student_count`,
+        `response_time_hours`, `accepting_students`) and `slug` are never
+        accepted here.
+      properties:
+        display_name: { type: string, minLength: 1 }
+        headline: { type: string, minLength: 1 }
+        kind: { $ref: "#/components/schemas/TeacherKind" }
+        country_code: { type: string, minLength: 1, description: ISO 3166-1 alpha-2 }
+        country_name: { type: string, minLength: 1 }
+        city: { type: string, minLength: 1 }
+        timezone:
+          type: string
+          minLength: 1
+          description: IANA name, e.g. "Asia/Tashkent". Must resolve via the tz database.
+        price_per_hour_minor: { type: integer, format: int64, minimum: 0 }
+        trial_price_minor:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: Omit or null for "no trial lesson offered".
+        currency:
+          allOf: [{ $ref: "#/components/schemas/Currency" }]
+          description: Must be `UZS` (the only supported currency). Defaults to `UZS` on create.
+        about: { type: string }
+        teaching_style: { type: string }
+        avatar_url: { type: string }
+        intro_video_url: { type: string }
+        video_thumbnail_url: { type: string }
+        languages:
+          type: array
+          items: { $ref: "#/components/schemas/LanguageEntry" }
+        focus:
+          type: array
+          items: { type: string, minLength: 1 }
+        experience:
+          type: array
+          items: { $ref: "#/components/schemas/Experience" }
+
+    TeacherProfileCreate:
+      allOf:
+        - $ref: "#/components/schemas/TeacherProfileWritable"
+        - type: object
+          required:
+            - display_name
+            - headline
+            - kind
+            - country_code
+            - country_name
+            - city
+            - timezone
+            - price_per_hour_minor
+
+    TeacherProfilePatch:
+      description: >
+        Partial edit. Every field optional; an omitted field is unchanged. A
+        present `languages` / `focus` / `experience` array (even empty) fully
+        replaces that collection.
+      allOf:
+        - $ref: "#/components/schemas/TeacherProfileWritable"
 
     LanguageFacet:
       type: object

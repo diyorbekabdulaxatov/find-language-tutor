@@ -182,6 +182,45 @@ func TestHandler_Login_BadCredentials_401(t *testing.T) {
 	}
 }
 
+func TestHandler_UpdateMe(t *testing.T) {
+	r, _, _ := newTestHandler(newFakeRepo())
+
+	reg := decodeAuth(t, do(r, http.MethodPost, "/v1/auth/register",
+		`{"email":"patch@example.com","password":"password123","display_name":"Before"}`, nil))
+	authHdr := map[string]string{"Authorization": "Bearer " + reg.AccessToken}
+
+	// happy path
+	w := do(r, http.MethodPatch, "/v1/auth/me", `{"display_name":"After"}`, authHdr)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body.String())
+	}
+	var me userDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &me)
+	if me.DisplayName != "After" || me.Email != "patch@example.com" {
+		t.Fatalf("body = %+v", me)
+	}
+
+	// email in the body is ignored
+	w = do(r, http.MethodPatch, "/v1/auth/me", `{"email":"hacker@example.com"}`, authHdr)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &me)
+	if me.Email != "patch@example.com" {
+		t.Errorf("email changed: %+v", me)
+	}
+
+	// blank display name -> 400
+	if w := do(r, http.MethodPatch, "/v1/auth/me", `{"display_name":"  "}`, authHdr); w.Code != http.StatusBadRequest {
+		t.Errorf("blank name status = %d, want 400", w.Code)
+	}
+
+	// no token -> 401
+	if w := do(r, http.MethodPatch, "/v1/auth/me", `{"display_name":"X"}`, nil); w.Code != http.StatusUnauthorized {
+		t.Errorf("no token status = %d, want 401", w.Code)
+	}
+}
+
 func TestHandler_Me_Unauthorized(t *testing.T) {
 	r, _, tm := newTestHandler(newFakeRepo())
 
