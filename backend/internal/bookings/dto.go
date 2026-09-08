@@ -51,9 +51,23 @@ type bookingDTO struct {
 	MeetingURL  string `json:"meeting_url,omitempty"`
 	NoShowParty string `json:"no_show_party"`
 
+	// CanReview is true only when the viewer is the student, the booking is
+	// `completed`, and no review exists yet — the frontend shows the post-lesson
+	// prompt off this without a second call.
+	CanReview bool `json:"can_review"`
+	// Review is the caller's review of this booking if one exists (visible to
+	// both participants); null otherwise.
+	Review *bookingReviewDTO `json:"review"`
+
 	Teacher teacherSummaryDTO  `json:"teacher"`
 	Student studentSummaryDTO  `json:"student"`
 	Payment *bookingPaymentDTO `json:"payment"`
+}
+
+type bookingReviewDTO struct {
+	Rating    int       `json:"rating"`
+	Comment   string    `json:"comment"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type bookingListDTO struct {
@@ -157,10 +171,30 @@ func toBookingDTOWithPayment(b Booking, snap *PaymentSnapshot, viewerID uuid.UUI
 	return dto
 }
 
-func toBookingListDTO(bs []Booking, viewerID uuid.UUID) bookingListDTO {
+// withReview annotates a booking DTO with `can_review` / `review`. review is the
+// caller's review of this booking (nil when none). can_review is true only for
+// the student of a completed booking that has not been reviewed yet.
+func withReview(dto bookingDTO, b Booking, viewerID uuid.UUID, review *BookingReview) bookingDTO {
+	if review != nil {
+		dto.Review = &bookingReviewDTO{
+			Rating:    review.Rating,
+			Comment:   review.Comment,
+			CreatedAt: review.CreatedAt.UTC(),
+		}
+	}
+	dto.CanReview = b.Student.ID == viewerID && b.Status == StatusCompleted && review == nil
+	return dto
+}
+
+func toBookingListDTO(bs []Booking, viewerID uuid.UUID, reviews []*BookingReview) bookingListDTO {
 	out := make([]bookingDTO, len(bs))
 	for i, b := range bs {
-		out[i] = toBookingDTO(b, viewerID)
+		dto := toBookingDTO(b, viewerID)
+		var r *BookingReview
+		if i < len(reviews) {
+			r = reviews[i]
+		}
+		out[i] = withReview(dto, b, viewerID, r)
 	}
 	return bookingListDTO{Bookings: out}
 }

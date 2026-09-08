@@ -40,6 +40,11 @@ tags:
       provider-agnostic port (Stripe does not operate in Uzbekistan; a real
       Payme / Click / Uzum adapter drops in later). Money is integer minor
       units.
+  - name: reviews
+    description: >
+      A student's 1–5 rating + comment for a completed lesson. A review nudges
+      the teacher's display aggregate (`rating` / `review_count`) in the same
+      transaction; one review per booking.
   - name: system
 
 paths:
@@ -474,6 +479,39 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /v1/teachers/{slug}/reviews:
+    get:
+      tags: [reviews]
+      summary: List a teacher's reviews
+      description: >
+        Public. Newest first. A seeded catalog also returns a sample of
+        booking-less rows that stand in for the teacher's historical review
+        history behind the hand-set `rating` / `review_count` aggregate.
+      operationId: listTeacherReviews
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        "200":
+          description: A page of the teacher's reviews.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewList" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /v1/bookings:
     post:
       tags: [bookings]
@@ -818,6 +856,58 @@ paths:
           description: >
             The booking is not `confirmed` (`invalid_state`) or the lesson has
             not started yet (`too_early`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/bookings/{id}/review:
+    post:
+      tags: [reviews]
+      summary: Review a completed lesson
+      description: >
+        Student-only — only the `student_id` on the booking may call this (403
+        otherwise). The booking must be `completed` (409 `booking_not_completed`)
+        and may be reviewed only once (409 `already_reviewed`).
+
+        On success the review is inserted and the teacher's display aggregate is
+        nudged in the same transaction: `review_count += 1` and `rating =
+        round((rating*review_count + new_rating) / (review_count + 1), 1)`,
+        clamped to [0, 5]. `comment` is trimmed, optional, and capped at 2000
+        characters.
+      operationId: createBookingReview
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateReviewRequest" }
+      responses:
+        "201":
+          description: The created review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatedReview" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not the student on this booking (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The booking is not `completed` (`booking_not_completed`) or has
+            already been reviewed (`already_reviewed`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1355,6 +1445,8 @@ components:
         - created_at
         - cancelled_at
         - no_show_party
+        - can_review
+        - review
         - teacher
         - student
         - payment
@@ -1391,6 +1483,18 @@ components:
             teacher attended (booking `completed`, payment captured); `teacher`
             when the teacher self-reported they could not attend (booking
             `cancelled`, student refunded).
+        can_review:
+          type: boolean
+          description: >
+            True only when the caller is the student, `status` is `completed`,
+            and no review exists yet — the frontend shows the post-lesson review
+            prompt off this without a second call.
+        review:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/BookingReview" }]
+          description: >
+            The caller's review of this booking if one exists (visible to both
+            participants); null otherwise.
         teacher: { $ref: "#/components/schemas/BookingTeacherSummary" }
         student: { $ref: "#/components/schemas/BookingStudentSummary" }
         payment:
@@ -1524,3 +1628,60 @@ components:
           type: string
           enum: [student, teacher]
           description: Who missed the lesson.
+
+    BookingReview:
+      type: object
+      description: The review attached to a booking, embedded in booking responses.
+      required: [rating, comment, created_at]
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        created_at: { type: string, format: date-time, description: RFC3339 UTC. }
+
+    CreateReviewRequest:
+      type: object
+      required: [rating]
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          description: Optional, trimmed, at most 2000 characters.
+
+    CreatedReview:
+      type: object
+      required: [id, rating, comment, created_at, student, teacher_slug]
+      properties:
+        id: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        created_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        student:
+          type: object
+          required: [display_name]
+          properties:
+            display_name: { type: string }
+        teacher_slug: { type: string }
+
+    ReviewListItem:
+      type: object
+      required: [id, rating, comment, created_at, student_display_name]
+      properties:
+        id: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        created_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        student_display_name: { type: string }
+
+    ReviewList:
+      type: object
+      required: [reviews, total]
+      properties:
+        reviews:
+          type: array
+          items: { $ref: "#/components/schemas/ReviewListItem" }
+        total:
+          type: integer
+          description: Total reviews for the teacher (not just this page).

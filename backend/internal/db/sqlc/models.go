@@ -238,6 +238,16 @@ type PayoutLedger struct {
 	UpdatedAt   pgtype.Timestamptz
 }
 
+type Review struct {
+	ID        uuid.UUID
+	TeacherID uuid.UUID
+	StudentID uuid.UUID
+	BookingID uuid.NullUUID
+	Rating    int16
+	Comment   string
+	CreatedAt pgtype.Timestamptz
+}
+
 type Session struct {
 	ID               uuid.UUID
 	UserID           uuid.UUID

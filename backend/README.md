@@ -34,6 +34,7 @@ internal/
   availability/  teacher weekly recurring slots (UTC) — same module layout
   bookings/   concrete scheduled lessons — slots, booking lifecycle, meeting links, no-show
   payments/   payment intents + fake provider + payout ledger
+  reviews/    phase-6: lesson reviews + incremental teacher-rating aggregate (bookings.ReviewReader port)
   email/      transactional email (Resend / logging backend) + booking templates
   lessons/    phase-5 wiring: asynq reminder scheduler + email notifier (bookings ports)
 migrations/   golang-migrate SQL files
@@ -82,6 +83,7 @@ See `../openapi.yaml`. Currently implemented:
 | GET | `/v1/teachers/{slug}/availability` | weekly recurring slots (UTC), 404 if missing |
 | PUT | `/v1/teachers/{slug}/availability` | replace the full weekly set; Bearer token, must own the profile |
 | GET | `/v1/teachers/{slug}/slots` | `?from&to&duration` — concrete bookable start times (UTC); public; 400 if the window > 21 days |
+| GET | `/v1/teachers/{slug}/reviews` | `?page&page_size` (default 1 / 10, cap 50) — the teacher's reviews, newest first; public; 404 if missing |
 | POST | `/v1/bookings` | book a lesson; Bearer token; 201 `pending_payment` + opens a `requires_payment` intent; 409 `slot_unavailable` / `slot_taken` |
 | GET | `/v1/bookings` | `?role=student\|teacher&status=` — the caller's bookings, newest first; Bearer token |
 | GET | `/v1/bookings/{id}` | full booking (with embedded `payment`); Bearer token; 404 if missing, 403 if not a participant |
@@ -90,6 +92,7 @@ See `../openapi.yaml`. Currently implemented:
 | POST | `/v1/bookings/{id}/cancel` | `{reason?}`; `pending_payment\|confirmed → cancelled`; participant only; refunds/voids the intent; cancels reminders + emails the other party; 409 if already done |
 | PUT | `/v1/bookings/{id}/meeting-link` | `{url}`; teacher-owner only; sets the per-booking link override (empty clears it); 403/404 |
 | POST | `/v1/bookings/{id}/no-show` | `{party}`; teacher-owner only; from `confirmed` once started (409 `too_early`); `student` → `completed` + capture, `teacher` → `cancelled` + refund |
+| POST | `/v1/bookings/{id}/review` | `{rating: 1-5, comment?}`; student only; booking must be `completed` (409 `booking_not_completed`); one per booking (409 `already_reviewed`); nudges the teacher `rating` / `review_count` in the same transaction; 201 |
 | POST | `/v1/payments/webhook` | provider event; unauthenticated (signed); idempotent by `event_id`; 200 on a well-formed duplicate |
 | GET | `/v1/payments/me` | the caller's teacher earnings summary; Bearer token; 404 if they own no profile |
 
@@ -274,6 +277,30 @@ Both ports are optional on the booking service: a nil `ReminderScheduler` /
 unit tests keep working. Config: `RESEND_API_KEY` (empty → `logEmailer`),
 `EMAIL_FROM` (default `findtutor <noreply@findtutor.local>`).
 
+### Reviews (phase 6)
+
+`internal/reviews`. `POST /v1/bookings/{id}/review` is student-only, requires the
+booking to be `completed`, and allows one review per booking. Idempotency is the
+DB's job: `reviews_booking_uniq` is a partial unique index on `booking_id` (the
+seeded booking-less sample rows are exempt), the repository inserts and maps
+SQLSTATE `23505` to `already_reviewed` — race-safe, never a check-then-insert,
+same pattern as `payment_events`.
+
+The insert and the teacher-aggregate bump run in **one transaction**:
+`review_count = review_count + 1`, `rating = round((rating*review_count +
+new_rating) / (review_count + 1), 1)` clamped to `[0, 5]` (all references see
+the pre-`UPDATE` row, so `review_count` is the old count in both terms). The
+hand-set seed `rating` / `review_count` are the historical baseline a new review
+nudges; the seeded sample reviews (`booking_id NULL`, ~3–4 per teacher) do
+**not** touch the aggregate — they display as "showing 4 of 214".
+
+The reviews module exposes `bookings.ReviewReader` (mirrors `PaymentGateway`)
+back to bookings so a `BookingDTO` carries `can_review` (student + `completed` +
+not yet reviewed) and `review` (`{rating, comment, created_at} | null`, visible
+to both participants) without a second call. bookings never imports reviews;
+`cmd/api` injects the adapter with `bookingService.SetReviewReader(...)`. A nil
+reader is a guarded no-op.
+
 ## Tests
 
 ```bash
@@ -282,8 +309,9 @@ make vet
 ```
 
 `internal/auth`, `internal/teachers`, `internal/availability`,
-`internal/bookings`, `internal/payments`, `internal/email`, `internal/lessons`
-and `cmd/worker` have unit tests (fakes + httptest); `internal/bookings` also
+`internal/bookings`, `internal/payments`, `internal/reviews`, `internal/email`,
+`internal/lessons` and `cmd/worker` have unit tests (fakes + httptest);
+`internal/bookings` also
 has a slot-generation table test covering the tricky timezone / weekday /
 midnight-wrap cases. The payments tests cover authorize-ok, decline (402),
 double-pay (409), complete-too-early (409), complete → ledger,
@@ -295,7 +323,12 @@ no-show teacher → cancelled + refund, no-show too-early → 409, the reminder
 scheduler + notifier being called on `pay` / `cancel` / teacher no-show, nil
 port safety, the email backend selection + templates, and the worker handler
 (skips a cancelled booking, mails both parties for a confirmed one, retries on a
-send error). No DB is required for the test suite.
+send error). The phase-6 review tests cover review-ok → 201 + aggregate bumped,
+non-student → 403, not-completed → 409, duplicate → 409 (`23505` sentinel),
+rating out of range → 400, comment too long → 400, list newest-first +
+pagination + page-size cap + unknown slug 404, and the `can_review` / embedded
+`review` DTO transitions for both participants. No DB is required for the test
+suite.
 
 ## Not done yet
 
@@ -310,6 +343,10 @@ send error). No DB is required for the test suite.
   run (`held` → `available` is instant).
 - Any cancellation window / penalty rules (no-show has no dispute / appeal flow
   — the teacher's report is final for the MVP, and only the teacher can file it).
+- Reviews cannot be edited or deleted, there is no teacher reply, and the
+  `teachers.rating` aggregate is only ever nudged forward (a deleted review would
+  not un-nudge it). The seeded per-teacher `rating` / `review_count` stay the
+  historical baseline — the sample review rows are display-only.
 - Reminders are enqueued from the synchronous `pay` request path; a real async
   payment provider would enqueue them from the `payment.authorized` webhook
   instead. There is no reschedule endpoint yet (only `Cancel` on cancel /

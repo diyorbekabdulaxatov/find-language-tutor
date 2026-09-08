@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,11 +48,14 @@ func main() {
 
 	q := sqlc.New(tx)
 
-	// FK order: payout_ledger / payment_events -> payments -> bookings ->
-	// teachers/users, teachers.user_id -> users. None of these FKs cascade, so
-	// the seed clears them explicitly deepest-first. (We do not seed payment
-	// rows; these deletes just keep `make seed` working once real payments
-	// exist.)
+	// FK order: reviews -> bookings/teachers/users, payout_ledger /
+	// payment_events -> payments -> bookings -> teachers/users, teachers.user_id
+	// -> users. None of these FKs cascade, so the seed clears them explicitly
+	// deepest-first. (We do not seed payment rows; those deletes just keep
+	// `make seed` working once real payments exist. We DO seed sample reviews.)
+	if err := q.DeleteAllReviews(ctx); err != nil {
+		log.Fatalf("clear reviews: %v", err)
+	}
 	if err := q.DeleteAllPayoutLedger(ctx); err != nil {
 		log.Fatalf("clear payout ledger: %v", err)
 	}
@@ -78,6 +82,10 @@ func main() {
 		log.Fatalf("hash demo password: %v", err)
 	}
 
+	// Populated as teachers are inserted; used for the sample-review pass below.
+	teacherIDBySlug := make(map[string]uuid.UUID, len(seedTeachers))
+	userIDByFirstName := make(map[string]uuid.UUID, len(seedTeachers))
+
 	for _, t := range seedTeachers {
 		user, err := q.CreateUser(ctx, sqlc.CreateUserParams{
 			Email:        demoEmail(t.DisplayName),
@@ -87,6 +95,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("create user for %s: %v", t.Slug, err)
 		}
+		userIDByFirstName[strings.ToLower(firstName(t.DisplayName))] = user.ID
 
 		id, err := q.CreateTeacher(ctx, sqlc.CreateTeacherParams{
 			UserID:            uuid.NullUUID{UUID: user.ID, Valid: true},
@@ -116,6 +125,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("create %s: %v", t.Slug, err)
 		}
+		teacherIDBySlug[t.Slug] = id
 
 		for i, l := range t.Teaches {
 			addLang(ctx, q, id, sqlc.LanguageRoleTeaches, l, i)
@@ -149,11 +159,47 @@ func main() {
 		}
 	}
 
+	// Sample reviews: booking-less rows (booking_id NULL) that display as a
+	// portion of each teacher's review history. These do NOT touch
+	// teachers.rating / review_count — the hand-set values stand.
+	reviewCount := 0
+	for slug, rs := range seedReviews {
+		teacherID, ok := teacherIDBySlug[slug]
+		if !ok {
+			log.Fatalf("seedReviews has slug %q with no matching teacher", slug)
+		}
+		for _, r := range rs {
+			studentID, ok := userIDByFirstName[r.StudentFirstName]
+			if !ok {
+				log.Fatalf("seedReviews %s: no demo account for %q", slug, r.StudentFirstName)
+			}
+			if err := q.SeedInsertReview(ctx, sqlc.SeedInsertReviewParams{
+				TeacherID: teacherID,
+				StudentID: studentID,
+				Rating:    int16(r.Rating),
+				Comment:   r.Comment,
+			}); err != nil {
+				log.Fatalf("seed review %s/%s: %v", slug, r.StudentFirstName, err)
+			}
+			reviewCount++
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		log.Fatalf("commit: %v", err)
 	}
 
-	log.Printf("seeded %d teachers (+ %d demo accounts, password %q)", len(seedTeachers), len(seedTeachers), demoPassword)
+	log.Printf("seeded %d teachers (+ %d demo accounts, password %q), %d sample reviews",
+		len(seedTeachers), len(seedTeachers), demoPassword, reviewCount)
+}
+
+// firstName is the first whitespace/hyphen-delimited token of a display name,
+// matching demoEmail's derivation ("Kim Min-jun" -> "Kim").
+func firstName(displayName string) string {
+	if i := strings.IndexAny(displayName, " -"); i > 0 {
+		return displayName[:i]
+	}
+	return displayName
 }
 
 func addLang(ctx context.Context, q *sqlc.Queries, id uuid.UUID, role sqlc.LanguageRole, l seedLang, pos int) {

@@ -123,6 +123,73 @@ var seedAvailability = map[string][]seedSlot{
 	),
 }
 
+// seedReview is one sample review. Student is the demo account for another
+// seeded teacher, addressed by first name (-> "<name>@example.com"). booking_id
+// is always NULL for these — they stand in for the historical review history
+// behind a teacher's hand-set rating / review_count ("showing 4 of 214"), so
+// the seed deliberately does NOT recompute the aggregate from them.
+type seedReview struct {
+	StudentFirstName string
+	Rating           int
+	Comment          string
+}
+
+// seedReviews is keyed by teacher slug. 3–4 rows each so
+// GET /v1/teachers/{slug}/reviews returns content on a fresh database.
+var seedReviews = map[string][]seedReview{
+	"nodira-karimova": {
+		{"sardor", 5, "Went from 6.0 to 7.5 in speaking in two months. The weekly targets kept me honest."},
+		{"elena", 5, "Extremely well prepared every lesson. The recordings of my answers were eye-opening."},
+		{"jasur", 4, "Tough but fair feedback on my writing. Homework every time, which I needed."},
+		{"kamola", 5, "Calm and encouraging even when I froze up. Got the band I needed for my visa."},
+	},
+	"sardor-yusupov": {
+		{"dilnoza", 5, "Finally comfortable on work calls in English. We just talk the whole hour."},
+		{"bekzod", 4, "Relaxed sessions, practical corrections. Wish he had more evening slots."},
+		{"aziza", 5, "Great for interview prep — he pushes you to actually explain things."},
+	},
+	"elena-kim": {
+		{"nodira", 5, "My daughter's grammar finally clicked. Clear explanations, patient pace."},
+		{"mehmet", 5, "Thorough and structured. The grammar references after each topic are gold."},
+		{"kamola", 4, "Very solid teacher for university prep. Lessons are calm and focused."},
+	},
+	"dilnoza-abdullayeva": {
+		{"sardor", 5, "My son actually asks when the next lesson is. Games and stories really work."},
+		{"elena", 5, "Kind and consistent. The after-lesson notes for parents are a nice touch."},
+		{"jasur", 4, "Good with reluctant teens — brought in football and YouTube to hook him."},
+	},
+	"jasur-rakhimov": {
+		{"dilnoza", 4, "Cleared up tenses and articles that cost me marks for years. Affordable too."},
+		{"bekzod", 5, "Uses my own writing for error correction, which made it stick."},
+		{"nodira", 4, "Reliable exam-prep tutor. Checks homework at the start of every lesson."},
+	},
+	"aziza-tosheva": {
+		{"elena", 5, "Passed my Goethe B1 first try. The colour-coded grammar patterns are brilliant."},
+		{"sardor", 5, "Prepared me for real situations — renting a flat, the Bürgeramt, interviews."},
+		{"kamola", 5, "Systematic and clear. Best German teacher I've had, online or offline."},
+	},
+	"kim-min-jun": {
+		{"nodira", 5, "Started from Hangul and never picked up bad habits. Slides and flashcards every time."},
+		{"aziza", 4, "Speaks mostly Korean early on — hard at first, worth it fast."},
+		{"mehmet", 5, "Great for TOPIK prep and for understanding K-content without subtitles."},
+	},
+	"mehmet-demir": {
+		{"bekzod", 5, "Casual and fun. Uzbek and Turkish being close made the first lesson click."},
+		{"dilnoza", 4, "Nice relaxed conversation practice. He sends a word list after each session."},
+		{"jasur", 5, "He points out the false friends between our languages — very helpful."},
+	},
+	"kamola-sattorova": {
+		{"elena", 5, "Survival Uzbek for the bazaar and taxis from lesson one. Warm and practical."},
+		{"aziza", 5, "Lots of role-play from real situations. My neighbours noticed the difference."},
+		{"sardor", 4, "Teaches the spoken Tashkent variety first, which is exactly what I needed."},
+	},
+	"bekzod-ergashev": {
+		{"kamola", 5, "Reconnected with the Uzbek I grew up hearing. Never once made me feel behind."},
+		{"nodira", 5, "Gentle, patient, lots of repetition. My speaking came back faster than expected."},
+		{"mehmet", 4, "Good heritage-speaker lessons. We mostly talk about family and food."},
+	},
+}
+
 var seedTeachers = []seedTeacher{
 	{
 		Slug: "nodira-karimova", DisplayName: "Nodira Karimova",

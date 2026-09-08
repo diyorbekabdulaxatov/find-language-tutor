@@ -131,6 +131,7 @@ type Service struct {
 	payments  PaymentGateway    // nil until SetPaymentGateway; guarded at every use
 	reminders ReminderScheduler // nil until SetReminderScheduler; guarded
 	notifier  Notifier          // nil until SetNotifier; guarded
+	reviews   ReviewReader      // nil until SetReviewReader; guarded
 	logger    *slog.Logger
 }
 
@@ -150,6 +151,33 @@ func (s *Service) SetReminderScheduler(r ReminderScheduler) { s.reminders = r }
 // SetNotifier wires the transactional-email notifier in. Optional: a nil
 // notifier makes every send a no-op.
 func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
+
+// SetReviewReader wires the reviews module's read port in. Optional: a nil
+// reader leaves `review` nil and computes `can_review` from booking state alone.
+func (s *Service) SetReviewReader(r ReviewReader) { s.reviews = r }
+
+// reviewFor best-effort loads a booking's review; a lookup error is logged and
+// treated as "no review" so it never fails a booking read.
+func (s *Service) reviewFor(ctx context.Context, bookingID uuid.UUID) *BookingReview {
+	if s.reviews == nil {
+		return nil
+	}
+	r, found, err := s.reviews.ForBooking(ctx, bookingID)
+	if err != nil {
+		s.log().Error("load booking review", slog.String("booking_id", bookingID.String()), slog.Any("error", err))
+		return nil
+	}
+	if !found {
+		return nil
+	}
+	return r
+}
+
+// ReviewFor exposes reviewFor to the handler so it can annotate booking DTOs
+// with `can_review` / `review`.
+func (s *Service) ReviewFor(ctx context.Context, bookingID uuid.UUID) *BookingReview {
+	return s.reviewFor(ctx, bookingID)
+}
 
 // --- guarded port calls (all safe with a nil port) ---
 

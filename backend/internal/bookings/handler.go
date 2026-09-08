@@ -95,7 +95,7 @@ func (h *Handler) Create(c *gin.Context) {
 	if h.rendered(c, err, "create booking", slog.String("slug", req.TeacherSlug)) {
 		return
 	}
-	c.JSON(http.StatusCreated, toBookingDTO(b, uid))
+	c.JSON(http.StatusCreated, withReview(toBookingDTO(b, uid), b, uid, nil))
 }
 
 // List handles GET /v1/bookings?role&status.
@@ -116,7 +116,13 @@ func (h *Handler) List(c *gin.Context) {
 	if h.rendered(c, err, "list bookings") {
 		return
 	}
-	c.JSON(http.StatusOK, toBookingListDTO(bs, uid))
+	reviews := make([]*BookingReview, len(bs))
+	for i, b := range bs {
+		if b.Status == StatusCompleted {
+			reviews[i] = h.svc.ReviewFor(c.Request.Context(), b.ID)
+		}
+	}
+	c.JSON(http.StatusOK, toBookingListDTO(bs, uid, reviews))
 }
 
 // Get handles GET /v1/bookings/:id.
@@ -130,7 +136,11 @@ func (h *Handler) Get(c *gin.Context) {
 	if h.rendered(c, err, "get booking", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, toBookingDTOWithPayment(b, snap, uid))
+	var review *BookingReview
+	if b.Status == StatusCompleted {
+		review = h.svc.ReviewFor(c.Request.Context(), b.ID)
+	}
+	c.JSON(http.StatusOK, withReview(toBookingDTOWithPayment(b, snap, uid), b, uid, review))
 }
 
 // Pay handles POST /v1/bookings/:id/pay. Body {"method_token": "..."}.
@@ -151,7 +161,7 @@ func (h *Handler) Pay(c *gin.Context) {
 	if h.rendered(c, err, "pay booking", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, toBookingDTOWithPayment(b, snap, uid))
+	c.JSON(http.StatusOK, withReview(toBookingDTOWithPayment(b, snap, uid), b, uid, nil))
 }
 
 // Complete handles POST /v1/bookings/:id/complete. Teacher-owner only: capture
@@ -166,7 +176,7 @@ func (h *Handler) Complete(c *gin.Context) {
 	if h.rendered(c, err, "complete booking", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, toBookingDTOWithPayment(b, snap, uid))
+	c.JSON(http.StatusOK, withReview(toBookingDTOWithPayment(b, snap, uid), b, uid, nil))
 }
 
 // Cancel handles POST /v1/bookings/:id/cancel.
@@ -189,7 +199,7 @@ func (h *Handler) Cancel(c *gin.Context) {
 	if h.rendered(c, err, "cancel booking", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, toBookingDTO(b, uid))
+	c.JSON(http.StatusOK, withReview(toBookingDTO(b, uid), b, uid, nil))
 }
 
 // SetMeetingLink handles PUT /v1/bookings/:id/meeting-link. Body {"url": "..."}.
@@ -210,7 +220,7 @@ func (h *Handler) SetMeetingLink(c *gin.Context) {
 	if h.rendered(c, err, "set meeting link", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, toBookingDTO(b, uid))
+	c.JSON(http.StatusOK, withReview(toBookingDTO(b, uid), b, uid, nil))
 }
 
 // NoShow handles POST /v1/bookings/:id/no-show. Body {"party": "student"|"teacher"}.
@@ -231,7 +241,7 @@ func (h *Handler) NoShow(c *gin.Context) {
 	if h.rendered(c, err, "record no-show", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, toBookingDTOWithPayment(b, snap, uid))
+	c.JSON(http.StatusOK, withReview(toBookingDTOWithPayment(b, snap, uid), b, uid, nil))
 }
 
 // callerAndID pulls the authenticated user id and the :id path param, writing

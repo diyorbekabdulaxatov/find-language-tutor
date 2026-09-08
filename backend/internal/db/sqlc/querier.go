@@ -15,11 +15,17 @@ type Querier interface {
 	AddTeacherExperience(ctx context.Context, arg AddTeacherExperienceParams) error
 	AddTeacherFocus(ctx context.Context, arg AddTeacherFocusParams) error
 	AddTeacherLanguage(ctx context.Context, arg AddTeacherLanguageParams) error
+	// Incrementally fold one new rating into the teacher's display aggregate,
+	// keeping the hand-set historical values as the baseline. All references to the
+	// current row see the pre-UPDATE values, so review_count is the old count in
+	// both expressions. Result clamped to [0, 5].
+	BumpTeacherRatingForReview(ctx context.Context, arg BumpTeacherRatingForReviewParams) error
 	CancelBooking(ctx context.Context, arg CancelBookingParams) error
 	// System transition (no participant check): pending_payment -> confirmed on a
 	// successful authorization webhook. Guarded so a replay cannot resurrect a
 	// cancelled booking.
 	ConfirmBookingForPayment(ctx context.Context, id uuid.UUID) error
+	CountTeacherReviews(ctx context.Context, teacherID uuid.UUID) (int64, error)
 	CountTeachers(ctx context.Context, arg CountTeachersParams) (int64, error)
 	CreateBooking(ctx context.Context, arg CreateBookingParams) (uuid.UUID, error)
 	// Payments module: one payment intent per booking, the webhook-event log that
@@ -41,6 +47,9 @@ type Querier interface {
 	// reference them) before bookings.
 	DeleteAllPayments(ctx context.Context) error
 	DeleteAllPayoutLedger(ctx context.Context) error
+	// Seed-only. reviews references teachers / users / bookings with no cascade, so
+	// the seed clears it before all three.
+	DeleteAllReviews(ctx context.Context) error
 	DeleteAllTeachers(ctx context.Context) error
 	// Seed-only. teachers.user_id references users, so callers must clear teachers
 	// first.
@@ -60,6 +69,15 @@ type Querier interface {
 	GetBookingTeacherContext(ctx context.Context, slug string) (GetBookingTeacherContextRow, error)
 	GetPaymentByBooking(ctx context.Context, bookingID uuid.UUID) (Payment, error)
 	GetPaymentByID(ctx context.Context, id uuid.UUID) (Payment, error)
+	// Reviews module (Phase 6): a student's rating + comment for a completed lesson.
+	// A real review carries booking_id; the demo seed inserts booking-less samples.
+	// Everything the POST /v1/bookings/{id}/review flow needs to authorize the
+	// caller and build the review: the booking's student + status and the teacher
+	// it is for, plus the display names embedded in the response.
+	GetReviewBookingContext(ctx context.Context, id uuid.UUID) (GetReviewBookingContextRow, error)
+	// The review for a booking (for embedding in a BookingDTO). No rows -> the
+	// booking has not been reviewed.
+	GetReviewByBooking(ctx context.Context, bookingID uuid.NullUUID) (GetReviewByBookingRow, error)
 	GetSessionByRefreshHash(ctx context.Context, refreshTokenHash []byte) (Session, error)
 	// Availability module: a teacher's weekly recurring slots (UTC minutes).
 	// Resolve a slug to the teacher id, timezone, and owning user the availability
@@ -75,6 +93,10 @@ type Querier interface {
 	// The idempotency gate. A duplicate event_id raises SQLSTATE 23505, which the
 	// repository treats as "already processed".
 	InsertPaymentEvent(ctx context.Context, arg InsertPaymentEventParams) error
+	// A real, booking-tied review. A duplicate for the same booking_id raises
+	// SQLSTATE 23505 on reviews_booking_uniq, which the repository maps to
+	// ErrAlreadyReviewed (race-safe, never a check-then-insert).
+	InsertReview(ctx context.Context, arg InsertReviewParams) (Review, error)
 	// Count of teachers per taught language across the whole catalog. Drives the
 	// language filter in the UI, so it is intentionally unfiltered.
 	LanguageFacets(ctx context.Context) ([]LanguageFacetsRow, error)
@@ -90,6 +112,8 @@ type Querier interface {
 	// server-side slot generation and the pre-insert bookability re-check.
 	ListTeacherBookingIntervals(ctx context.Context, arg ListTeacherBookingIntervalsParams) ([]ListTeacherBookingIntervalsRow, error)
 	ListTeacherEarnings(ctx context.Context, teacherID uuid.UUID) ([]ListTeacherEarningsRow, error)
+	// A page of a teacher's reviews, newest first.
+	ListTeacherReviews(ctx context.Context, arg ListTeacherReviewsParams) ([]ListTeacherReviewsRow, error)
 	ListTeacherSlugs(ctx context.Context) ([]string, error)
 	// Page of teachers matching the optional filters, ordered by the requested sort.
 	// Child collections (languages, focus, experience) are loaded separately by the
@@ -108,6 +132,8 @@ type Querier interface {
 	// Marks a session revoked and records the session that replaced it (rotation).
 	// No-op if it was already revoked.
 	RevokeSession(ctx context.Context, arg RevokeSessionParams) error
+	// Seed-only: a booking-less sample review. Does NOT touch the teacher aggregate.
+	SeedInsertReview(ctx context.Context, arg SeedInsertReviewParams) error
 	// Per-booking meeting link override. An empty string clears it (fall back to the
 	// teacher's default meeting_url).
 	SetBookingMeetingLinkOverride(ctx context.Context, arg SetBookingMeetingLinkOverrideParams) error
