@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TimezoneSelect } from "@/components/ui/timezone-select";
 
 const LEVELS: LanguageLevel[] = ["native", "c2", "c1", "b2", "b1", "a2", "a1"];
 
@@ -146,13 +147,12 @@ export function ProfileEditor({
           <Field
             label="Timezone"
             htmlFor="timezone"
-            hint="IANA name, e.g. Asia/Tashkent"
+            hint="Your lesson times are shown to students in their own zone."
           >
-            <Input
+            <TimezoneSelect
               id="timezone"
               value={values.timezone}
-              onChange={(e) => set("timezone", e.target.value)}
-              required
+              onChange={(tz) => set("timezone", tz)}
             />
           </Field>
         </div>
@@ -282,7 +282,7 @@ export function ProfileEditor({
         </p>
       )}
 
-      <div className="sticky bottom-0 flex items-center gap-3 border-t border-border bg-background/90 py-4 backdrop-blur">
+      <div className="sticky bottom-0 -mx-4 flex items-center gap-3 border-t border-border bg-background px-4 py-4 shadow-[0_-10px_20px_-12px_rgba(23,23,51,0.18)] sm:-mx-6 sm:px-6">
         <Button type="submit" disabled={status === "saving"}>
           {status === "saving"
             ? "Saving…"
