@@ -59,6 +59,10 @@ export interface Booking {
   /** Effective video link. Only populated for a participant once confirmed. */
   meetingUrl: string;
   noShowParty: NoShowParty;
+  /** true when the viewer is the student, status is completed, and no review yet. */
+  canReview: boolean;
+  /** the caller's review of this booking, if left. */
+  review: { rating: number; comment: string; createdAt: string } | null;
   teacher: {
     slug: string;
     displayName: string;
@@ -122,9 +126,14 @@ const money = (m: WireMoney): Money => ({
 });
 
 function toBooking(b: WireBooking): Booking {
-  // `payment` and `meeting_url` are absent from list responses; read defensively.
-  const wp = (b as { payment?: components["schemas"]["BookingPayment"] | null })
-    .payment;
+  // `payment` / `meeting_url` / `review` are absent from list responses; read
+  // defensively. `can_review` / `review` land with the Phase-6 schema regen.
+  const extra = b as {
+    payment?: components["schemas"]["BookingPayment"] | null;
+    can_review?: boolean;
+    review?: { rating: number; comment: string; created_at: string } | null;
+  };
+  const wp = extra.payment;
   return {
     id: b.id,
     status: b.status,
@@ -147,6 +156,14 @@ function toBooking(b: WireBooking): Booking {
       : null,
     meetingUrl: b.meeting_url ?? "",
     noShowParty: b.no_show_party ?? "",
+    canReview: extra.can_review ?? false,
+    review: extra.review
+      ? {
+          rating: extra.review.rating,
+          comment: extra.review.comment,
+          createdAt: extra.review.created_at,
+        }
+      : null,
     teacher: {
       slug: b.teacher.slug,
       displayName: b.teacher.display_name,

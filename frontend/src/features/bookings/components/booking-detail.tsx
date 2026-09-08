@@ -16,6 +16,10 @@ import {
   type PaymentStatus,
 } from "@/features/bookings/api";
 import { formatFull, viewerTimezone } from "@/features/bookings/datetime";
+import {
+  BookingReview,
+  ReviewPrompt,
+} from "@/features/reviews/components/review-prompt";
 import { BookingStatusBadge } from "./booking-status-badge";
 import { PaymentForm } from "./payment-form";
 import { LessonJoinCard } from "./lesson-join-card";
@@ -65,6 +69,12 @@ export function BookingDetail({ id }: { id: string }) {
       alive = false;
     };
   }, [id]);
+
+  async function refetch() {
+    const fresh = await getBooking(id);
+    setBooking(fresh);
+    setLinkDraft(fresh.meetingUrl);
+  }
 
   async function run(
     action: NonNullable<typeof busy>,
@@ -298,6 +308,21 @@ export function BookingDetail({ id }: { id: string }) {
             }}
           />
         </div>
+      )}
+
+      {booking.review ? (
+        <BookingReview
+          rating={booking.review.rating}
+          comment={booking.review.comment}
+        />
+      ) : (
+        booking.canReview && (
+          <ReviewPrompt
+            bookingId={booking.id}
+            teacherName={booking.teacher.displayName}
+            onSubmitted={() => void refetch()}
+          />
+        )
       )}
     </div>
   );

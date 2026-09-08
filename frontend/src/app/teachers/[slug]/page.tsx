@@ -10,6 +10,7 @@ import { LanguageLine } from "@/features/teachers/components/language-line";
 import { LocalTime } from "@/features/teachers/components/local-time";
 import { IntroVideo } from "@/features/teachers/components/intro-video";
 import { BookingPanel } from "@/features/teachers/components/booking-panel";
+import { ReviewsSection } from "@/features/reviews/components/reviews-section";
 import { photoUrl } from "@/features/teachers/components/teacher-avatar";
 import { greetingFor, localTimeIn } from "@/lib/i18n";
 import { flagEmoji } from "@/lib/country";
@@ -170,6 +171,8 @@ export default async function TeacherProfilePage({
               ))}
             </ul>
           </Card>
+
+          <ReviewsSection slug={slug} reviewCount={teacher.reviewCount} />
         </div>
       </div>
     </div>
