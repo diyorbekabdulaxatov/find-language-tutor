@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 import { AdminError, getUser, type AdminUserDetail } from "@/features/admin/api";
 import { TeacherStatusBadge } from "./teacher-status-badge";
+import { UserRolesCard } from "./user-roles-card";
 
 function fmt(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -22,23 +23,23 @@ export function UserDetail({ id }: { id: string }) {
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    getUser(id)
+  const reload = useCallback(() => {
+    return getUser(id)
       .then((d) => {
-        if (!alive) return;
         setData(d);
         setState("ready");
       })
       .catch((err) => {
-        if (!alive) return;
-        setErrMsg(err instanceof AdminError ? err.message : "Could not load that user.");
+        setErrMsg(
+          err instanceof AdminError ? err.message : "Could not load that user.",
+        );
         setState("error");
       });
-    return () => {
-      alive = false;
-    };
   }, [id]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
   if (state === "loading") {
     return <div className="h-96 animate-pulse rounded-2xl bg-muted" />;
@@ -54,21 +55,14 @@ export function UserDetail({ id }: { id: string }) {
     );
   }
 
-  const { user, teacherProfile, bookings, paymentsSummary } = data;
+  const { user, roles, teacherProfile, bookings, paymentsSummary } = data;
 
   return (
     <div className="flex flex-col gap-6">
       <Back />
 
       <div className="rounded-2xl border border-border bg-card p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-display text-2xl">{user.displayName}</h2>
-          {user.role === "admin" && (
-            <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
-              admin
-            </span>
-          )}
-        </div>
+        <h2 className="font-display text-2xl">{user.displayName}</h2>
         <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
           <Row label="Email">{user.email}</Row>
           <Row label="User ID">
@@ -77,6 +71,8 @@ export function UserDetail({ id }: { id: string }) {
           <Row label="Joined">{fmt(user.createdAt)}</Row>
         </dl>
       </div>
+
+      <UserRolesCard userId={user.id} roles={roles} onChanged={reload} />
 
       <div className="rounded-2xl border border-border bg-card p-6">
         <h3 className="font-display text-lg">Teacher profile</h3>

@@ -87,7 +87,6 @@ export interface AdminUserRow {
   id: string;
   email: string;
   displayName: string;
-  role: "user" | "admin";
   createdAt: string;
   isTeacher: boolean;
   bookingCount: number;
@@ -102,7 +101,6 @@ interface WireUserRow {
   id: string;
   email: string;
   display_name: string;
-  role: "user" | "admin";
   created_at: string;
   is_teacher: boolean;
   booking_count: number;
@@ -112,7 +110,6 @@ const toUserRow = (u: WireUserRow): AdminUserRow => ({
   id: u.id,
   email: u.email,
   displayName: u.display_name,
-  role: u.role,
   createdAt: u.created_at,
   isTeacher: u.is_teacher,
   bookingCount: u.booking_count,
@@ -137,9 +134,9 @@ export interface AdminUserDetail {
     id: string;
     email: string;
     displayName: string;
-    role: "user" | "admin";
     createdAt: string;
   };
+  roles: { id: string; name: string }[];
   teacherProfile: {
     slug: string;
     status: TeacherStatus;
@@ -167,9 +164,9 @@ export async function getUser(id: string): Promise<AdminUserDetail> {
       id: string;
       email: string;
       display_name: string;
-      role: "user" | "admin";
       created_at: string;
     };
+    roles?: { id: string; name: string }[];
     teacher_profile: {
       slug: string;
       status: TeacherStatus;
@@ -196,9 +193,9 @@ export async function getUser(id: string): Promise<AdminUserDetail> {
       id: w.user.id,
       email: w.user.email,
       displayName: w.user.display_name,
-      role: w.user.role,
       createdAt: w.user.created_at,
     },
+    roles: w.roles ?? [],
     teacherProfile: w.teacher_profile,
     bookings: w.bookings.map((b) => ({
       id: b.id,
@@ -344,3 +341,101 @@ export const suspendTeacher = (slug: string, note: string) =>
   moderate(slug, "suspend", { note });
 export const setTeacherVerified = (slug: string, verified: boolean) =>
   moderate(slug, "verify", { verified });
+
+/* ------------------------------- RBAC roles ----------------------------- */
+
+export interface PermissionInfo {
+  key: string;
+  description: string;
+}
+
+export interface Role {
+  id: string;
+  name: string;
+  description: string;
+  isSystem: boolean;
+  permissions: string[];
+  userCount: number;
+}
+
+interface WireRole {
+  id: string;
+  name: string;
+  description: string;
+  is_system: boolean;
+  permissions: string[];
+  user_count: number;
+}
+
+const toRole = (r: WireRole): Role => ({
+  id: r.id,
+  name: r.name,
+  description: r.description,
+  isSystem: r.is_system,
+  permissions: r.permissions,
+  userCount: r.user_count,
+});
+
+export async function getPermissionCatalog(): Promise<PermissionInfo[]> {
+  const w = await call<{ key: string; description: string }[]>(
+    "/v1/admin/permissions",
+    {},
+    "Could not load the permission catalog.",
+  );
+  return w;
+}
+
+export async function listRoles(): Promise<Role[]> {
+  const w = await call<WireRole[]>("/v1/admin/roles", {}, "Could not load roles.");
+  return w.map(toRole);
+}
+
+export async function createRole(input: {
+  name: string;
+  description: string;
+  permissions: string[];
+}): Promise<void> {
+  await call(
+    "/v1/admin/roles",
+    { method: "POST", body: JSON.stringify(input) },
+    "Could not create the role.",
+  );
+}
+
+export async function updateRole(
+  id: string,
+  patch: { description?: string; permissions?: string[] },
+): Promise<void> {
+  await call(
+    `/v1/admin/roles/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: JSON.stringify(patch) },
+    "Could not update the role.",
+  );
+}
+
+export async function deleteRole(id: string): Promise<void> {
+  await call(
+    `/v1/admin/roles/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+    "Could not delete the role.",
+  );
+}
+
+export async function assignRole(userId: string, roleId: string): Promise<void> {
+  await call(
+    `/v1/admin/users/${encodeURIComponent(userId)}/roles`,
+    { method: "POST", body: JSON.stringify({ role_id: roleId }) },
+    "Could not assign the role.",
+  );
+}
+
+export async function unassignRole(
+  userId: string,
+  roleId: string,
+): Promise<void> {
+  await call(
+    `/v1/admin/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(roleId)}`,
+    { method: "DELETE" },
+    "Could not remove the role.",
+  );
+}

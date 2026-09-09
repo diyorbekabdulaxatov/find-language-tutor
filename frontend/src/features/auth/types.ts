@@ -8,7 +8,9 @@ export interface AuthUser {
   id: string;
   email: string;
   displayName: string;
-  role: "user" | "admin";
+  /** RBAC permission keys the caller holds (union across their roles). Empty
+   *  for an ordinary user; a non-empty list means they have some admin access. */
+  permissions: string[];
 }
 
 /** What a successful register / login / refresh gives the client. */

@@ -106,7 +106,7 @@ export function AccountMenu() {
             Account settings
           </Link>
         </DropdownMenuItem>
-        {user.role === "admin" && (
+        {user.permissions.length > 0 && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>

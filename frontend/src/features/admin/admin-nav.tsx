@@ -2,20 +2,32 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, GraduationCap, Users } from "lucide-react";
+import { BarChart3, GraduationCap, ShieldCheck, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PERMISSIONS, type Permission } from "./permissions";
+import { useCan } from "./use-can";
 
-const LINKS = [
-  { href: "/admin", label: "Dashboard", icon: BarChart3, exact: true },
-  { href: "/admin/teachers", label: "Teachers", icon: GraduationCap },
-  { href: "/admin/users", label: "Users", icon: Users },
+const LINKS: {
+  href: string;
+  label: string;
+  icon: typeof BarChart3;
+  exact?: boolean;
+  perm: Permission;
+}[] = [
+  { href: "/admin", label: "Dashboard", icon: BarChart3, exact: true, perm: PERMISSIONS.metricsView },
+  { href: "/admin/teachers", label: "Teachers", icon: GraduationCap, perm: PERMISSIONS.teachersView },
+  { href: "/admin/users", label: "Users", icon: Users, perm: PERMISSIONS.usersView },
+  { href: "/admin/roles", label: "Roles", icon: ShieldCheck, perm: PERMISSIONS.rolesManage },
 ];
 
 export function AdminNav() {
   const pathname = usePathname();
+  const { can } = useCan();
+  const links = LINKS.filter((l) => can(l.perm));
+
   return (
     <nav className="flex gap-1 border-b border-border">
-      {LINKS.map(({ href, label, icon: Icon, exact }) => {
+      {links.map(({ href, label, icon: Icon, exact }) => {
         const active = exact ? pathname === href : pathname.startsWith(href);
         return (
           <Link

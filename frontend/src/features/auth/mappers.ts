@@ -7,9 +7,14 @@ type WireUser = components["schemas"]["AuthUser"];
 type WireAuthResponse = components["schemas"]["AuthResponse"];
 
 export function fromWireUser(u: WireUser): AuthUser {
-  // `role` lands with the admin-phase schema regen; default to "user" until then.
-  const role = (u as { role?: "user" | "admin" }).role ?? "user";
-  return { id: u.id, email: u.email, displayName: u.display_name, role };
+  // `permissions` lands with the RBAC schema regen; default to [] until then.
+  const permissions = (u as { permissions?: string[] }).permissions ?? [];
+  return {
+    id: u.id,
+    email: u.email,
+    displayName: u.display_name,
+    permissions,
+  };
 }
 
 export function fromWireSession(r: WireAuthResponse): Session {

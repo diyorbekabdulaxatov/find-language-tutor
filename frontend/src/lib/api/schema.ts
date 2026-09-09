@@ -85,7 +85,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The signed-in user */
+        /**
+         * The signed-in user
+         * @description Returns the account plus its `permissions` — the caller's effective RBAC permission keys, resolved from the database on every call (never from the JWT). The login / register / refresh responses carry the same `user` shape.
+         */
         get: operations["getCurrentUser"];
         put?: never;
         post?: never;
@@ -465,6 +468,294 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dashboard metrics
+         * @description Permission: `metrics.view`. GMV = sum of price over confirmed + completed bookings.
+         */
+        get: operations["adminMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * User directory
+         * @description Permission: `users.view`. `q` is a case-insensitive substring on email or display_name.
+         */
+        get: operations["adminListUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * User detail
+         * @description Permission: `users.view`. Bookings capped at the 50 newest.
+         */
+        get: operations["adminGetUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/users/{id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assign a role to a user
+         * @description Permission: `users.manage_roles`. Idempotent.
+         */
+        post: operations["adminAssignRole"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/users/{id}/roles/{role_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Unassign a role from a user
+         * @description Permission: `users.manage_roles`. Idempotent.
+         */
+        delete: operations["adminUnassignRole"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Permission catalog
+         * @description Permission: `roles.manage`. The full set of permission keys, for a checkbox UI.
+         */
+        get: operations["adminPermissionCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List roles
+         * @description Permission: `roles.manage`.
+         */
+        get: operations["adminListRoles"];
+        put?: never;
+        /**
+         * Create a role
+         * @description Permission: `roles.manage`. Each permission must be in the catalog; the name must be unique.
+         */
+        post: operations["adminCreateRole"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/roles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a role
+         * @description Permission: `roles.manage`. 403 `role_locked` for a system role; 409 `role_in_use` if any user still holds it.
+         */
+        delete: operations["adminDeleteRole"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit a role
+         * @description Permission: `roles.manage`. `description` is always editable. `permissions`, when present, replaces the whole set — but a system role's permissions are locked (403 `role_locked`).
+         */
+        patch: operations["adminUpdateRole"];
+        trace?: never;
+    };
+    "/v1/admin/teachers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Teacher moderation queue
+         * @description Permission: `teachers.view`. `status` filter optional; `q` matches display_name / slug / owner email.
+         */
+        get: operations["adminListTeachers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/teachers/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Teacher detail (moderation)
+         * @description Permission: `teachers.view`. The full public profile shape plus `status`, `verified`, `moderation_note`, and `owner`.
+         */
+        get: operations["adminGetTeacher"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/teachers/{slug}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a teacher
+         * @description Permission: `teachers.moderate`. Sets `status = approved` and clears the moderation note. Allowed from pending, rejected, or suspended (the last is a reinstate). 409 `invalid_transition` from approved.
+         */
+        post: operations["adminApproveTeacher"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/teachers/{slug}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject a pending teacher
+         * @description Permission: `teachers.moderate`. Body `{note}` required (non-empty). Allowed only from pending.
+         */
+        post: operations["adminRejectTeacher"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/teachers/{slug}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suspend an approved teacher
+         * @description Permission: `teachers.moderate`. Body `{note}` required. Allowed only from approved. Pulls the profile from public search immediately; existing bookings are untouched.
+         */
+        post: operations["adminSuspendTeacher"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/teachers/{slug}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set the verified badge
+         * @description Permission: `teachers.verify`. Body `{verified: bool}`. Independent of moderation status.
+         */
+        post: operations["adminVerifyTeacher"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -499,6 +790,8 @@ export interface components {
             /** Format: email */
             email: string;
             display_name: string;
+            /** @description The caller's effective RBAC permission keys (flat, sorted, deduped across all their roles). Resolved server-side per request — NOT from the JWT — so a revoked role takes effect immediately. Empty for a normal user. The frontend gates the /admin area on these. See GET /v1/admin/permissions for the catalog. */
+            permissions: string[];
         };
         /** @description The access token (hold in memory, send as `Authorization: Bearer`) plus the user. The refresh token is NOT here — it is the `ftr_session` cookie. */
         AuthResponse: {
@@ -576,6 +869,8 @@ export interface components {
             review_count: number;
             lessons_completed: number;
             student_count: number;
+            /** @description Whether an admin has granted this teacher the verified badge. */
+            verified?: boolean;
             /** @description Free-text focus tags, e.g. "IELTS", "Kids & teens". */
             focus: string[];
             /** @description Median hours to reply to a booking request. */
@@ -598,6 +893,13 @@ export interface components {
             experience: components["schemas"]["Experience"][];
             /** @description Present only when the teacher offers a trial lesson. */
             trial_price?: components["schemas"]["Money"];
+            /**
+             * @description Moderation status. On the public GET /v1/teachers/{slug} this is always `approved` (non-approved profiles 404). Meaningful on GET /v1/teachers/me and the admin endpoints.
+             * @enum {string}
+             */
+            status?: "pending" | "approved" | "rejected" | "suspended";
+            /** @description The admin's reason on a reject / suspend, shown to the teacher. Empty otherwise. */
+            moderation_note?: string;
         };
         /** @description One row of the `languages` collection in a write request. `role` splits into the read shape's `teaches` / `also_speaks` arrays. */
         LanguageEntry: {
@@ -910,6 +1212,123 @@ export interface components {
             reviews: components["schemas"]["ReviewListItem"][];
             /** @description Total reviews for the teacher (not just this page). */
             total: number;
+        };
+        AdminMetrics: {
+            users_total: number;
+            teachers_total: number;
+            teachers_pending: number;
+            bookings_total: number;
+            /** @description Created in the last 7 days. */
+            bookings_this_week: number;
+            /**
+             * Format: int64
+             * @description Sum of price over confirmed + completed bookings
+             */
+            gmv_minor: number;
+            /** @description UZS for the MVP. */
+            gmv_currency: string;
+        };
+        AdminUserRow: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            display_name: string;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Owns a teachers row. */
+            is_teacher: boolean;
+            booking_count: number;
+        };
+        AdminUserList: {
+            users: components["schemas"]["AdminUserRow"][];
+            total: number;
+        };
+        AdminRoleRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        AdminUserDetail: {
+            user: {
+                /** Format: uuid */
+                id: string;
+                /** Format: email */
+                email: string;
+                display_name: string;
+                /** Format: date-time */
+                created_at: string;
+            };
+            roles: components["schemas"]["AdminRoleRef"][];
+            teacher_profile: {
+                slug: string;
+                /** @enum {string} */
+                status: "pending" | "approved" | "rejected" | "suspended";
+                verified: boolean;
+            } | null;
+            /** @description The 50 newest bookings the user takes part in. */
+            bookings: {
+                /** Format: uuid */
+                id: string;
+                status: string;
+                /** Format: date-time */
+                start_at: string;
+                /** @enum {string} */
+                role_in_booking: "student" | "teacher";
+                other_party_name: string;
+                price: components["schemas"]["Money"];
+            }[];
+            /** @description The user's payments as the paying student, bucketed by current payment state. */
+            payments_summary: {
+                /** Format: int64 */
+                authorized_minor: number;
+                /** Format: int64 */
+                captured_minor: number;
+                /** Format: int64 */
+                refunded_minor: number;
+                currency: string;
+            };
+        };
+        AdminRole: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            description: string;
+            /** @description System roles (e.g. superadmin) cannot be re-permissioned or deleted; only their description is editable. */
+            is_system: boolean;
+            permissions: string[];
+            user_count: number;
+        };
+        AdminTeacherRow: {
+            slug: string;
+            display_name: string;
+            /** @enum {string} */
+            status: "pending" | "approved" | "rejected" | "suspended";
+            verified: boolean;
+            headline: string;
+            country_name: string;
+            /** Format: date-time */
+            created_at: string;
+            owner: {
+                /** Format: uuid */
+                id?: string;
+                /** Format: email */
+                email?: string;
+            };
+        };
+        AdminTeacherList: {
+            teachers: components["schemas"]["AdminTeacherRow"][];
+            total: number;
+        };
+        /** @description The full public TeacherProfile shape (with status / verified / moderation_note) plus the owner account. */
+        AdminTeacherDetail: components["schemas"]["TeacherProfile"] & {
+            owner: {
+                /** Format: uuid */
+                id: string;
+                /** Format: email */
+                email: string;
+                display_name: string;
+            };
         };
     };
     responses: {
@@ -1806,6 +2225,509 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminMetrics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Platform counters. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMetrics"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminListUsers: {
+        parameters: {
+            query?: {
+                q?: string;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of users. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminGetUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user with roles, teacher profile, recent bookings, and a payments summary. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminAssignRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    role_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Assigned. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminUnassignRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unassigned. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminPermissionCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The catalog. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        key: string;
+                        description: string;
+                    }[];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminListRoles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every role with its permissions and assignment count. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRole"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminCreateRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    description?: string;
+                    permissions?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The created role. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRole"];
+                };
+            };
+            /** @description `unknown_permission` — a permission key is not in the catalog. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description `role_exists` — a role with that name already exists. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminDeleteRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description `forbidden` or `role_locked`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description `role_in_use` — unassign it from all users first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminUpdateRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    description?: string;
+                    permissions?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The updated role. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRole"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description `forbidden` (missing `roles.manage`) or `role_locked` (system role permissions). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminListTeachers: {
+        parameters: {
+            query?: {
+                status?: "pending" | "approved" | "rejected" | "suspended";
+                q?: string;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of teacher profiles across all statuses. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTeacherList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminGetTeacher: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The teacher profile with its moderation slice. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTeacherDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminApproveTeacher: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The updated teacher detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTeacherDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description `invalid_transition`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminRejectTeacher: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    note: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The updated teacher detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTeacherDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description `invalid_transition` — not in `pending`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminSuspendTeacher: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    note: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The updated teacher detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTeacherDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description `invalid_transition` — not in `approved`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminVerifyTeacher: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    verified: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The updated teacher detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTeacherDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };

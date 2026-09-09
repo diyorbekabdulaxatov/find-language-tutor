@@ -73,7 +73,6 @@ export function UsersTable() {
             <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
               <tr>
                 <th className="px-4 py-2 font-medium">User</th>
-                <th className="px-4 py-2 font-medium">Role</th>
                 <th className="px-4 py-2 font-medium">Teacher</th>
                 <th className="px-4 py-2 text-right font-medium">Bookings</th>
                 <th className="px-4 py-2 text-right font-medium">Joined</th>
@@ -83,14 +82,14 @@ export function UsersTable() {
               {state === "loading" &&
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i}>
-                    <td colSpan={5} className="px-4 py-4">
+                    <td colSpan={4} className="px-4 py-4">
                       <div className="h-4 animate-pulse rounded bg-muted" />
                     </td>
                   </tr>
                 ))}
               {state === "ready" && rows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
                     No users match.
                   </td>
                 </tr>
@@ -106,15 +105,6 @@ export function UsersTable() {
                         {u.displayName}
                       </Link>
                       <div className="text-xs text-muted-foreground">{u.email}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {u.role === "admin" ? (
-                        <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">
-                          admin
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">user</span>
-                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {u.isTeacher ? "Yes" : "—"}
