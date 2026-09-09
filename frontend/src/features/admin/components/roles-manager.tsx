@@ -151,27 +151,28 @@ function RoleCard({
     <li className="rounded-2xl border border-border bg-card">
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center gap-3 px-5 py-4 text-left"
       >
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
+        <span className="flex-1">
+          <span className="flex items-center gap-2">
             <span className="font-medium">{role.name}</span>
             {role.isSystem && (
               <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                 <Lock className="size-3" /> system
               </span>
             )}
-          </div>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+          </span>
+          <span className="mt-0.5 block text-sm text-muted-foreground">
             {role.description || "No description."}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
+          </span>
+          <span className="mt-1 block text-xs text-muted-foreground">
             {role.permissions.length} permission
             {role.permissions.length === 1 ? "" : "s"} · {role.userCount} user
             {role.userCount === 1 ? "" : "s"}
-          </p>
-        </div>
+          </span>
+        </span>
         <ChevronDown
           className={cn(
             "size-4 shrink-0 text-muted-foreground transition-transform",
