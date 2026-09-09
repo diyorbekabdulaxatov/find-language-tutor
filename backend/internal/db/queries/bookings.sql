@@ -44,7 +44,7 @@ RETURNING id;
 SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
-    b.cancelled_at, b.cancellation_reason, b.created_at, b.updated_at,
+    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
     t.slug            AS teacher_slug,
@@ -69,7 +69,7 @@ WHERE b.id = $1;
 SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
-    b.cancelled_at, b.cancellation_reason, b.created_at, b.updated_at,
+    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
     t.slug            AS teacher_slug,
@@ -104,9 +104,26 @@ UPDATE bookings SET meeting_url_override = $2, updated_at = now() WHERE id = $1;
 UPDATE bookings SET no_show_party = $2, updated_at = now() WHERE id = $1;
 
 -- name: CancelBooking :exec
+-- cancelled_by records WHO cancelled: 'student', 'teacher' (includes a teacher
+-- no-show) or 'admin' (the operator force-cancel override). The service picks
+-- the value; the column's CHECK constraint is the guard.
 UPDATE bookings
-SET status = 'cancelled', cancelled_at = now(), cancellation_reason = $2, updated_at = now()
+SET status = 'cancelled', cancelled_at = now(), cancellation_reason = $2,
+    cancelled_by = $3, updated_at = now()
 WHERE id = $1;
+
+-- name: SeedInsertBooking :one
+-- Seed-only: a booking in an explicit lifecycle state (the API path always
+-- starts at pending_payment). Used to give the admin / dispute demo data
+-- something to point at on a fresh database.
+INSERT INTO bookings (
+    teacher_id, student_id, start_at, end_at,
+    duration_minutes, status, price_minor, currency, is_trial
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7, $8, false
+)
+RETURNING id;
 
 -- name: DeleteAllBookings :exec
 -- Seed-only. bookings.teacher_id / student_id reference teachers / users with

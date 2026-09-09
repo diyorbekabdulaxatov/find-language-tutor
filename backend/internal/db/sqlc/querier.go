@@ -20,11 +20,31 @@ type Querier interface {
 	// gmv_minor = money that actually flowed: bookings that reached confirmed or
 	// completed. this_week = created in the last 7 days.
 	AdminBookingStats(ctx context.Context) (AdminBookingStatsRow, error)
+	AdminCountBookings(ctx context.Context, arg AdminCountBookingsParams) (int64, error)
+	AdminCountDisputes(ctx context.Context, status pgtype.Text) (int64, error)
 	AdminCountTeachers(ctx context.Context, arg AdminCountTeachersParams) (int64, error)
 	AdminCountUsers(ctx context.Context, q_ pgtype.Text) (int64, error)
+	// One booking with everything the operator detail view shows: the list-row
+	// fields plus the lifecycle extras, the effective meeting link (the per-booking
+	// override if set, else the teacher's default), and the payment detail.
+	AdminGetBooking(ctx context.Context, id uuid.UUID) (AdminGetBookingRow, error)
 	AdminGetTeacherModeration(ctx context.Context, slug string) (AdminGetTeacherModerationRow, error)
 	AdminGetUser(ctx context.Context, id uuid.UUID) (AdminGetUserRow, error)
 	AdminGetUserTeacherProfile(ctx context.Context, userID uuid.NullUUID) (AdminGetUserTeacherProfileRow, error)
+	// The booking's full dispute thread, newest first. Read straight from the
+	// disputes table: the admin surface is an ops tool, not a public API (see the
+	// package doc), so it does not route this through the disputes service.
+	AdminListBookingDisputes(ctx context.Context, bookingID uuid.UUID) ([]AdminListBookingDisputesRow, error)
+	// --- phase D: bookings admin ---
+	// Every booking on the platform (not just the caller's), newest lesson first.
+	// `status` is an optional exact filter; `q` matches the teacher's display name
+	// or slug and the student's email or display name. payment_status is '' when the
+	// booking has no intent yet (payments.booking_id is UNIQUE, so the LEFT JOIN
+	// cannot fan the row set out).
+	AdminListBookings(ctx context.Context, arg AdminListBookingsParams) ([]AdminListBookingsRow, error)
+	// The operator queue: disputes filtered by status (default 'open' in the
+	// service), each with the booking + parties context the list view renders.
+	AdminListDisputes(ctx context.Context, arg AdminListDisputesParams) ([]AdminListDisputesRow, error)
 	AdminListTeachers(ctx context.Context, arg AdminListTeachersParams) ([]AdminListTeachersRow, error)
 	// The 50 newest bookings the user takes part in, as student or as teacher-owner.
 	AdminListUserBookings(ctx context.Context, studentID uuid.UUID) ([]AdminListUserBookingsRow, error)
@@ -49,6 +69,9 @@ type Querier interface {
 	// current row see the pre-UPDATE values, so review_count is the old count in
 	// both expressions. Result clamped to [0, 5].
 	BumpTeacherRatingForReview(ctx context.Context, arg BumpTeacherRatingForReviewParams) error
+	// cancelled_by records WHO cancelled: 'student', 'teacher' (includes a teacher
+	// no-show) or 'admin' (the operator force-cancel override). The service picks
+	// the value; the column's CHECK constraint is the guard.
 	CancelBooking(ctx context.Context, arg CancelBookingParams) error
 	// System transition (no participant check): pending_payment -> confirmed on a
 	// successful authorization webhook. Guarded so a replay cannot resurrect a
@@ -75,6 +98,10 @@ type Querier interface {
 	// Seed-only. bookings.teacher_id / student_id reference teachers / users with
 	// no ON DELETE CASCADE, so the seed must clear bookings before those tables.
 	DeleteAllBookings(ctx context.Context) error
+	// Seed-only. disputes.booking_id cascades, but raised_by / resolved_by
+	// reference users with no cascade, so the seed clears disputes explicitly
+	// before bookings and users.
+	DeleteAllDisputes(ctx context.Context) error
 	DeleteAllPaymentEvents(ctx context.Context) error
 	// Seed-only. payments.booking_id references bookings with no ON DELETE CASCADE,
 	// so the seed must clear payment rows (and the event log / ledger that
@@ -110,6 +137,20 @@ type Querier interface {
 	// returns no rows here, so the booking flow treats it as "no such teacher": 404
 	// on GET /v1/teachers/{slug}/slots and 404 teacher_not_found on POST /v1/bookings.
 	GetBookingTeacherContext(ctx context.Context, slug string) (GetBookingTeacherContextRow, error)
+	// Disputes module (phase D): a participant contests a confirmed / completed
+	// lesson, an operator with `disputes.resolve` closes it.
+	//
+	// Like the reviews module, this file reads the booking context it needs
+	// directly (the participant + status check) rather than routing through the
+	// bookings service — the Go packages stay decoupled, the SQL joins once.
+	// Everything POST/GET /v1/bookings/{id}/disputes needs to authorize the caller:
+	// the booking's student, the account owning the teacher profile, and the status
+	// (only confirmed / completed lessons can be disputed).
+	GetDisputeBookingContext(ctx context.Context, id uuid.UUID) (GetDisputeBookingContextRow, error)
+	GetDisputeByID(ctx context.Context, id uuid.UUID) (GetDisputeByIDRow, error)
+	// The booking's open dispute, if any. Backs the `open_dispute` /
+	// `can_raise_dispute` fields the participant sees on a booking.
+	GetOpenDisputeForBooking(ctx context.Context, bookingID uuid.UUID) (GetOpenDisputeForBookingRow, error)
 	GetPaymentByBooking(ctx context.Context, bookingID uuid.UUID) (Payment, error)
 	GetPaymentByID(ctx context.Context, id uuid.UUID) (Payment, error)
 	// Reviews module (Phase 6): a student's rating + comment for a completed lesson.
@@ -133,6 +174,10 @@ type Querier interface {
 	GetTeacherIDByOwner(ctx context.Context, userID uuid.NullUUID) (uuid.UUID, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	// A second OPEN dispute for the same booking raises SQLSTATE 23505 on
+	// disputes_one_open_per_booking, which the repository maps to ErrDisputeExists
+	// (race-safe, never a check-then-insert).
+	InsertDispute(ctx context.Context, arg InsertDisputeParams) (Dispute, error)
 	// One row per captured booking. teacher_id is copied from the booking.
 	InsertLedgerHeld(ctx context.Context, arg InsertLedgerHeldParams) error
 	// The idempotency gate. A duplicate event_id raises SQLSTATE 23505, which the
@@ -150,6 +195,8 @@ type Querier interface {
 	// student_filter and/or the caller-owned teacher id as teacher_filter; use the
 	// all-zero uuid for a dimension that should not match. Newest lesson first.
 	ListBookings(ctx context.Context, arg ListBookingsParams) ([]ListBookingsRow, error)
+	// The whole dispute thread for one booking, newest first.
+	ListDisputesForBooking(ctx context.Context, bookingID uuid.UUID) ([]ListDisputesForBookingRow, error)
 	ListExperienceForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]ListExperienceForTeachersRow, error)
 	ListFocusForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]TeacherFocu, error)
 	ListLanguagesForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]TeacherLanguage, error)
@@ -181,12 +228,24 @@ type Querier interface {
 	// request (never from the JWT).
 	// The caller's effective permission keys, deduped and sorted. One indexed join.
 	PermissionsForUser(ctx context.Context, userID uuid.UUID) ([]string, error)
+	// Guarded UPDATE: only an OPEN dispute moves. No rows back means either "no such
+	// dispute" or "already resolved" — the repository re-reads the row to tell the
+	// two apart, so a lost race renders 409 already_resolved rather than clobbering
+	// another operator's resolution.
+	ResolveDispute(ctx context.Context, arg ResolveDisputeParams) (Dispute, error)
 	// Reuse-detection hammer: kills every still-active session for a user.
 	RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) error
 	// Marks a session revoked and records the session that replaced it (rotation).
 	// No-op if it was already revoked.
 	RevokeSession(ctx context.Context, arg RevokeSessionParams) error
 	RolesForUser(ctx context.Context, userID uuid.UUID) ([]RolesForUserRow, error)
+	// Seed-only: a booking in an explicit lifecycle state (the API path always
+	// starts at pending_payment). Used to give the admin / dispute demo data
+	// something to point at on a fresh database.
+	SeedInsertBooking(ctx context.Context, arg SeedInsertBookingParams) (uuid.UUID, error)
+	// Seed-only: an open dispute on a seeded booking so /v1/admin/disputes is not
+	// empty on a fresh database.
+	SeedInsertDispute(ctx context.Context, arg SeedInsertDisputeParams) error
 	// Seed-only: a booking-less sample review. Does NOT touch the teacher aggregate.
 	SeedInsertReview(ctx context.Context, arg SeedInsertReviewParams) error
 	// Per-booking meeting link override. An empty string clears it (fall back to the

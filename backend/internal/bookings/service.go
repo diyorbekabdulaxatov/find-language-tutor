@@ -110,9 +110,10 @@ type Repository interface {
 	// SetStatus writes a new status and returns the hydrated booking.
 	SetStatus(ctx context.Context, id uuid.UUID, status Status) (Booking, error)
 
-	// Cancel marks a booking cancelled (status, cancelled_at, reason) and
-	// returns the hydrated booking.
-	Cancel(ctx context.Context, id uuid.UUID, reason string) (Booking, error)
+	// Cancel marks a booking cancelled (status, cancelled_at, reason, and who
+	// cancelled it — one of CancelledByStudent / Teacher / Admin) and returns
+	// the hydrated booking.
+	Cancel(ctx context.Context, id uuid.UUID, reason, by string) (Booking, error)
 
 	// SetMeetingLinkOverride writes the per-booking meeting link ("" clears it)
 	// and returns the hydrated booking.
@@ -132,6 +133,7 @@ type Service struct {
 	reminders ReminderScheduler // nil until SetReminderScheduler; guarded
 	notifier  Notifier          // nil until SetNotifier; guarded
 	reviews   ReviewReader      // nil until SetReviewReader; guarded
+	disputes  DisputeReader     // nil until SetDisputeReader; guarded
 	logger    *slog.Logger
 }
 
@@ -177,6 +179,29 @@ func (s *Service) reviewFor(ctx context.Context, bookingID uuid.UUID) *BookingRe
 // with `can_review` / `review`.
 func (s *Service) ReviewFor(ctx context.Context, bookingID uuid.UUID) *BookingReview {
 	return s.reviewFor(ctx, bookingID)
+}
+
+// SetDisputeReader wires the disputes module's read port in. Optional: a nil
+// reader leaves `open_dispute` nil and computes `can_raise_dispute` from
+// booking state alone.
+func (s *Service) SetDisputeReader(r DisputeReader) { s.disputes = r }
+
+// OpenDisputeFor best-effort loads a booking's open dispute for the handler to
+// annotate booking DTOs with `can_raise_dispute` / `open_dispute`. A lookup
+// error is logged and treated as "no dispute" so it never fails a booking read.
+func (s *Service) OpenDisputeFor(ctx context.Context, bookingID uuid.UUID) *BookingDispute {
+	if s.disputes == nil {
+		return nil
+	}
+	d, found, err := s.disputes.OpenForBooking(ctx, bookingID)
+	if err != nil {
+		s.log().Error("load booking dispute", slog.String("booking_id", bookingID.String()), slog.Any("error", err))
+		return nil
+	}
+	if !found {
+		return nil
+	}
+	return d
 }
 
 // --- guarded port calls (all safe with a nil port) ---
@@ -537,14 +562,69 @@ func (s *Service) Cancel(ctx context.Context, callerID, bookingID uuid.UUID, rea
 	if b.Status != StatusPendingPayment && b.Status != StatusConfirmed {
 		return Booking{}, ErrInvalidTransition
 	}
+	return s.doCancel(ctx, bookingID, reason, cancellerFor(b, callerID), callerID, true)
+}
 
-	cancelled, err := s.repo.Cancel(ctx, bookingID, strings.TrimSpace(reason))
+// AdminForceCancel is the operator override behind
+// POST /v1/admin/bookings/{id}/force-cancel (permission bookings.force_cancel).
+// It is the same cancel path as Cancel — the refund, the reminder teardown and
+// the "your lesson was cancelled" mail all happen exactly as they do for a
+// participant cancellation — minus the participant check, and recording
+// cancelled_by = 'admin' so the reason a lesson vanished stays auditable.
+//
+// refund=false skips the refund call entirely (the operator settled the money
+// some other way); with refund=true an authorized intent is released and a
+// captured one refunded, exactly as on a participant cancel.
+//
+// Authorization is the caller's (the RBAC guard on the route); the state rule is
+// enforced here: only pending_payment / confirmed can be cancelled, anything
+// else is ErrInvalidTransition (409 invalid_state).
+func (s *Service) AdminForceCancel(ctx context.Context, bookingID uuid.UUID, reason string, refund bool) error {
+	b, err := s.repo.GetBooking(ctx, bookingID)
+	if err != nil {
+		return err
+	}
+	if b.Status != StatusPendingPayment && b.Status != StatusConfirmed {
+		return ErrInvalidTransition
+	}
+	_, err = s.doCancel(ctx, bookingID, reason, CancelledByAdmin, uuid.Nil, refund)
+	return err
+}
+
+// AdminRefund refunds a booking's payment WITHOUT touching the booking's
+// lifecycle. It backs the "refund the student" outcome of resolving a dispute:
+// the lesson stays completed / confirmed, only the money moves back. A booking
+// whose intent was never authorized is a no-op void inside the payments module.
+// With no payment gateway wired it is a logged no-op.
+func (s *Service) AdminRefund(ctx context.Context, bookingID uuid.UUID) error {
+	if _, err := s.repo.GetBooking(ctx, bookingID); err != nil {
+		return err
+	}
+	if s.payments == nil {
+		s.log().Warn("admin refund skipped: no payment gateway", slog.String("booking_id", bookingID.String()))
+		return nil
+	}
+	if _, err := s.payments.Refund(ctx, bookingID); err != nil {
+		return err
+	}
+	return nil
+}
+
+// doCancel is THE cancellation path: write the cancellation (status,
+// cancelled_at, reason, cancelled_by), refund when asked, drop any pending
+// reminders, and mail the other party. Participant cancel, teacher no-show and
+// the admin force-cancel all funnel through it, so none of them can drift.
+//
+// actorID is the account that triggered it (uuid.Nil for an admin override, so
+// the notifier mails both participants rather than "the other party").
+func (s *Service) doCancel(ctx context.Context, bookingID uuid.UUID, reason, by string, actorID uuid.UUID, refund bool) (Booking, error) {
+	cancelled, err := s.repo.Cancel(ctx, bookingID, strings.TrimSpace(reason), by)
 	if err != nil {
 		return Booking{}, err
 	}
 
 	refunded := false
-	if s.payments != nil {
+	if refund && s.payments != nil {
 		refunded = true
 		if _, rerr := s.payments.Refund(ctx, bookingID); rerr != nil {
 			// The booking is already cancelled; a stuck refund must not fail the
@@ -556,8 +636,16 @@ func (s *Service) Cancel(ctx context.Context, callerID, bookingID uuid.UUID, rea
 	// Rescheduling cancels old jobs; a cancelled booking must drop its
 	// reminders, and the other party is told.
 	s.cancelReminders(ctx, bookingID)
-	s.notifyCancelled(ctx, cancelled, callerID, refunded)
+	s.notifyCancelled(ctx, cancelled, actorID, refunded)
 	return cancelled, nil
+}
+
+// cancellerFor maps the acting participant onto the cancelled_by value.
+func cancellerFor(b Booking, callerID uuid.UUID) string {
+	if b.Student.ID == callerID {
+		return CancelledByStudent
+	}
+	return CancelledByTeacher
 }
 
 // SetMeetingLink sets (or clears, with "") the per-booking meeting-link
@@ -625,27 +713,16 @@ func (s *Service) NoShow(ctx context.Context, callerID, bookingID uuid.UUID, par
 		return b, &snap, nil
 	}
 
-	// party == "teacher": cancel + refund, same path as Cancel.
-	if _, err := s.repo.Cancel(ctx, bookingID, "teacher no-show"); err != nil {
-		return Booking{}, nil, err
-	}
+	// party == "teacher": cancel + refund through the shared cancel path. The
+	// no-show flag is written FIRST so the booking doCancel hydrates (and mails)
+	// already carries it.
 	if err := s.repo.SetNoShowParty(ctx, bookingID, NoShowTeacher); err != nil {
 		return Booking{}, nil, err
 	}
-	refunded := false
-	if s.payments != nil {
-		refunded = true
-		if _, rerr := s.payments.Refund(ctx, bookingID); rerr != nil {
-			s.log().Error("refund on teacher no-show", slog.String("booking_id", bookingID.String()), slog.Any("error", rerr))
-		}
-	}
-	s.cancelReminders(ctx, bookingID)
-
-	b, err = s.repo.GetBooking(ctx, bookingID)
+	b, err = s.doCancel(ctx, bookingID, "teacher no-show", CancelledByTeacher, callerID, true)
 	if err != nil {
 		return Booking{}, nil, err
 	}
-	s.notifyCancelled(ctx, b, callerID, refunded)
 	return b, nil, nil
 }
 

@@ -44,6 +44,9 @@ type bookingDTO struct {
 	CreatedAt          time.Time  `json:"created_at"`
 	CancelledAt        *time.Time `json:"cancelled_at"`
 	CancellationReason string     `json:"cancellation_reason,omitempty"`
+	// CancelledBy is "" until the booking is cancelled, then student / teacher /
+	// admin (an operator force-cancel).
+	CancelledBy string `json:"cancelled_by"`
 	// MeetingURL is the effective video link — present ONLY when the caller is a
 	// participant AND the booking is confirmed or completed. Empty/omitted for
 	// everyone else (it must not leak to a pending_payment booking or a
@@ -59,6 +62,15 @@ type bookingDTO struct {
 	// both participants); null otherwise.
 	Review *bookingReviewDTO `json:"review"`
 
+	// CanRaiseDispute is true only when the viewer is a participant, the booking
+	// is `confirmed` or `completed`, and no dispute is currently open — the
+	// frontend shows the "report a problem" action off this without a second
+	// call.
+	CanRaiseDispute bool `json:"can_raise_dispute"`
+	// OpenDispute is the booking's currently open dispute (visible to both
+	// participants); null when there is none.
+	OpenDispute *bookingDisputeDTO `json:"open_dispute"`
+
 	Teacher teacherSummaryDTO  `json:"teacher"`
 	Student studentSummaryDTO  `json:"student"`
 	Payment *bookingPaymentDTO `json:"payment"`
@@ -67,6 +79,13 @@ type bookingDTO struct {
 type bookingReviewDTO struct {
 	Rating    int       `json:"rating"`
 	Comment   string    `json:"comment"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type bookingDisputeDTO struct {
+	ID        string    `json:"id"`
+	Status    string    `json:"status"`
+	Reason    string    `json:"reason"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -144,6 +163,7 @@ func toBookingDTO(b Booking, viewerID uuid.UUID) bookingDTO {
 		CreatedAt:          b.CreatedAt.UTC(),
 		CancelledAt:        utcPtr(b.CancelledAt),
 		CancellationReason: b.CancellationReason,
+		CancelledBy:        b.CancelledBy,
 		MeetingURL:         meetingURLFor(b, viewerID),
 		NoShowParty:        b.NoShowParty,
 		Teacher: teacherSummaryDTO{
@@ -186,7 +206,25 @@ func withReview(dto bookingDTO, b Booking, viewerID uuid.UUID, review *BookingRe
 	return dto
 }
 
-func toBookingListDTO(bs []Booking, viewerID uuid.UUID, reviews []*BookingReview) bookingListDTO {
+// withDispute annotates a booking DTO with `can_raise_dispute` / `open_dispute`.
+// open is the booking's currently open dispute (nil when there is none). A
+// dispute can be raised by either participant, only on a confirmed or completed
+// lesson, and only while no other dispute is open.
+func withDispute(dto bookingDTO, b Booking, viewerID uuid.UUID, open *BookingDispute) bookingDTO {
+	if open != nil {
+		dto.OpenDispute = &bookingDisputeDTO{
+			ID:        open.ID.String(),
+			Status:    open.Status,
+			Reason:    open.Reason,
+			CreatedAt: open.CreatedAt.UTC(),
+		}
+	}
+	disputable := b.Status == StatusConfirmed || b.Status == StatusCompleted
+	dto.CanRaiseDispute = participant(b, viewerID) && disputable && open == nil
+	return dto
+}
+
+func toBookingListDTO(bs []Booking, viewerID uuid.UUID, reviews []*BookingReview, disputes []*BookingDispute) bookingListDTO {
 	out := make([]bookingDTO, len(bs))
 	for i, b := range bs {
 		dto := toBookingDTO(b, viewerID)
@@ -194,7 +232,11 @@ func toBookingListDTO(bs []Booking, viewerID uuid.UUID, reviews []*BookingReview
 		if i < len(reviews) {
 			r = reviews[i]
 		}
-		out[i] = withReview(dto, b, viewerID, r)
+		var d *BookingDispute
+		if i < len(disputes) {
+			d = disputes[i]
+		}
+		out[i] = withDispute(withReview(dto, b, viewerID, r), b, viewerID, d)
 	}
 	return bookingListDTO{Bookings: out}
 }

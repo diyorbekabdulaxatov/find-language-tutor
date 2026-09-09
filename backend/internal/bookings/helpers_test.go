@@ -122,7 +122,7 @@ func (f *fakeRepo) SetStatus(_ context.Context, id uuid.UUID, status Status) (Bo
 	return b, nil
 }
 
-func (f *fakeRepo) Cancel(_ context.Context, id uuid.UUID, reason string) (Booking, error) {
+func (f *fakeRepo) Cancel(_ context.Context, id uuid.UUID, reason, by string) (Booking, error) {
 	if f.statusErr != nil {
 		return Booking{}, f.statusErr
 	}
@@ -131,6 +131,7 @@ func (f *fakeRepo) Cancel(_ context.Context, id uuid.UUID, reason string) (Booki
 	t := fixedNow
 	b.CancelledAt = &t
 	b.CancellationReason = reason
+	b.CancelledBy = by
 	f.store[id] = b
 	return b, nil
 }

@@ -202,6 +202,19 @@ type Booking struct {
 	UpdatedAt          pgtype.Timestamptz
 	MeetingUrlOverride string
 	NoShowParty        string
+	CancelledBy        string
+}
+
+type Dispute struct {
+	ID         uuid.UUID
+	BookingID  uuid.UUID
+	RaisedBy   uuid.UUID
+	Reason     string
+	Status     string
+	Resolution string
+	ResolvedBy uuid.NullUUID
+	CreatedAt  pgtype.Timestamptz
+	ResolvedAt pgtype.Timestamptz
 }
 
 type Payment struct {

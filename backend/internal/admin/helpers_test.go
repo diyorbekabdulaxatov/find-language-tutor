@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ type fakeRepo struct {
 	userDetail map[uuid.UUID]UserDetail
 	teachers   []TeacherRow
 	moderation map[string]Moderation
+	bookings   map[uuid.UUID]BookingDetail
 
 	statusCalls []statusCall
 	verifyCalls []verifyCall
@@ -97,6 +99,72 @@ func (f *fakeRepo) SetTeacherVerified(_ context.Context, slug string, v bool) er
 	return nil
 }
 
+func (f *fakeRepo) ListBookings(_ context.Context, status, q string, limit, offset int) ([]BookingRow, int, error) {
+	f.lastLimit, f.lastOffset = limit, offset
+	var m []BookingRow
+	for _, d := range f.sortedBookings() {
+		b := d.BookingRow
+		if status != "" && b.Status != status {
+			continue
+		}
+		if q == "" ||
+			containsFold(b.Teacher.DisplayName, q) || containsFold(b.Teacher.Slug, q) ||
+			containsFold(b.Student.Email, q) || containsFold(b.Student.DisplayName, q) {
+			m = append(m, b)
+		}
+	}
+	return paginate(m, offset, limit), len(m), nil
+}
+
+func (f *fakeRepo) GetBookingDetail(_ context.Context, id uuid.UUID) (BookingDetail, error) {
+	d, ok := f.bookings[id]
+	if !ok {
+		return BookingDetail{}, ErrBookingNotFound
+	}
+	return d, nil
+}
+
+// sortedBookings gives the map a stable order (newest lesson first, as the SQL
+// does) so pagination assertions are deterministic.
+func (f *fakeRepo) sortedBookings() []BookingDetail {
+	out := make([]BookingDetail, 0, len(f.bookings))
+	for _, d := range f.bookings {
+		out = append(out, d)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].StartAt.After(out[j].StartAt) })
+	return out
+}
+
+// fakeModerator is a fake BookingModerator: it records the force-cancel calls
+// and applies them to the fake repo's booking store, standing in for the
+// bookings module's cancel path.
+type fakeModerator struct {
+	repo  *fakeRepo
+	calls []forceCancelCall
+	err   error
+}
+
+type forceCancelCall struct {
+	id     uuid.UUID
+	reason string
+	refund bool
+}
+
+func (m *fakeModerator) AdminForceCancel(_ context.Context, id uuid.UUID, reason string, refund bool) error {
+	m.calls = append(m.calls, forceCancelCall{id, reason, refund})
+	if m.err != nil {
+		return m.err
+	}
+	d := m.repo.bookings[id]
+	d.Status = BookingCancelled
+	d.CancelledBy = "admin"
+	d.CancellationReason = reason
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	d.CancelledAt = &now
+	m.repo.bookings[id] = d
+	return nil
+}
+
 func paginate[T any](s []T, offset, limit int) []T {
 	if offset > len(s) {
 		offset = len(s)
@@ -127,18 +195,28 @@ func (f fakeProfiles) GetForAdmin(_ context.Context, slug string) (*teachers.Tea
 // The returned bearer holds every admin permission; use scopedBearer for a
 // narrower token.
 func newRouter(repo Repository, profiles TeacherProfiles) (*gin.Engine, *rbacHarness, string) {
+	r, h, full, _ := newRouterWithModerator(repo, profiles, nil)
+	return r, h, full
+}
+
+// newRouterWithModerator is newRouter plus a wired BookingModerator port.
+func newRouterWithModerator(repo Repository, profiles TeacherProfiles, mod BookingModerator) (*gin.Engine, *rbacHarness, string, *Service) {
 	gin.SetMode(gin.TestMode)
 	h := &rbacHarness{
 		tm:    auth.NewTokenManager("admin-test", time.Minute),
 		rbacR: newFakeRBACRepo(),
 	}
 	guard := rbac.NewGuard(rbac.NewService(h.rbacR))
-	handler := NewHandler(NewService(repo, profiles), discardLogger())
+	svc := NewService(repo, profiles)
+	if mod != nil {
+		svc.SetBookingModerator(mod)
+	}
+	handler := NewHandler(svc, discardLogger())
 	r := gin.New()
 	RegisterRoutes(r.Group("/v1/admin", auth.RequireAuth(h.tm)), handler, guard)
 
 	full := h.bearerWith(rbac.AllPermissions...)
-	return r, h, full
+	return r, h, full, svc
 }
 
 type rbacHarness struct {

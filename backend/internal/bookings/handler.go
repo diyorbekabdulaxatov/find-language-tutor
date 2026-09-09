@@ -95,7 +95,7 @@ func (h *Handler) Create(c *gin.Context) {
 	if h.rendered(c, err, "create booking", slog.String("slug", req.TeacherSlug)) {
 		return
 	}
-	c.JSON(http.StatusCreated, withReview(toBookingDTO(b, uid), b, uid, nil))
+	c.JSON(http.StatusCreated, h.annotate(c, toBookingDTO(b, uid), b, uid))
 }
 
 // List handles GET /v1/bookings?role&status.
@@ -117,12 +117,16 @@ func (h *Handler) List(c *gin.Context) {
 		return
 	}
 	reviews := make([]*BookingReview, len(bs))
+	disputes := make([]*BookingDispute, len(bs))
 	for i, b := range bs {
 		if b.Status == StatusCompleted {
 			reviews[i] = h.svc.ReviewFor(c.Request.Context(), b.ID)
 		}
+		if b.Status != StatusPendingPayment {
+			disputes[i] = h.svc.OpenDisputeFor(c.Request.Context(), b.ID)
+		}
 	}
-	c.JSON(http.StatusOK, toBookingListDTO(bs, uid, reviews))
+	c.JSON(http.StatusOK, toBookingListDTO(bs, uid, reviews, disputes))
 }
 
 // Get handles GET /v1/bookings/:id.
@@ -136,11 +140,7 @@ func (h *Handler) Get(c *gin.Context) {
 	if h.rendered(c, err, "get booking", slog.String("id", id.String())) {
 		return
 	}
-	var review *BookingReview
-	if b.Status == StatusCompleted {
-		review = h.svc.ReviewFor(c.Request.Context(), b.ID)
-	}
-	c.JSON(http.StatusOK, withReview(toBookingDTOWithPayment(b, snap, uid), b, uid, review))
+	c.JSON(http.StatusOK, h.annotate(c, toBookingDTOWithPayment(b, snap, uid), b, uid))
 }
 
 // Pay handles POST /v1/bookings/:id/pay. Body {"method_token": "..."}.
@@ -161,7 +161,7 @@ func (h *Handler) Pay(c *gin.Context) {
 	if h.rendered(c, err, "pay booking", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, withReview(toBookingDTOWithPayment(b, snap, uid), b, uid, nil))
+	c.JSON(http.StatusOK, h.annotate(c, toBookingDTOWithPayment(b, snap, uid), b, uid))
 }
 
 // Complete handles POST /v1/bookings/:id/complete. Teacher-owner only: capture
@@ -176,7 +176,7 @@ func (h *Handler) Complete(c *gin.Context) {
 	if h.rendered(c, err, "complete booking", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, withReview(toBookingDTOWithPayment(b, snap, uid), b, uid, nil))
+	c.JSON(http.StatusOK, h.annotate(c, toBookingDTOWithPayment(b, snap, uid), b, uid))
 }
 
 // Cancel handles POST /v1/bookings/:id/cancel.
@@ -199,7 +199,7 @@ func (h *Handler) Cancel(c *gin.Context) {
 	if h.rendered(c, err, "cancel booking", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, withReview(toBookingDTO(b, uid), b, uid, nil))
+	c.JSON(http.StatusOK, h.annotate(c, toBookingDTO(b, uid), b, uid))
 }
 
 // SetMeetingLink handles PUT /v1/bookings/:id/meeting-link. Body {"url": "..."}.
@@ -220,7 +220,7 @@ func (h *Handler) SetMeetingLink(c *gin.Context) {
 	if h.rendered(c, err, "set meeting link", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, withReview(toBookingDTO(b, uid), b, uid, nil))
+	c.JSON(http.StatusOK, h.annotate(c, toBookingDTO(b, uid), b, uid))
 }
 
 // NoShow handles POST /v1/bookings/:id/no-show. Body {"party": "student"|"teacher"}.
@@ -241,7 +241,28 @@ func (h *Handler) NoShow(c *gin.Context) {
 	if h.rendered(c, err, "record no-show", slog.String("id", id.String())) {
 		return
 	}
-	c.JSON(http.StatusOK, withReview(toBookingDTOWithPayment(b, snap, uid), b, uid, nil))
+	c.JSON(http.StatusOK, h.annotate(c, toBookingDTOWithPayment(b, snap, uid), b, uid))
+}
+
+// annotate fills the two read-model extras a participant sees on a booking:
+// can_review / review (the reviews port) and can_raise_dispute / open_dispute
+// (the disputes port). Both ports are optional and nil-safe, and a booking whose
+// state rules the extra out skips the lookup entirely.
+func (h *Handler) annotate(c *gin.Context, dto bookingDTO, b Booking, viewerID uuid.UUID) bookingDTO {
+	ctx := c.Request.Context()
+
+	var review *BookingReview
+	if b.Status == StatusCompleted {
+		review = h.svc.ReviewFor(ctx, b.ID)
+	}
+	// A dispute can only exist from `confirmed` on — but a confirmed booking
+	// that was later cancelled (or force-cancelled) may still carry an open one,
+	// so everything past pending_payment is checked.
+	var dispute *BookingDispute
+	if b.Status != StatusPendingPayment {
+		dispute = h.svc.OpenDisputeFor(ctx, b.ID)
+	}
+	return withDispute(withReview(dto, b, viewerID, review), b, viewerID, dispute)
 }
 
 // callerAndID pulls the authenticated user id and the :id path param, writing

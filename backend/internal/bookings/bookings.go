@@ -34,6 +34,15 @@ const (
 	StatusCancelled      Status = "cancelled"
 )
 
+// CancelledBy records WHO cancelled a booking. "" while it is not cancelled.
+// `admin` is the operator force-cancel override (phase D) — the participant
+// cancel path only ever writes `student` or `teacher`.
+const (
+	CancelledByStudent = "student"
+	CancelledByTeacher = "teacher"
+	CancelledByAdmin   = "admin"
+)
+
 func (s Status) valid() bool {
 	switch s {
 	case StatusPendingPayment, StatusConfirmed, StatusCompleted, StatusCancelled:
@@ -127,6 +136,8 @@ type Booking struct {
 	CreatedAt          time.Time
 	CancelledAt        *time.Time
 	CancellationReason string
+	// CancelledBy is "" normally, or student / teacher / admin once cancelled.
+	CancelledBy string
 
 	// MeetingURLOverride is an optional per-booking video link. When set it wins
 	// over the teacher's default; "" means "use the teacher default".

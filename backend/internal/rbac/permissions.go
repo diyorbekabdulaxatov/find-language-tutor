@@ -16,13 +16,15 @@ const (
 	PermTeachersVerify   Permission = "teachers.verify"    // toggle the verified badge
 	PermRolesManage      Permission = "roles.manage"       // role CRUD + the permission catalog
 
-	// Phases C/D/E — defined now, no endpoint yet.
-	PermBookingsView        Permission = "bookings.view"
-	PermBookingsForceCancel Permission = "bookings.force_cancel"
-	PermDisputesResolve     Permission = "disputes.resolve"
-	PermPayoutsView         Permission = "payouts.view"
-	PermPayoutsRun          Permission = "payouts.run"
-	PermReviewsModerate     Permission = "reviews.moderate"
+	// Phase D — wired to endpoints.
+	PermBookingsView        Permission = "bookings.view"         // GET /v1/admin/bookings[/{id}]
+	PermBookingsForceCancel Permission = "bookings.force_cancel" // POST /v1/admin/bookings/{id}/force-cancel
+	PermDisputesResolve     Permission = "disputes.resolve"      // GET /v1/admin/disputes, POST .../{id}/resolve
+
+	// Phases E/F — defined now, no endpoint yet.
+	PermPayoutsView     Permission = "payouts.view"
+	PermPayoutsRun      Permission = "payouts.run"
+	PermReviewsModerate Permission = "reviews.moderate"
 )
 
 // PermissionInfo is one catalog entry for the GET /v1/admin/permissions UI.
@@ -40,9 +42,9 @@ var Catalog = []PermissionInfo{
 	{PermTeachersModerate, "Approve, reject, and suspend teacher profiles."},
 	{PermTeachersVerify, "Grant or remove a teacher's verified badge."},
 	{PermRolesManage, "Create, edit, and delete roles and their permissions."},
-	{PermBookingsView, "View any booking (not yet wired to an endpoint)."},
-	{PermBookingsForceCancel, "Force-cancel a booking (not yet wired to an endpoint)."},
-	{PermDisputesResolve, "Resolve payment disputes (not yet wired to an endpoint)."},
+	{PermBookingsView, "View any booking on the platform."},
+	{PermBookingsForceCancel, "Force-cancel a booking, with an optional refund."},
+	{PermDisputesResolve, "View the dispute queue and resolve or reject disputes."},
 	{PermPayoutsView, "View the teacher payout ledger (not yet wired to an endpoint)."},
 	{PermPayoutsRun, "Run a payout batch (not yet wired to an endpoint)."},
 	{PermReviewsModerate, "Hide or remove reviews (not yet wired to an endpoint)."},

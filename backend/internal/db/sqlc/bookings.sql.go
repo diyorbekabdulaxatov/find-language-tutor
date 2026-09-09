@@ -14,17 +14,22 @@ import (
 
 const cancelBooking = `-- name: CancelBooking :exec
 UPDATE bookings
-SET status = 'cancelled', cancelled_at = now(), cancellation_reason = $2, updated_at = now()
+SET status = 'cancelled', cancelled_at = now(), cancellation_reason = $2,
+    cancelled_by = $3, updated_at = now()
 WHERE id = $1
 `
 
 type CancelBookingParams struct {
 	ID                 uuid.UUID
 	CancellationReason string
+	CancelledBy        string
 }
 
+// cancelled_by records WHO cancelled: 'student', 'teacher' (includes a teacher
+// no-show) or 'admin' (the operator force-cancel override). The service picks
+// the value; the column's CHECK constraint is the guard.
 func (q *Queries) CancelBooking(ctx context.Context, arg CancelBookingParams) error {
-	_, err := q.db.Exec(ctx, cancelBooking, arg.ID, arg.CancellationReason)
+	_, err := q.db.Exec(ctx, cancelBooking, arg.ID, arg.CancellationReason, arg.CancelledBy)
 	return err
 }
 
@@ -83,7 +88,7 @@ const getBookingByID = `-- name: GetBookingByID :one
 SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
-    b.cancelled_at, b.cancellation_reason, b.created_at, b.updated_at,
+    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
     t.slug            AS teacher_slug,
@@ -115,6 +120,7 @@ type GetBookingByIDRow struct {
 	IsTrial            bool
 	CancelledAt        pgtype.Timestamptz
 	CancellationReason string
+	CancelledBy        string
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
 	MeetingUrlOverride string
@@ -146,6 +152,7 @@ func (q *Queries) GetBookingByID(ctx context.Context, id uuid.UUID) (GetBookingB
 		&i.IsTrial,
 		&i.CancelledAt,
 		&i.CancellationReason,
+		&i.CancelledBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.MeetingUrlOverride,
@@ -228,7 +235,7 @@ const listBookings = `-- name: ListBookings :many
 SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
-    b.cancelled_at, b.cancellation_reason, b.created_at, b.updated_at,
+    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
     t.slug            AS teacher_slug,
@@ -268,6 +275,7 @@ type ListBookingsRow struct {
 	IsTrial            bool
 	CancelledAt        pgtype.Timestamptz
 	CancellationReason string
+	CancelledBy        string
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
 	MeetingUrlOverride string
@@ -308,6 +316,7 @@ func (q *Queries) ListBookings(ctx context.Context, arg ListBookingsParams) ([]L
 			&i.IsTrial,
 			&i.CancelledAt,
 			&i.CancellationReason,
+			&i.CancelledBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.MeetingUrlOverride,
@@ -373,6 +382,47 @@ func (q *Queries) ListTeacherBookingIntervals(ctx context.Context, arg ListTeach
 		return nil, err
 	}
 	return items, nil
+}
+
+const seedInsertBooking = `-- name: SeedInsertBooking :one
+INSERT INTO bookings (
+    teacher_id, student_id, start_at, end_at,
+    duration_minutes, status, price_minor, currency, is_trial
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7, $8, false
+)
+RETURNING id
+`
+
+type SeedInsertBookingParams struct {
+	TeacherID       uuid.UUID
+	StudentID       uuid.UUID
+	StartAt         pgtype.Timestamptz
+	EndAt           pgtype.Timestamptz
+	DurationMinutes int32
+	Status          string
+	PriceMinor      int64
+	Currency        string
+}
+
+// Seed-only: a booking in an explicit lifecycle state (the API path always
+// starts at pending_payment). Used to give the admin / dispute demo data
+// something to point at on a fresh database.
+func (q *Queries) SeedInsertBooking(ctx context.Context, arg SeedInsertBookingParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, seedInsertBooking,
+		arg.TeacherID,
+		arg.StudentID,
+		arg.StartAt,
+		arg.EndAt,
+		arg.DurationMinutes,
+		arg.Status,
+		arg.PriceMinor,
+		arg.Currency,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const setBookingMeetingLinkOverride = `-- name: SetBookingMeetingLinkOverride :exec

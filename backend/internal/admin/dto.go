@@ -202,6 +202,151 @@ func toTeachersPageDTO(p TeachersPage) teachersPageDTO {
 	return teachersPageDTO{Teachers: rows, Total: p.Total}
 }
 
+// --- bookings (phase D) ---
+
+type bookingTeacherDTO struct {
+	Slug        string `json:"slug"`
+	DisplayName string `json:"display_name"`
+}
+
+type bookingStudentDTO struct {
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+}
+
+type bookingRowDTO struct {
+	ID      string            `json:"id"`
+	Status  string            `json:"status"`
+	StartAt time.Time         `json:"start_at"`
+	EndAt   time.Time         `json:"end_at"`
+	Teacher bookingTeacherDTO `json:"teacher"`
+	Student bookingStudentDTO `json:"student"`
+	Price   moneyDTO          `json:"price"`
+	// PaymentStatus is null when the booking has no payment intent yet.
+	PaymentStatus  *string   `json:"payment_status"`
+	CreatedAt      time.Time `json:"created_at"`
+	HasOpenDispute bool      `json:"has_open_dispute"`
+}
+
+type bookingsPageDTO struct {
+	Bookings []bookingRowDTO `json:"bookings"`
+	Total    int             `json:"total"`
+}
+
+type bookingPaymentDTO struct {
+	Status      string `json:"status"`
+	AmountMinor int64  `json:"amount_minor"`
+	Currency    string `json:"currency"`
+}
+
+type disputeUserDTO struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+}
+
+type bookingDisputeDTO struct {
+	ID         string          `json:"id"`
+	Status     string          `json:"status"`
+	Reason     string          `json:"reason"`
+	Resolution string          `json:"resolution"`
+	RaisedBy   disputeUserDTO  `json:"raised_by"`
+	ResolvedBy *disputeUserDTO `json:"resolved_by"`
+	CreatedAt  time.Time       `json:"created_at"`
+	ResolvedAt *time.Time      `json:"resolved_at"`
+}
+
+type bookingDetailDTO struct {
+	bookingRowDTO
+
+	DurationMinutes int  `json:"duration_minutes"`
+	IsTrial         bool `json:"is_trial"`
+
+	Payment     *bookingPaymentDTO `json:"payment"`
+	MeetingURL  string             `json:"meeting_url"`
+	NoShowParty string             `json:"no_show_party"`
+
+	CancelledAt        *time.Time `json:"cancelled_at"`
+	CancelledBy        string     `json:"cancelled_by"`
+	CancellationReason string     `json:"cancellation_reason"`
+
+	Disputes []bookingDisputeDTO `json:"disputes"`
+}
+
+func toBookingRowDTO(b BookingRow) bookingRowDTO {
+	row := bookingRowDTO{
+		ID:      b.ID.String(),
+		Status:  b.Status,
+		StartAt: b.StartAt.UTC(),
+		EndAt:   b.EndAt.UTC(),
+		Teacher: bookingTeacherDTO{Slug: b.Teacher.Slug, DisplayName: b.Teacher.DisplayName},
+		Student: bookingStudentDTO{
+			ID:          b.Student.ID.String(),
+			Email:       b.Student.Email,
+			DisplayName: b.Student.DisplayName,
+		},
+		Price:          moneyDTO{AmountMinor: b.PriceMinor, Currency: b.Currency},
+		CreatedAt:      b.CreatedAt.UTC(),
+		HasOpenDispute: b.HasOpenDispute,
+	}
+	if b.PaymentStatus != "" {
+		s := b.PaymentStatus
+		row.PaymentStatus = &s
+	}
+	return row
+}
+
+func toBookingsPageDTO(p BookingsPage) bookingsPageDTO {
+	rows := make([]bookingRowDTO, len(p.Bookings))
+	for i, b := range p.Bookings {
+		rows[i] = toBookingRowDTO(b)
+	}
+	return bookingsPageDTO{Bookings: rows, Total: p.Total}
+}
+
+func toBookingDetailDTO(d BookingDetail) bookingDetailDTO {
+	out := bookingDetailDTO{
+		bookingRowDTO:      toBookingRowDTO(d.BookingRow),
+		DurationMinutes:    d.DurationMinutes,
+		IsTrial:            d.IsTrial,
+		MeetingURL:         d.MeetingURL,
+		NoShowParty:        d.NoShowParty,
+		CancelledBy:        d.CancelledBy,
+		CancellationReason: d.CancellationReason,
+		Disputes:           make([]bookingDisputeDTO, len(d.Disputes)),
+	}
+	if d.Payment != nil {
+		out.Payment = &bookingPaymentDTO{
+			Status:      d.Payment.Status,
+			AmountMinor: d.Payment.AmountMinor,
+			Currency:    d.Payment.Currency,
+		}
+	}
+	if d.CancelledAt != nil {
+		t := d.CancelledAt.UTC()
+		out.CancelledAt = &t
+	}
+	for i, dis := range d.Disputes {
+		entry := bookingDisputeDTO{
+			ID:         dis.ID.String(),
+			Status:     dis.Status,
+			Reason:     dis.Reason,
+			Resolution: dis.Resolution,
+			RaisedBy:   disputeUserDTO{ID: dis.RaisedBy.ID.String(), DisplayName: dis.RaisedBy.DisplayName},
+			CreatedAt:  dis.CreatedAt.UTC(),
+		}
+		if dis.ResolvedBy != nil {
+			entry.ResolvedBy = &disputeUserDTO{ID: dis.ResolvedBy.ID.String(), DisplayName: dis.ResolvedBy.DisplayName}
+		}
+		if dis.ResolvedAt != nil {
+			t := dis.ResolvedAt.UTC()
+			entry.ResolvedAt = &t
+		}
+		out.Disputes[i] = entry
+	}
+	return out
+}
+
 // teacherDetailDTO is the full teachers-module profile plus the moderation
 // slice and the owner. The embedded teachers.Profile already carries `status`,
 // `verified` and `moderation_note`.
