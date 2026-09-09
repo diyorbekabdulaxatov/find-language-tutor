@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, GraduationCap, ShieldCheck, Users } from "lucide-react";
+import {
+  BarChart3,
+  CalendarClock,
+  GraduationCap,
+  ShieldAlert,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PERMISSIONS, type Permission } from "./permissions";
 import { useCan } from "./use-can";
@@ -16,6 +23,8 @@ const LINKS: {
 }[] = [
   { href: "/admin", label: "Dashboard", icon: BarChart3, exact: true, perm: PERMISSIONS.metricsView },
   { href: "/admin/teachers", label: "Teachers", icon: GraduationCap, perm: PERMISSIONS.teachersView },
+  { href: "/admin/bookings", label: "Bookings", icon: CalendarClock, perm: PERMISSIONS.bookingsView },
+  { href: "/admin/disputes", label: "Disputes", icon: ShieldAlert, perm: PERMISSIONS.disputesResolve },
   { href: "/admin/users", label: "Users", icon: Users, perm: PERMISSIONS.usersView },
   { href: "/admin/roles", label: "Roles", icon: ShieldCheck, perm: PERMISSIONS.rolesManage },
 ];

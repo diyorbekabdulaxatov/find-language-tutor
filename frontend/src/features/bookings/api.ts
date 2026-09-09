@@ -44,6 +44,27 @@ export interface PaymentInfo {
 
 export type NoShowParty = "" | "student" | "teacher";
 
+export type DisputeStatus = components["schemas"]["DisputeStatus"];
+
+export interface OpenDispute {
+  id: string;
+  status: DisputeStatus;
+  reason: string;
+  createdAt: string;
+}
+
+export interface Dispute {
+  id: string;
+  bookingId: string;
+  status: DisputeStatus;
+  reason: string;
+  resolution: string;
+  raisedBy: { id: string; displayName: string };
+  resolvedBy: { id: string; displayName: string } | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
 export interface Booking {
   id: string;
   status: BookingStatus;
@@ -63,6 +84,10 @@ export interface Booking {
   canReview: boolean;
   /** the caller's review of this booking, if left. */
   review: { rating: number; comment: string; createdAt: string } | null;
+  /** true when a participant may open a dispute (confirmed/completed, none open). */
+  canRaiseDispute: boolean;
+  /** the booking's open dispute, if any (visible to both participants). */
+  openDispute: OpenDispute | null;
   teacher: {
     slug: string;
     displayName: string;
@@ -157,6 +182,15 @@ function toBooking(b: WireBooking): Booking {
           rating: b.review.rating,
           comment: b.review.comment,
           createdAt: b.review.created_at,
+        }
+      : null,
+    canRaiseDispute: b.can_raise_dispute ?? false,
+    openDispute: b.open_dispute
+      ? {
+          id: b.open_dispute.id,
+          status: b.open_dispute.status,
+          reason: b.open_dispute.reason,
+          createdAt: b.open_dispute.created_at,
         }
       : null,
     teacher: {
@@ -331,4 +365,46 @@ export async function cancelBooking(
     throw toError(error, response.status, "Could not cancel the booking.");
   }
   return toBooking(data);
+}
+
+/* -------------------------------- disputes ------------------------------- */
+
+function toDispute(d: components["schemas"]["Dispute"]): Dispute {
+  return {
+    id: d.id,
+    bookingId: d.booking_id,
+    status: d.status,
+    reason: d.reason,
+    resolution: d.resolution,
+    raisedBy: { id: d.raised_by.id, displayName: d.raised_by.display_name },
+    resolvedBy: d.resolved_by
+      ? { id: d.resolved_by.id, displayName: d.resolved_by.display_name }
+      : null,
+    createdAt: d.created_at,
+    resolvedAt: d.resolved_at,
+  };
+}
+
+/** A participant opens a dispute on a confirmed / completed lesson. */
+export async function raiseDispute(id: string, reason: string): Promise<Dispute> {
+  const { data, error, response } = await browserApi.POST(
+    "/v1/bookings/{id}/disputes",
+    { params: { path: { id } }, body: { reason } },
+  );
+  if (error || !data) {
+    throw toError(error, response.status, "Could not open the dispute.");
+  }
+  return toDispute(data);
+}
+
+/** The booking's dispute thread, newest first. Participant-only. */
+export async function getBookingDisputes(id: string): Promise<Dispute[]> {
+  const { data, error, response } = await browserApi.GET(
+    "/v1/bookings/{id}/disputes",
+    { params: { path: { id } } },
+  );
+  if (error || !data) {
+    throw toError(error, response.status, "Could not load the disputes.");
+  }
+  return data.disputes.map(toDispute);
 }

@@ -1,14 +1,15 @@
 /**
- * Admin data-access (browser). Every call is behind `RequireAdmin` on the
+ * Admin data-access (browser). Every call is behind the RBAC guard on the
  * backend.
  *
- * NOTE: the `/v1/admin/*` endpoints are being added (admin phases A/B). Until
- * they land in openapi.yaml + `npm run gen:api` this uses `authedFetch` with
- * hand-written wire types; swap to the typed `browserApi` once the schema
- * regenerates.
+ * The transport is `authedFetch` + a small `call()` helper (throws a typed
+ * `AdminError` with `.code`). Response/request shapes for the newer endpoints
+ * are pinned to the generated `components["schemas"]` types; the older
+ * phase-A/B mappers still carry hand-written wire types.
  */
 
 import { authedFetch } from "@/features/auth/browser-client";
+import type { components } from "@/lib/api/schema";
 import type { Money } from "@/types/teacher";
 
 const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
@@ -437,5 +438,218 @@ export async function unassignRole(
     `/v1/admin/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(roleId)}`,
     { method: "DELETE" },
     "Could not remove the role.",
+  );
+}
+
+/* --------------------------- bookings (phase D) ------------------------- */
+
+type WireBookingRow = components["schemas"]["AdminBookingRow"];
+type WireBookingDetail = components["schemas"]["AdminBookingDetail"];
+type WireBookingDispute = components["schemas"]["AdminBookingDispute"];
+
+export type AdminBookingStatus = components["schemas"]["BookingStatus"];
+export type AdminPaymentStatus = NonNullable<WireBookingRow["payment_status"]>;
+
+export interface AdminBookingRow {
+  id: string;
+  status: AdminBookingStatus;
+  startAt: string;
+  endAt: string;
+  teacher: { slug: string; displayName: string };
+  student: { id: string; email: string; displayName: string };
+  price: Money;
+  paymentStatus: AdminPaymentStatus | null;
+  createdAt: string;
+  hasOpenDispute: boolean;
+}
+
+export interface AdminBookingDispute {
+  id: string;
+  status: components["schemas"]["DisputeStatus"];
+  reason: string;
+  resolution: string;
+  raisedBy: { id: string; displayName: string };
+  resolvedBy: { id: string; displayName: string } | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export interface AdminBookingDetail extends AdminBookingRow {
+  durationMinutes: number;
+  isTrial: boolean;
+  payment: { status: AdminPaymentStatus; amount: Money } | null;
+  meetingUrl: string;
+  noShowParty: "" | "student" | "teacher";
+  cancelledAt: string | null;
+  cancelledBy: "" | "student" | "teacher" | "admin";
+  cancellationReason: string;
+  disputes: AdminBookingDispute[];
+}
+
+const toBookingRow = (b: WireBookingRow): AdminBookingRow => ({
+  id: b.id,
+  status: b.status,
+  startAt: b.start_at,
+  endAt: b.end_at,
+  teacher: { slug: b.teacher.slug, displayName: b.teacher.display_name },
+  student: {
+    id: b.student.id,
+    email: b.student.email,
+    displayName: b.student.display_name,
+  },
+  price: { amountMinor: b.price.amount_minor, currency: b.price.currency as Money["currency"] },
+  paymentStatus: b.payment_status ?? null,
+  createdAt: b.created_at,
+  hasOpenDispute: b.has_open_dispute,
+});
+
+const toBookingDispute = (d: WireBookingDispute): AdminBookingDispute => ({
+  id: d.id,
+  status: d.status,
+  reason: d.reason,
+  resolution: d.resolution,
+  raisedBy: { id: d.raised_by.id, displayName: d.raised_by.display_name },
+  resolvedBy: d.resolved_by
+    ? { id: d.resolved_by.id, displayName: d.resolved_by.display_name }
+    : null,
+  createdAt: d.created_at,
+  resolvedAt: d.resolved_at,
+});
+
+export async function listAdminBookings(opts: {
+  status?: AdminBookingStatus;
+  q?: string;
+  page?: number;
+}): Promise<Paged<AdminBookingRow>> {
+  const p = new URLSearchParams({ page: String(opts.page ?? 1) });
+  if (opts.status) p.set("status", opts.status);
+  if (opts.q) p.set("q", opts.q);
+  const w = await call<components["schemas"]["AdminBookingList"]>(
+    `/v1/admin/bookings?${p}`,
+    {},
+    "Could not load bookings.",
+  );
+  return { items: w.bookings.map(toBookingRow), total: w.total };
+}
+
+export async function getAdminBooking(id: string): Promise<AdminBookingDetail> {
+  const w = await call<WireBookingDetail>(
+    `/v1/admin/bookings/${encodeURIComponent(id)}`,
+    {},
+    "Could not load that booking.",
+  );
+  return {
+    ...toBookingRow(w),
+    durationMinutes: w.duration_minutes,
+    isTrial: w.is_trial,
+    payment: w.payment
+      ? {
+          status: w.payment.status,
+          amount: {
+            amountMinor: w.payment.amount_minor,
+            currency: w.payment.currency as Money["currency"],
+          },
+        }
+      : null,
+    meetingUrl: w.meeting_url,
+    noShowParty: w.no_show_party,
+    cancelledAt: w.cancelled_at,
+    cancelledBy: w.cancelled_by,
+    cancellationReason: w.cancellation_reason,
+    disputes: w.disputes.map(toBookingDispute),
+  };
+}
+
+export async function forceCancelBooking(
+  id: string,
+  reason: string,
+  refund: boolean,
+): Promise<void> {
+  await call(
+    `/v1/admin/bookings/${encodeURIComponent(id)}/force-cancel`,
+    { method: "POST", body: JSON.stringify({ reason, refund }) },
+    "Could not force-cancel the booking.",
+  );
+}
+
+/* --------------------------- disputes (phase D) ------------------------- */
+
+type WireAdminDisputeRow = components["schemas"]["AdminDisputeRow"];
+
+export type DisputeQueueStatus = "open" | "resolved" | "rejected" | "all";
+
+export interface AdminDisputeRow {
+  id: string;
+  bookingId: string;
+  status: components["schemas"]["DisputeStatus"];
+  reason: string;
+  resolution: string;
+  raisedBy: { id: string; displayName: string };
+  resolvedBy: { id: string; displayName: string } | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  booking: {
+    id: string;
+    status: AdminBookingStatus;
+    startAt: string;
+    price: Money;
+    teacher: { slug: string; displayName: string };
+    student: { id: string; displayName: string };
+  };
+}
+
+const toDisputeRow = (d: WireAdminDisputeRow): AdminDisputeRow => ({
+  id: d.id,
+  bookingId: d.booking_id,
+  status: d.status,
+  reason: d.reason,
+  resolution: d.resolution,
+  raisedBy: { id: d.raised_by.id, displayName: d.raised_by.display_name },
+  resolvedBy: d.resolved_by
+    ? { id: d.resolved_by.id, displayName: d.resolved_by.display_name }
+    : null,
+  createdAt: d.created_at,
+  resolvedAt: d.resolved_at,
+  booking: {
+    id: d.booking.id,
+    status: d.booking.status,
+    startAt: d.booking.start_at,
+    price: {
+      amountMinor: d.booking.price.amount_minor,
+      currency: d.booking.price.currency as Money["currency"],
+    },
+    teacher: {
+      slug: d.booking.teacher.slug,
+      displayName: d.booking.teacher.display_name,
+    },
+    student: {
+      id: d.booking.student.id,
+      displayName: d.booking.student.display_name,
+    },
+  },
+});
+
+export async function listDisputes(opts: {
+  status?: DisputeQueueStatus;
+  page?: number;
+}): Promise<Paged<AdminDisputeRow>> {
+  const p = new URLSearchParams({ page: String(opts.page ?? 1) });
+  if (opts.status) p.set("status", opts.status);
+  const w = await call<components["schemas"]["AdminDisputeList"]>(
+    `/v1/admin/disputes?${p}`,
+    {},
+    "Could not load the dispute queue.",
+  );
+  return { items: w.disputes.map(toDisputeRow), total: w.total };
+}
+
+export async function resolveDispute(
+  id: string,
+  body: { outcome: "resolved" | "rejected"; resolution: string; refund: boolean },
+): Promise<void> {
+  await call(
+    `/v1/admin/disputes/${encodeURIComponent(id)}/resolve`,
+    { method: "POST", body: JSON.stringify(body) },
+    "Could not resolve the dispute.",
   );
 }

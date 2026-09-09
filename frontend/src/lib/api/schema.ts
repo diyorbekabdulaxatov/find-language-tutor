@@ -425,6 +425,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/bookings/{id}/disputes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A booking's dispute thread
+         * @description Participant-only. Every dispute ever raised on the booking, open and closed, newest first.
+         */
+        get: operations["listBookingDisputes"];
+        put?: never;
+        /**
+         * Raise a dispute on a lesson
+         * @description Participant-only — the student or the teacher-owner on the booking (403 otherwise). The lesson must be `confirmed` or `completed` (409 `dispute_not_allowed`), and a booking may have only one OPEN dispute at a time (409 `dispute_exists`, enforced by a partial unique index, so a concurrent double-submit is race-safe). Once a dispute is resolved or rejected a new one may be raised; the whole thread is kept.
+         *     `reason` is required, trimmed, and capped at 2000 characters.
+         */
+        post: operations["raiseBookingDispute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/payments/webhook": {
         parameters: {
             query?: never;
@@ -756,6 +781,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/bookings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every booking on the platform
+         * @description Permission: `bookings.view`. Unlike `GET /v1/bookings` (the caller's own lessons) this lists every booking, newest lesson first. `status` is an optional exact filter; `q` matches the teacher's display name or slug and the student's email or display name, case-insensitively.
+         */
+        get: operations["adminListBookings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/bookings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Booking detail (operator view)
+         * @description Permission: `bookings.view`. The list-row fields plus the payment detail, the effective meeting link, the no-show flag, the cancellation who/why/when, and the booking's full dispute thread. The meeting link is shown regardless of booking status — unlike the participant-facing `Booking`, which hides it before confirmation.
+         */
+        get: operations["adminGetBooking"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/bookings/{id}/force-cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Force-cancel a booking
+         * @description Permission: `bookings.force_cancel`. The operator override of `POST /v1/bookings/{id}/cancel`, which is participant-only: it cancels a `pending_payment` or `confirmed` booking on anyone's behalf and records `cancelled_by = admin` plus the required `reason`. 409 `invalid_state` for a booking that is already completed or cancelled.
+         *     It runs the same cancellation path a participant cancel does — pending lesson reminders are dropped and the participants are emailed — and with `refund: true` the booking's payment is released (an authorized hold) or refunded (a capture). With `refund: false` no payment call is made.
+         */
+        post: operations["adminForceCancelBooking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/disputes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The dispute queue
+         * @description Permission: `disputes.resolve`. Disputes newest first, each with the booking and both parties. `status` defaults to `open`; pass `all` to include closed disputes.
+         */
+        get: operations["adminListDisputes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/disputes/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve or reject a dispute
+         * @description Permission: `disputes.resolve`. Closes an OPEN dispute, recording the outcome, the required `resolution` note (trimmed, at most 2000 characters), the operator and the timestamp. 409 `already_resolved` when the dispute is no longer open — the UPDATE is guarded on the open status, so a lost race is reported rather than overwriting the other operator's resolution.
+         *     With `outcome: resolved` and `refund: true` the booking's payment is refunded; the booking's own lifecycle is deliberately left alone (use force-cancel to also cancel the lesson). `refund` is ignored for `outcome: rejected`.
+         */
+        post: operations["adminResolveDispute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1052,6 +1179,11 @@ export interface components {
             cancelled_at: string | null;
             /** @description Present (may be empty) only once cancelled; omitted otherwise. */
             cancellation_reason?: string;
+            /**
+             * @description Empty until the booking is cancelled, then who cancelled it: the `student`, the `teacher` (a teacher no-show counts as a teacher cancellation), or an `admin` force-cancel.
+             * @enum {string}
+             */
+            cancelled_by: "" | "student" | "teacher" | "admin";
             /** @description The effective video link (the per-booking override if set, else the teacher's default `meeting_url`). Present ONLY when the caller is a participant AND `status` is `confirmed` or `completed`; omitted for everyone else (it never leaks to a `pending_payment` booking or a non-participant). */
             meeting_url?: string;
             /**
@@ -1063,6 +1195,10 @@ export interface components {
             can_review: boolean;
             /** @description The caller's review of this booking if one exists (visible to both participants); null otherwise. */
             review: components["schemas"]["BookingReview"] | null;
+            /** @description True only when the caller is a participant, `status` is `confirmed` or `completed`, and no dispute is currently open — the frontend shows the "report a problem" action off this without a second call. */
+            can_raise_dispute: boolean;
+            /** @description The booking's currently open dispute (visible to both participants); null when there is none. The full thread, including closed disputes, is at `GET /v1/bookings/{id}/disputes`. */
+            open_dispute: components["schemas"]["BookingOpenDispute"] | null;
             teacher: components["schemas"]["BookingTeacherSummary"];
             student: components["schemas"]["BookingStudentSummary"];
             /** @description The booking's payment intent. Null when there is none yet, and omitted from list responses (only single-booking responses embed it). */
@@ -1213,6 +1349,75 @@ export interface components {
             /** @description Total reviews for the teacher (not just this page). */
             total: number;
         };
+        /**
+         * @description `open` is the only non-terminal state.
+         * @enum {string}
+         */
+        DisputeStatus: "open" | "resolved" | "rejected";
+        /** @description The account that raised or resolved a dispute. */
+        DisputeUser: {
+            /** Format: uuid */
+            id: string;
+            display_name: string;
+        };
+        /** @description The open dispute embedded in a participant's booking response. */
+        BookingOpenDispute: {
+            /** Format: uuid */
+            id: string;
+            status: components["schemas"]["DisputeStatus"];
+            reason: string;
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC.
+             */
+            created_at: string;
+        };
+        Dispute: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            booking_id: string;
+            status: components["schemas"]["DisputeStatus"];
+            /** @description The participant's account of the problem, at most 2000 characters. */
+            reason: string;
+            /** @description The operator's closing note. Empty while the dispute is open. */
+            resolution: string;
+            raised_by: components["schemas"]["DisputeUser"];
+            /** @description The operator who closed it; null while open. */
+            resolved_by: components["schemas"]["DisputeUser"] | null;
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC.
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC; null while open.
+             */
+            resolved_at: string | null;
+        };
+        DisputeList: {
+            /** @description Newest first. */
+            disputes: components["schemas"]["Dispute"][];
+        };
+        RaiseDisputeRequest: {
+            /** @description Trimmed; must be non-empty. */
+            reason: string;
+        };
+        ResolveDisputeRequest: {
+            /**
+             * @description `resolved` sides with the person who raised it, `rejected` closes it without action.
+             * @enum {string}
+             */
+            outcome: "resolved" | "rejected";
+            /** @description The operator's closing note. Trimmed; must be non-empty. */
+            resolution: string;
+            /**
+             * @description Refund the booking's payment. Only honoured with `outcome: resolved`; the booking's own status is not changed.
+             * @default false
+             */
+            refund: boolean;
+        };
         AdminMetrics: {
             users_total: number;
             teachers_total: number;
@@ -1329,6 +1534,108 @@ export interface components {
                 email: string;
                 display_name: string;
             };
+        };
+        AdminBookingTeacher: {
+            slug: string;
+            display_name: string;
+        };
+        AdminBookingStudent: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            display_name: string;
+        };
+        AdminBookingRow: {
+            /** Format: uuid */
+            id: string;
+            status: components["schemas"]["BookingStatus"];
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC.
+             */
+            start_at: string;
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC.
+             */
+            end_at: string;
+            teacher: components["schemas"]["AdminBookingTeacher"];
+            student: components["schemas"]["AdminBookingStudent"];
+            price: components["schemas"]["Money"];
+            /**
+             * @description Null when the booking has no payment intent yet.
+             * @enum {string|null}
+             */
+            payment_status: "requires_payment" | "authorized" | "captured" | "refunded" | "failed" | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description True while the booking has a dispute in the `open` state. */
+            has_open_dispute: boolean;
+        };
+        AdminBookingList: {
+            bookings: components["schemas"]["AdminBookingRow"][];
+            /** @description Total matches */
+            total: number;
+        };
+        /** @description One entry of a booking's dispute thread, as the operator sees it. */
+        AdminBookingDispute: {
+            /** Format: uuid */
+            id: string;
+            status: components["schemas"]["DisputeStatus"];
+            reason: string;
+            resolution: string;
+            raised_by: components["schemas"]["DisputeUser"];
+            resolved_by: components["schemas"]["DisputeUser"] | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            resolved_at: string | null;
+        };
+        /** @description The list row plus the lifecycle extras, the payment, and the dispute thread. */
+        AdminBookingDetail: components["schemas"]["AdminBookingRow"] & {
+            duration_minutes: number;
+            is_trial: boolean;
+            /** @description Null when the booking has no payment intent yet. */
+            payment: components["schemas"]["BookingPayment"] | null;
+            /** @description The effective link (per-booking override, else the teacher's default). Empty when neither is set. Shown to operators regardless of booking status. */
+            meeting_url: string;
+            /** @enum {string} */
+            no_show_party: "" | "student" | "teacher";
+            /** Format: date-time */
+            cancelled_at: string | null;
+            /** @enum {string} */
+            cancelled_by: "" | "student" | "teacher" | "admin";
+            cancellation_reason: string;
+            /** @description The booking's full dispute thread, newest first. */
+            disputes: components["schemas"]["AdminBookingDispute"][];
+        };
+        ForceCancelBookingRequest: {
+            /** @description Why the operator cancelled. Required, trimmed, and stored on the booking as `cancellation_reason`. */
+            reason: string;
+            /**
+             * @description Release / refund the booking's payment. False makes no payment call at all.
+             * @default false
+             */
+            refund: boolean;
+        };
+        /** @description A queued dispute plus the booking and parties it is about. */
+        AdminDisputeRow: components["schemas"]["Dispute"] & {
+            booking: {
+                /** Format: uuid */
+                id: string;
+                status: components["schemas"]["BookingStatus"];
+                /** Format: date-time */
+                start_at: string;
+                price: components["schemas"]["Money"];
+                teacher: components["schemas"]["AdminBookingTeacher"];
+                student: components["schemas"]["AdminBookingStudent"];
+            };
+        };
+        AdminDisputeList: {
+            disputes: components["schemas"]["AdminDisputeRow"][];
+            /** @description Total matches */
+            total: number;
         };
     };
     responses: {
@@ -2171,6 +2478,86 @@ export interface operations {
             };
         };
     };
+    listBookingDisputes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The dispute thread (possibly empty). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DisputeList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The caller is not a participant in this booking (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    raiseBookingDispute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RaiseDisputeRequest"];
+            };
+        };
+        responses: {
+            /** @description The created dispute. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dispute"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The caller is not a participant in this booking (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The lesson is not `confirmed` / `completed` (`dispute_not_allowed`), or it already has an open dispute (`dispute_exists`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     paymentsWebhook: {
         parameters: {
             query?: never;
@@ -2729,6 +3116,189 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    adminListBookings: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["BookingStatus"];
+                q?: string;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of bookings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBookingList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminGetBooking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The booking. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBookingDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description `booking_not_found`. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminForceCancelBooking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForceCancelBookingRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated booking detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBookingDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description `booking_not_found`. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `invalid_state` — the booking is already completed or cancelled. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminListDisputes: {
+        parameters: {
+            query?: {
+                status?: "open" | "resolved" | "rejected" | "all";
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of disputes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDisputeList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminResolveDispute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveDisputeRequest"];
+            };
+        };
+        responses: {
+            /** @description The closed dispute. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dispute"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description `dispute_not_found`. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `already_resolved` — the dispute is no longer open. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
 }
