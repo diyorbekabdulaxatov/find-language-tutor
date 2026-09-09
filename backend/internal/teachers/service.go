@@ -87,8 +87,22 @@ func (s *Service) List(ctx context.Context, params ListParams) (ListResult, erro
 	}, nil
 }
 
-// GetBySlug returns one full profile. Propagates ErrNotFound.
+// GetBySlug returns one full PUBLIC profile. A profile that is not `approved`
+// is not public: it comes back as ErrNotFound, exactly like an unknown slug.
 func (s *Service) GetBySlug(ctx context.Context, slug string) (*Teacher, error) {
+	t, err := s.repo.GetBySlug(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+	if t.Status != StatusApproved {
+		return nil, ErrNotFound
+	}
+	return t, nil
+}
+
+// GetForAdmin returns one full profile regardless of moderation status. Used by
+// the admin endpoints; never mounted on a public route.
+func (s *Service) GetForAdmin(ctx context.Context, slug string) (*Teacher, error) {
 	return s.repo.GetBySlug(ctx, slug)
 }
 

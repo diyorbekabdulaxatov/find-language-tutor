@@ -5,7 +5,8 @@
 SELECT t.*
 FROM teachers t
 WHERE
-    (sqlc.narg('kind')::teacher_kind IS NULL OR t.kind = sqlc.narg('kind')::teacher_kind)
+    t.status = 'approved'
+    AND (sqlc.narg('kind')::teacher_kind IS NULL OR t.kind = sqlc.narg('kind')::teacher_kind)
     AND (sqlc.narg('max_price_minor')::bigint IS NULL OR t.price_per_hour_minor <= sqlc.narg('max_price_minor')::bigint)
     AND (
         sqlc.narg('language')::text IS NULL
@@ -38,7 +39,8 @@ OFFSET sqlc.arg('page_offset')::int;
 SELECT count(*)
 FROM teachers t
 WHERE
-    (sqlc.narg('kind')::teacher_kind IS NULL OR t.kind = sqlc.narg('kind')::teacher_kind)
+    t.status = 'approved'
+    AND (sqlc.narg('kind')::teacher_kind IS NULL OR t.kind = sqlc.narg('kind')::teacher_kind)
     AND (sqlc.narg('max_price_minor')::bigint IS NULL OR t.price_per_hour_minor <= sqlc.narg('max_price_minor')::bigint)
     AND (
         sqlc.narg('language')::text IS NULL
@@ -88,4 +90,6 @@ GROUP BY code, name
 ORDER BY name;
 
 -- name: ListTeacherSlugs :many
-SELECT slug FROM teachers ORDER BY slug;
+-- Public: the frontend's static-generation slug list. Non-approved teachers are
+-- not public, so they are excluded here too.
+SELECT slug FROM teachers WHERE status = 'approved' ORDER BY slug;

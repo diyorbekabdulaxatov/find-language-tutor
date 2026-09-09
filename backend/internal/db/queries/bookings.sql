@@ -7,10 +7,13 @@
 -- name: GetBookingTeacherContext :one
 -- Slug -> everything the booking flow needs: identity, timezone, pricing, and
 -- the owning account (drives the "can't book yourself" check).
+-- Only an approved (publicly visible) teacher can be booked. A non-approved slug
+-- returns no rows here, so the booking flow treats it as "no such teacher": 404
+-- on GET /v1/teachers/{slug}/slots and 404 teacher_not_found on POST /v1/bookings.
 SELECT id, slug, display_name, timezone, avatar_url,
        price_per_hour_minor, trial_price_minor, currency, user_id, meeting_url
 FROM teachers
-WHERE slug = $1;
+WHERE slug = $1 AND status = 'approved';
 
 -- name: GetTeacherIDByOwner :one
 -- The teacher profile owned by an account (one per user), or no rows.

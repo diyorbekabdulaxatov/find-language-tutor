@@ -38,6 +38,10 @@ type seedTeacher struct {
 	Teaches, AlsoSpeaks                      []seedLang
 	Focus                                    []string
 	Experience                               []seedExp
+	// Moderation (phase B). Status defaults to "approved" when empty so every
+	// existing seed row stays live; Verified drives the badge.
+	Status   string
+	Verified bool
 }
 
 func minor(v int64) *int64 { return &v }
@@ -121,6 +125,11 @@ var seedAvailability = map[string][]seedSlot{
 		week([]int{1, 2, 3, 4, 5}, 13, 0, 16, 0),
 		week([]int{0}, 6, 0, 10, 0),
 	),
+	// Pending teacher (Tashkent, UTC+5): a filled availability that only becomes
+	// bookable once an admin approves the profile.
+	"malika-abdurakhmonova": slots(
+		week([]int{1, 2, 3, 4, 5}, 12, 0, 15, 0), // 17:00–20:00 local
+	),
 }
 
 // seedReview is one sample review. Student is the demo account for another
@@ -193,8 +202,8 @@ var seedReviews = map[string][]seedReview{
 var seedTeachers = []seedTeacher{
 	{
 		Slug: "nodira-karimova", DisplayName: "Nodira Karimova",
-		Headline:    "IELTS students who freeze up in the speaking test — that's my specialty",
-		Kind:        "professional",
+		Headline: "IELTS students who freeze up in the speaking test — that's my specialty",
+		Kind:     "professional", Verified: true,
 		CountryCode: "UZ", CountryName: "Uzbekistan", City: "Tashkent", Timezone: "Asia/Tashkent",
 		PriceMinor: 9_000_000, TrialMinor: minor(3_000_000),
 		Rating: 4.9, ReviewCount: 214, LessonsCompleted: 3800, StudentCount: 260, ResponseTimeHours: 1, Accepting: true,
@@ -233,8 +242,8 @@ var seedTeachers = []seedTeacher{
 	},
 	{
 		Slug: "elena-kim", DisplayName: "Elena Kim",
-		Headline:    "Russian for school and university, explained the way it finally clicks",
-		Kind:        "professional",
+		Headline: "Russian for school and university, explained the way it finally clicks",
+		Kind:     "professional", Verified: true,
 		CountryCode: "UZ", CountryName: "Uzbekistan", City: "Tashkent", Timezone: "Asia/Tashkent",
 		PriceMinor: 7_000_000, TrialMinor: minor(2_500_000),
 		Rating: 4.9, ReviewCount: 158, LessonsCompleted: 4300, StudentCount: 190, ResponseTimeHours: 2, Accepting: true,
@@ -313,8 +322,8 @@ var seedTeachers = []seedTeacher{
 	},
 	{
 		Slug: "kim-min-jun", DisplayName: "Kim Min-jun",
-		Headline:    "From the K-drama phrases you already know to real conversation — and TOPIK if you want it",
-		Kind:        "professional",
+		Headline: "From the K-drama phrases you already know to real conversation — and TOPIK if you want it",
+		Kind:     "professional", Verified: true,
 		CountryCode: "KR", CountryName: "South Korea", City: "Seoul", Timezone: "Asia/Seoul",
 		PriceMinor: 11_000_000, TrialMinor: minor(4_000_000),
 		Rating: 4.8, ReviewCount: 133, LessonsCompleted: 2900, StudentCount: 180, ResponseTimeHours: 6, Accepting: true,
@@ -387,6 +396,29 @@ var seedTeachers = []seedTeacher{
 		Experience: []seedExp{
 			{"History teacher", "School No. 24, Andijan", "2015 – present"},
 			{"Uzbek conversation tutor", "Independent", "2021 – present"},
+		},
+	},
+	{
+		// Sits in the admin moderation queue on a fresh DB (status = 'pending'):
+		// a complete profile that is NOT public until an admin approves it.
+		// Demo account: malika@example.com / "password".
+		Slug: "malika-abdurakhmonova", DisplayName: "Malika Abdurakhmonova",
+		Headline: "Business English for Uzbek professionals — emails, calls, and negotiations that land",
+		Kind:     "professional", Status: "pending",
+		CountryCode: "UZ", CountryName: "Uzbekistan", City: "Tashkent", Timezone: "Asia/Tashkent",
+		PriceMinor: 7_000_000, TrialMinor: minor(2_500_000),
+		Rating: 0, ReviewCount: 0, LessonsCompleted: 0, StudentCount: 0, ResponseTimeHours: 6, Accepting: true,
+		AvatarURL:         "https://i.pravatar.cc/240?img=32",
+		VideoThumbnailURL: "https://picsum.photos/seed/malika/640/360",
+		IntroVideoURL:     "https://example.com/video/malika",
+		About:             "I spent eight years in corporate finance in Tashkent and Almaty, most of it working in English with regional teams.\n\nI coach professionals who already have solid English but want it to sound sharper at work — clearer emails, more confident calls, and the phrasing that makes a negotiation go your way.",
+		TeachingStyle:     "We work from your real material: an email you need to send, a presentation next week, a call you're dreading. Every lesson ends with something you can use the next morning.",
+		Teaches:           []seedLang{{"en", "English", "c1"}},
+		AlsoSpeaks:        []seedLang{{"uz", "Uzbek", "native"}, {"ru", "Russian", "c2"}},
+		Focus:             []string{"Business English", "Email writing", "Negotiation"},
+		Experience: []seedExp{
+			{"Finance manager", "Regional FMCG group, Tashkent / Almaty", "2016 – 2024"},
+			{"Business English coach", "Independent", "2023 – present"},
 		},
 	},
 }

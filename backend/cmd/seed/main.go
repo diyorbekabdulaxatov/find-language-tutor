@@ -17,6 +17,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db/sqlc"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/rbac"
 )
 
 // demoPassword is the password for every seeded demo account. Demo data only —
@@ -71,6 +72,16 @@ func main() {
 	if err := q.DeleteAllTeachers(ctx); err != nil {
 		log.Fatalf("clear teachers: %v", err)
 	}
+	// RBAC: user_roles -> users/roles, role_permissions -> roles.
+	if err := q.DeleteAllUserRoles(ctx); err != nil {
+		log.Fatalf("clear user roles: %v", err)
+	}
+	if err := q.DeleteAllRolePermissions(ctx); err != nil {
+		log.Fatalf("clear role permissions: %v", err)
+	}
+	if err := q.DeleteAllRoles(ctx); err != nil {
+		log.Fatalf("clear roles: %v", err)
+	}
 	if err := q.DeleteAllUsers(ctx); err != nil {
 		log.Fatalf("clear users: %v", err)
 	}
@@ -97,8 +108,14 @@ func main() {
 		}
 		userIDByFirstName[strings.ToLower(firstName(t.DisplayName))] = user.ID
 
+		status := t.Status
+		if status == "" {
+			status = "approved"
+		}
 		id, err := q.CreateTeacher(ctx, sqlc.CreateTeacherParams{
 			UserID:            uuid.NullUUID{UUID: user.ID, Valid: true},
+			Status:            status,
+			Verified:          t.Verified,
 			Slug:              t.Slug,
 			DisplayName:       t.DisplayName,
 			Headline:          t.Headline,
@@ -159,6 +176,42 @@ func main() {
 		}
 	}
 
+	// RBAC seed: the system 'superadmin' role (always the full catalog), two
+	// non-system example roles, and one admin account holding superadmin.
+	// admin@findtutor.local / "admin" — no teacher profile. Documented in README.
+	superadmin, err := q.CreateRole(ctx, sqlc.CreateRoleParams{
+		Name: rbac.SuperadminRoleName, IsSystem: true,
+		Description: "Full access to every admin capability. System role — cannot be edited or deleted.",
+	})
+	if err != nil {
+		log.Fatalf("create superadmin role: %v", err)
+	}
+	for _, p := range rbac.AllPermissions {
+		if err := q.AddRolePermission(ctx, sqlc.AddRolePermissionParams{RoleID: superadmin.ID, Permission: string(p)}); err != nil {
+			log.Fatalf("grant %s to superadmin: %v", p, err)
+		}
+	}
+	seedRole(ctx, q, "support", "Read-only: dashboard, users, teachers, bookings.",
+		rbac.PermMetricsView, rbac.PermUsersView, rbac.PermTeachersView, rbac.PermBookingsView)
+	seedRole(ctx, q, "moderator", "Teacher and review moderation.",
+		rbac.PermTeachersView, rbac.PermTeachersModerate, rbac.PermTeachersVerify, rbac.PermReviewsModerate)
+
+	adminHash, err := auth.HashPassword("admin")
+	if err != nil {
+		log.Fatalf("hash admin password: %v", err)
+	}
+	adminUser, err := q.CreateUser(ctx, sqlc.CreateUserParams{
+		Email:        "admin@findtutor.local",
+		PasswordHash: adminHash,
+		DisplayName:  "Site Admin",
+	})
+	if err != nil {
+		log.Fatalf("create admin user: %v", err)
+	}
+	if err := q.AssignRoleToUser(ctx, sqlc.AssignRoleToUserParams{UserID: adminUser.ID, RoleID: superadmin.ID}); err != nil {
+		log.Fatalf("assign superadmin: %v", err)
+	}
+
 	// Sample reviews: booking-less rows (booking_id NULL) that display as a
 	// portion of each teacher's review history. These do NOT touch
 	// teachers.rating / review_count — the hand-set values stand.
@@ -189,8 +242,21 @@ func main() {
 		log.Fatalf("commit: %v", err)
 	}
 
-	log.Printf("seeded %d teachers (+ %d demo accounts, password %q), %d sample reviews",
+	log.Printf("seeded %d teachers (+ %d demo accounts, password %q), 3 roles, 1 admin (admin@findtutor.local / \"admin\", superadmin), %d sample reviews",
 		len(seedTeachers), len(seedTeachers), demoPassword, reviewCount)
+}
+
+// seedRole creates a non-system role with the given permissions.
+func seedRole(ctx context.Context, q *sqlc.Queries, name, description string, perms ...rbac.Permission) {
+	role, err := q.CreateRole(ctx, sqlc.CreateRoleParams{Name: name, Description: description})
+	if err != nil {
+		log.Fatalf("create role %s: %v", name, err)
+	}
+	for _, p := range perms {
+		if err := q.AddRolePermission(ctx, sqlc.AddRolePermissionParams{RoleID: role.ID, Permission: string(p)}); err != nil {
+			log.Fatalf("grant %s to %s: %v", p, name, err)
+		}
+	}
 }
 
 // firstName is the first whitespace/hyphen-delimited token of a display name,

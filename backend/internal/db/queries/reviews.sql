@@ -13,6 +13,11 @@ JOIN teachers t ON t.id = b.teacher_id
 JOIN users    u ON u.id = b.student_id
 WHERE b.id = $1;
 
+-- name: ApprovedTeacherIDBySlug :one
+-- Slug -> id, but only for a publicly visible (approved) teacher. GET
+-- /v1/teachers/{slug}/reviews 404s for a non-approved slug, same as the profile.
+SELECT id FROM teachers WHERE slug = $1 AND status = 'approved';
+
 -- name: InsertReview :one
 -- A real, booking-tied review. A duplicate for the same booking_id raises
 -- SQLSTATE 23505 on reviews_booking_uniq, which the repository maps to

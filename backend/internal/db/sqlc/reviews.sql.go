@@ -12,6 +12,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const approvedTeacherIDBySlug = `-- name: ApprovedTeacherIDBySlug :one
+SELECT id FROM teachers WHERE slug = $1 AND status = 'approved'
+`
+
+// Slug -> id, but only for a publicly visible (approved) teacher. GET
+// /v1/teachers/{slug}/reviews 404s for a non-approved slug, same as the profile.
+func (q *Queries) ApprovedTeacherIDBySlug(ctx context.Context, slug string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, approvedTeacherIDBySlug, slug)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const bumpTeacherRatingForReview = `-- name: BumpTeacherRatingForReview :exec
 UPDATE teachers
 SET rating = LEAST(5, GREATEST(0,

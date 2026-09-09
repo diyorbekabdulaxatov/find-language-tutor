@@ -7,11 +7,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/admin"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/auth"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/availability"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/bookings"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payments"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/rbac"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/reviews"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/teachers"
 )
@@ -24,6 +26,9 @@ type Deps struct {
 	Redis               *redis.Client
 	AuthHandler         *auth.Handler
 	AuthMiddleware      gin.HandlerFunc // auth.RequireAuth(tokenManager)
+	AdminHandler        *admin.Handler
+	RBACHandler         *rbac.Handler
+	RBACGuard           *rbac.Guard
 	TeacherHandler      *teachers.Handler
 	AvailabilityHandler *availability.Handler
 	BookingHandler      *bookings.Handler
@@ -63,6 +68,12 @@ func NewRouter(d Deps) *gin.Engine {
 	reviews.RegisterBookingRoutes(bookingRoutes, d.ReviewHandler, d.AuthMiddleware)
 
 	payments.RegisterRoutes(v1.Group("/payments"), d.PaymentHandler, d.AuthMiddleware)
+
+	// /v1/admin is behind a valid access token; each route then enforces its
+	// own RBAC permission via the guard.
+	adminGroup := v1.Group("/admin", d.AuthMiddleware)
+	admin.RegisterRoutes(adminGroup, d.AdminHandler, d.RBACGuard)
+	rbac.RegisterAdminRoutes(adminGroup, d.RBACHandler, d.RBACGuard)
 
 	return r
 }

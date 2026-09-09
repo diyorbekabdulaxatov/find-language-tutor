@@ -16,7 +16,8 @@ const countTeachers = `-- name: CountTeachers :one
 SELECT count(*)
 FROM teachers t
 WHERE
-    ($1::teacher_kind IS NULL OR t.kind = $1::teacher_kind)
+    t.status = 'approved'
+    AND ($1::teacher_kind IS NULL OR t.kind = $1::teacher_kind)
     AND ($2::bigint IS NULL OR t.price_per_hour_minor <= $2::bigint)
     AND (
         $3::text IS NULL
@@ -56,7 +57,7 @@ func (q *Queries) CountTeachers(ctx context.Context, arg CountTeachersParams) (i
 }
 
 const getTeacherBySlug = `-- name: GetTeacherBySlug :one
-SELECT id, slug, display_name, headline, kind, country_code, country_name, city, timezone, price_per_hour_minor, trial_price_minor, currency, rating, review_count, lessons_completed, student_count, response_time_hours, accepting_students, avatar_url, video_thumbnail_url, intro_video_url, about, teaching_style, created_at, updated_at, user_id, meeting_url FROM teachers WHERE slug = $1
+SELECT id, slug, display_name, headline, kind, country_code, country_name, city, timezone, price_per_hour_minor, trial_price_minor, currency, rating, review_count, lessons_completed, student_count, response_time_hours, accepting_students, avatar_url, video_thumbnail_url, intro_video_url, about, teaching_style, created_at, updated_at, user_id, meeting_url, status, verified, moderation_note FROM teachers WHERE slug = $1
 `
 
 func (q *Queries) GetTeacherBySlug(ctx context.Context, slug string) (Teacher, error) {
@@ -90,6 +91,9 @@ func (q *Queries) GetTeacherBySlug(ctx context.Context, slug string) (Teacher, e
 		&i.UpdatedAt,
 		&i.UserID,
 		&i.MeetingUrl,
+		&i.Status,
+		&i.Verified,
+		&i.ModerationNote,
 	)
 	return i, err
 }
@@ -233,9 +237,11 @@ func (q *Queries) ListLanguagesForTeachers(ctx context.Context, teacherIds []uui
 }
 
 const listTeacherSlugs = `-- name: ListTeacherSlugs :many
-SELECT slug FROM teachers ORDER BY slug
+SELECT slug FROM teachers WHERE status = 'approved' ORDER BY slug
 `
 
+// Public: the frontend's static-generation slug list. Non-approved teachers are
+// not public, so they are excluded here too.
 func (q *Queries) ListTeacherSlugs(ctx context.Context) ([]string, error) {
 	rows, err := q.db.Query(ctx, listTeacherSlugs)
 	if err != nil {
@@ -257,10 +263,11 @@ func (q *Queries) ListTeacherSlugs(ctx context.Context) ([]string, error) {
 }
 
 const listTeachers = `-- name: ListTeachers :many
-SELECT t.id, t.slug, t.display_name, t.headline, t.kind, t.country_code, t.country_name, t.city, t.timezone, t.price_per_hour_minor, t.trial_price_minor, t.currency, t.rating, t.review_count, t.lessons_completed, t.student_count, t.response_time_hours, t.accepting_students, t.avatar_url, t.video_thumbnail_url, t.intro_video_url, t.about, t.teaching_style, t.created_at, t.updated_at, t.user_id, t.meeting_url
+SELECT t.id, t.slug, t.display_name, t.headline, t.kind, t.country_code, t.country_name, t.city, t.timezone, t.price_per_hour_minor, t.trial_price_minor, t.currency, t.rating, t.review_count, t.lessons_completed, t.student_count, t.response_time_hours, t.accepting_students, t.avatar_url, t.video_thumbnail_url, t.intro_video_url, t.about, t.teaching_style, t.created_at, t.updated_at, t.user_id, t.meeting_url, t.status, t.verified, t.moderation_note
 FROM teachers t
 WHERE
-    ($1::teacher_kind IS NULL OR t.kind = $1::teacher_kind)
+    t.status = 'approved'
+    AND ($1::teacher_kind IS NULL OR t.kind = $1::teacher_kind)
     AND ($2::bigint IS NULL OR t.price_per_hour_minor <= $2::bigint)
     AND (
         $3::text IS NULL
@@ -348,6 +355,9 @@ func (q *Queries) ListTeachers(ctx context.Context, arg ListTeachersParams) ([]T
 			&i.UpdatedAt,
 			&i.UserID,
 			&i.MeetingUrl,
+			&i.Status,
+			&i.Verified,
+			&i.ModerationNote,
 		); err != nil {
 			return nil, err
 		}

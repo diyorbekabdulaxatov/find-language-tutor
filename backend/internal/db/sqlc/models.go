@@ -248,6 +248,19 @@ type Review struct {
 	CreatedAt pgtype.Timestamptz
 }
 
+type Role struct {
+	ID          uuid.UUID
+	Name        string
+	Description string
+	IsSystem    bool
+	CreatedAt   pgtype.Timestamptz
+}
+
+type RolePermission struct {
+	RoleID     uuid.UUID
+	Permission string
+}
+
 type Session struct {
 	ID               uuid.UUID
 	UserID           uuid.UUID
@@ -287,6 +300,9 @@ type Teacher struct {
 	UpdatedAt         pgtype.Timestamptz
 	UserID            uuid.NullUUID
 	MeetingUrl        string
+	Status            string
+	Verified          bool
+	ModerationNote    string
 }
 
 type TeacherAvailabilitySlot struct {
@@ -330,4 +346,10 @@ type User struct {
 	DisplayName  string
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
+}
+
+type UserRole struct {
+	UserID    uuid.UUID
+	RoleID    uuid.UUID
+	GrantedAt pgtype.Timestamptz
 }

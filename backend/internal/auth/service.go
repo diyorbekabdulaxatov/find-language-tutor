@@ -59,6 +59,7 @@ type Repository interface {
 // handler puts AccessToken in the JSON body and RefreshToken in the cookie.
 type AuthResult struct {
 	User           User
+	Permissions    []string // caller's effective permission keys, sorted
 	AccessToken    string
 	AccessTTL      time.Duration
 	RefreshToken   string // raw opaque token — cookie value, never persisted
@@ -72,10 +73,21 @@ type Service struct {
 	tokens     *TokenManager
 	refreshTTL time.Duration
 	now        func() time.Time
+	perms      PermissionsPort // nil until SetPermissionsPort; nil is a safe no-op
 }
 
 func NewService(repo Repository, tokens *TokenManager, refreshTTL time.Duration) *Service {
 	return &Service{repo: repo, tokens: tokens, refreshTTL: refreshTTL, now: time.Now}
+}
+
+// SetPermissionsPort wires the RBAC permission resolver in. Optional: without it
+// every auth response carries an empty `permissions` array.
+func (s *Service) SetPermissionsPort(p PermissionsPort) { s.perms = p }
+
+// PermissionsFor returns the caller's effective permission keys for embedding in
+// GET /v1/auth/me. Nil-safe; never errors out a request.
+func (s *Service) PermissionsFor(ctx context.Context, id uuid.UUID) []string {
+	return s.permissionsFor(ctx, id)
 }
 
 // Register creates an account and immediately logs it in. A ValidationError
@@ -239,6 +251,7 @@ func (s *Service) startSession(ctx context.Context, user User, userAgent string)
 	return sessionResult{
 		AuthResult: AuthResult{
 			User:           user,
+			Permissions:    s.permissionsFor(ctx, user.ID),
 			AccessToken:    access,
 			AccessTTL:      s.tokens.AccessTTL(),
 			RefreshToken:   raw,

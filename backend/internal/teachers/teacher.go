@@ -21,6 +21,17 @@ const (
 
 func (k Kind) valid() bool { return k == KindProfessional || k == KindCommunity }
 
+// Status is the moderation state of a teacher profile. New profiles start
+// `pending`; only `approved` profiles are public.
+type Status string
+
+const (
+	StatusPending   Status = "pending"
+	StatusApproved  Status = "approved"
+	StatusRejected  Status = "rejected"
+	StatusSuspended Status = "suspended"
+)
+
 type Level string // "native", "c2" … "a1"
 
 const (
@@ -91,6 +102,13 @@ type Teacher struct {
 	CountryName string
 	City        string
 	Timezone    string
+
+	// Moderation state. Status/ModerationNote are surfaced only on the owner's
+	// own /me view and the admin endpoints; Verified also drives the public
+	// badge.
+	Status         Status
+	Verified       bool
+	ModerationNote string
 
 	PricePerHour Money
 	TrialPrice   *Money // nil when no trial lesson is offered

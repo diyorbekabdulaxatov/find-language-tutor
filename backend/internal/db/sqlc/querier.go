@@ -8,13 +8,42 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
 	AddAvailabilitySlot(ctx context.Context, arg AddAvailabilitySlotParams) error
+	AddRolePermission(ctx context.Context, arg AddRolePermissionParams) error
 	AddTeacherExperience(ctx context.Context, arg AddTeacherExperienceParams) error
 	AddTeacherFocus(ctx context.Context, arg AddTeacherFocusParams) error
 	AddTeacherLanguage(ctx context.Context, arg AddTeacherLanguageParams) error
+	// gmv_minor = money that actually flowed: bookings that reached confirmed or
+	// completed. this_week = created in the last 7 days.
+	AdminBookingStats(ctx context.Context) (AdminBookingStatsRow, error)
+	AdminCountTeachers(ctx context.Context, arg AdminCountTeachersParams) (int64, error)
+	AdminCountUsers(ctx context.Context, q_ pgtype.Text) (int64, error)
+	AdminGetTeacherModeration(ctx context.Context, slug string) (AdminGetTeacherModerationRow, error)
+	AdminGetUser(ctx context.Context, id uuid.UUID) (AdminGetUserRow, error)
+	AdminGetUserTeacherProfile(ctx context.Context, userID uuid.NullUUID) (AdminGetUserTeacherProfileRow, error)
+	AdminListTeachers(ctx context.Context, arg AdminListTeachersParams) ([]AdminListTeachersRow, error)
+	// The 50 newest bookings the user takes part in, as student or as teacher-owner.
+	AdminListUserBookings(ctx context.Context, studentID uuid.UUID) ([]AdminListUserBookingsRow, error)
+	AdminListUsers(ctx context.Context, arg AdminListUsersParams) ([]AdminListUsersRow, error)
+	AdminSetTeacherStatus(ctx context.Context, arg AdminSetTeacherStatusParams) error
+	AdminSetTeacherVerified(ctx context.Context, arg AdminSetTeacherVerifiedParams) error
+	AdminTeacherCounts(ctx context.Context) (AdminTeacherCountsRow, error)
+	// Admin module (phase A/B): read-across-tables queries for the ops dashboard and
+	// the moderation write path. This is an internal tool behind auth.RequireAdmin,
+	// so it reads other modules' tables directly rather than routing through their
+	// services.
+	AdminUserCount(ctx context.Context) (int64, error)
+	// The user's payments as the paying student, bucketed by current payment state.
+	AdminUserPaymentsSummary(ctx context.Context, studentID uuid.UUID) (AdminUserPaymentsSummaryRow, error)
+	AdminUserRoles(ctx context.Context, userID uuid.UUID) ([]AdminUserRolesRow, error)
+	// Slug -> id, but only for a publicly visible (approved) teacher. GET
+	// /v1/teachers/{slug}/reviews 404s for a non-approved slug, same as the profile.
+	ApprovedTeacherIDBySlug(ctx context.Context, slug string) (uuid.UUID, error)
+	AssignRoleToUser(ctx context.Context, arg AssignRoleToUserParams) error
 	// Incrementally fold one new rating into the teacher's display aggregate,
 	// keeping the hand-set historical values as the baseline. All references to the
 	// current row see the pre-UPDATE values, so review_count is the old count in
@@ -27,6 +56,7 @@ type Querier interface {
 	ConfirmBookingForPayment(ctx context.Context, id uuid.UUID) error
 	CountTeacherReviews(ctx context.Context, teacherID uuid.UUID) (int64, error)
 	CountTeachers(ctx context.Context, arg CountTeachersParams) (int64, error)
+	CountUsersWithRole(ctx context.Context, roleID uuid.UUID) (int64, error)
 	CreateBooking(ctx context.Context, arg CreateBookingParams) (uuid.UUID, error)
 	// Payments module: one payment intent per booking, the webhook-event log that
 	// guards idempotency, and the simplified teacher-earnings ledger. Money is
@@ -34,7 +64,11 @@ type Querier interface {
 	// Eagerly created right after a booking is inserted. Idempotent: a second call
 	// for the same booking is a no-op and still returns the existing row.
 	CreatePayment(ctx context.Context, arg CreatePaymentParams) (Payment, error)
+	CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	// Both the demo seed and POST /v1/teachers insert through here. The seed passes
+	// status = 'approved'; the API create path passes 'pending' so a new profile is
+	// not public until an admin approves it. verified defaults to false.
 	CreateTeacher(ctx context.Context, arg CreateTeacherParams) (uuid.UUID, error)
 	// Auth module: user accounts and refresh-token sessions.
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
@@ -50,11 +84,17 @@ type Querier interface {
 	// Seed-only. reviews references teachers / users / bookings with no cascade, so
 	// the seed clears it before all three.
 	DeleteAllReviews(ctx context.Context) error
+	DeleteAllRolePermissions(ctx context.Context) error
+	DeleteAllRoles(ctx context.Context) error
 	DeleteAllTeachers(ctx context.Context) error
+	// Seed-only. Clear assignments before roles / users.
+	DeleteAllUserRoles(ctx context.Context) error
 	// Seed-only. teachers.user_id references users, so callers must clear teachers
 	// first.
 	DeleteAllUsers(ctx context.Context) error
 	DeleteAvailabilitySlots(ctx context.Context, teacherID uuid.UUID) error
+	DeleteRole(ctx context.Context, id uuid.UUID) error
+	DeleteRolePermissions(ctx context.Context, roleID uuid.UUID) error
 	DeleteTeacherExperience(ctx context.Context, teacherID uuid.UUID) error
 	DeleteTeacherFocus(ctx context.Context, teacherID uuid.UUID) error
 	DeleteTeacherLanguages(ctx context.Context, teacherID uuid.UUID) error
@@ -66,6 +106,9 @@ type Querier interface {
 	// frontend lists avoid N+1 calls).
 	// Slug -> everything the booking flow needs: identity, timezone, pricing, and
 	// the owning account (drives the "can't book yourself" check).
+	// Only an approved (publicly visible) teacher can be booked. A non-approved slug
+	// returns no rows here, so the booking flow treats it as "no such teacher": 404
+	// on GET /v1/teachers/{slug}/slots and 404 teacher_not_found on POST /v1/bookings.
 	GetBookingTeacherContext(ctx context.Context, slug string) (GetBookingTeacherContextRow, error)
 	GetPaymentByBooking(ctx context.Context, bookingID uuid.UUID) (Payment, error)
 	GetPaymentByID(ctx context.Context, id uuid.UUID) (Payment, error)
@@ -78,6 +121,8 @@ type Querier interface {
 	// The review for a booking (for embedding in a BookingDTO). No rows -> the
 	// booking has not been reviewed.
 	GetReviewByBooking(ctx context.Context, bookingID uuid.NullUUID) (GetReviewByBookingRow, error)
+	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
+	GetRoleByName(ctx context.Context, name string) (Role, error)
 	GetSessionByRefreshHash(ctx context.Context, refreshTokenHash []byte) (Session, error)
 	// Availability module: a teacher's weekly recurring slots (UTC minutes).
 	// Resolve a slug to the teacher id, timezone, and owning user the availability
@@ -108,12 +153,16 @@ type Querier interface {
 	ListExperienceForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]ListExperienceForTeachersRow, error)
 	ListFocusForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]TeacherFocu, error)
 	ListLanguagesForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]TeacherLanguage, error)
+	ListPermissionsForRoles(ctx context.Context, roleIds []uuid.UUID) ([]RolePermission, error)
+	ListRoles(ctx context.Context) ([]ListRolesRow, error)
 	// Non-cancelled bookings for a teacher that overlap the [from, to) window, for
 	// server-side slot generation and the pre-insert bookability re-check.
 	ListTeacherBookingIntervals(ctx context.Context, arg ListTeacherBookingIntervalsParams) ([]ListTeacherBookingIntervalsRow, error)
 	ListTeacherEarnings(ctx context.Context, teacherID uuid.UUID) ([]ListTeacherEarningsRow, error)
 	// A page of a teacher's reviews, newest first.
 	ListTeacherReviews(ctx context.Context, arg ListTeacherReviewsParams) ([]ListTeacherReviewsRow, error)
+	// Public: the frontend's static-generation slug list. Non-approved teachers are
+	// not public, so they are excluded here too.
 	ListTeacherSlugs(ctx context.Context) ([]string, error)
 	// Page of teachers matching the optional filters, ordered by the requested sort.
 	// Child collections (languages, focus, experience) are loaded separately by the
@@ -127,11 +176,17 @@ type Querier interface {
 	MarkPaymentCaptured(ctx context.Context, id uuid.UUID) error
 	MarkPaymentFailed(ctx context.Context, arg MarkPaymentFailedParams) error
 	MarkPaymentRefunded(ctx context.Context, id uuid.UUID) error
+	// RBAC module: roles, the permissions they grant, and role assignments. A
+	// user's effective permissions are the union across their roles, resolved per
+	// request (never from the JWT).
+	// The caller's effective permission keys, deduped and sorted. One indexed join.
+	PermissionsForUser(ctx context.Context, userID uuid.UUID) ([]string, error)
 	// Reuse-detection hammer: kills every still-active session for a user.
 	RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) error
 	// Marks a session revoked and records the session that replaced it (rotation).
 	// No-op if it was already revoked.
 	RevokeSession(ctx context.Context, arg RevokeSessionParams) error
+	RolesForUser(ctx context.Context, userID uuid.UUID) ([]RolesForUserRow, error)
 	// Seed-only: a booking-less sample review. Does NOT touch the teacher aggregate.
 	SeedInsertReview(ctx context.Context, arg SeedInsertReviewParams) error
 	// Per-booking meeting link override. An empty string clears it (fall back to the
@@ -148,6 +203,8 @@ type Querier interface {
 	// Slug -> id + owning user, for the ownership check on PATCH /v1/teachers/{slug}.
 	TeacherRefBySlug(ctx context.Context, slug string) (TeacherRefBySlugRow, error)
 	TeacherSlugExists(ctx context.Context, slug string) (bool, error)
+	UnassignRoleFromUser(ctx context.Context, arg UnassignRoleFromUserParams) error
+	UpdateRoleDescription(ctx context.Context, arg UpdateRoleDescriptionParams) error
 	// Edit the caller-editable profile fields. Server-controlled aggregates (rating,
 	// review_count, lessons_completed, student_count, response_time_hours,
 	// accepting_students) and the slug are intentionally left untouched.
@@ -155,6 +212,7 @@ type Querier interface {
 	// Edit the caller's own account. Email is immutable here (changing it needs a
 	// verification flow that does not exist yet).
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
+	UserExists(ctx context.Context, id uuid.UUID) (bool, error)
 }
 
 var _ Querier = (*Queries)(nil)
