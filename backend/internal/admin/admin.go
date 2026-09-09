@@ -33,6 +33,14 @@ var (
 	// ErrInvalidTransition — a moderation action from a state that does not allow
 	// it (e.g. approve an already-approved teacher). Rendered 409 invalid_transition.
 	ErrInvalidTransition = errors.New("admin: invalid moderation transition")
+
+	// ErrBookingNotFound — a booking read or force-cancel for an unknown id.
+	ErrBookingNotFound = errors.New("admin: booking not found")
+
+	// ErrInvalidState — a booking action from a state that does not allow it
+	// (force-cancelling an already completed / cancelled booking). Rendered 409
+	// invalid_state, matching the participant cancel endpoint's code.
+	ErrInvalidState = errors.New("admin: booking is not in a state that allows this")
 )
 
 // ValidationError is a client-fixable problem with a request (e.g. a missing
@@ -167,6 +175,114 @@ type Moderation struct {
 	Verified       bool
 	ModerationNote string
 	Owner          Owner
+}
+
+// --- phase D: bookings ---
+
+// Booking lifecycle states, as strings: the admin module reads and filters them
+// but owns none of the transitions, so it does not import internal/bookings for
+// a four-value enum (the same call internal/reviews makes for `completed`).
+const (
+	BookingPendingPayment = "pending_payment"
+	BookingConfirmed      = "confirmed"
+	BookingCompleted      = "completed"
+	BookingCancelled      = "cancelled"
+)
+
+// ValidBookingStatus reports whether s is a booking status the list filter
+// accepts.
+func ValidBookingStatus(s string) bool {
+	switch s {
+	case BookingPendingPayment, BookingConfirmed, BookingCompleted, BookingCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+// BookingTeacher / BookingStudent are the parties on an admin booking row.
+type BookingTeacher struct {
+	Slug        string
+	DisplayName string
+}
+
+type BookingStudent struct {
+	ID          uuid.UUID
+	Email       string
+	DisplayName string
+}
+
+// BookingRow is one row of GET /v1/admin/bookings.
+type BookingRow struct {
+	ID         uuid.UUID
+	Status     string
+	StartAt    time.Time
+	EndAt      time.Time
+	Teacher    BookingTeacher
+	Student    BookingStudent
+	PriceMinor int64
+	Currency   string
+	// PaymentStatus is "" when the booking has no payment intent yet.
+	PaymentStatus  string
+	CreatedAt      time.Time
+	HasOpenDispute bool
+}
+
+// BookingsPage is a page of bookings plus the total match count.
+type BookingsPage struct {
+	Bookings []BookingRow
+	Total    int
+}
+
+// BookingPayment is the payment intent on a booking detail (nil when there is
+// none).
+type BookingPayment struct {
+	Status      string
+	AmountMinor int64
+	Currency    string
+}
+
+// BookingDispute is one entry of the dispute thread on a booking detail. The
+// admin surface reads these straight from the disputes table (it is an ops tool
+// — see the package doc), so it carries its own read model rather than
+// importing internal/disputes.
+type BookingDispute struct {
+	ID         uuid.UUID
+	Status     string
+	Reason     string
+	Resolution string
+	RaisedBy   UserRef
+	ResolvedBy *UserRef
+	CreatedAt  time.Time
+	ResolvedAt *time.Time
+}
+
+// UserRef is the light account summary on a dispute entry.
+type UserRef struct {
+	ID          uuid.UUID
+	DisplayName string
+}
+
+// BookingDetail is the whole answer to GET /v1/admin/bookings/{id}: the list-row
+// fields plus the lifecycle extras, the payment, and the full dispute thread.
+type BookingDetail struct {
+	BookingRow
+
+	DurationMinutes int
+	IsTrial         bool
+
+	Payment *BookingPayment
+	// MeetingURL is the effective link (per-booking override, else the teacher's
+	// default). Operators see it regardless of booking status — unlike the
+	// participant-facing Booking DTO, which hides it before confirmation.
+	MeetingURL  string
+	NoShowParty string
+
+	CancelledAt        *time.Time
+	CancelledBy        string
+	CancellationReason string
+
+	Disputes []BookingDispute
 }
 
 // ModerationListParams / UsersListParams are the validated list inputs.

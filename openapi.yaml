@@ -45,6 +45,12 @@ tags:
       A student's 1–5 rating + comment for a completed lesson. A review nudges
       the teacher's display aggregate (`rating` / `review_count`) in the same
       transaction; one review per booking.
+  - name: disputes
+    description: >
+      A participant (student or teacher-owner) contests a confirmed or completed
+      lesson; an operator holding `disputes.resolve` closes it as resolved or
+      rejected, optionally refunding the student. A booking may have at most one
+      OPEN dispute at a time, but keeps the full thread of closed ones.
   - name: system
 
 paths:
@@ -917,6 +923,87 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /v1/bookings/{id}/disputes:
+    post:
+      tags: [disputes]
+      summary: Raise a dispute on a lesson
+      description: >
+        Participant-only — the student or the teacher-owner on the booking (403
+        otherwise). The lesson must be `confirmed` or `completed` (409
+        `dispute_not_allowed`), and a booking may have only one OPEN dispute at a
+        time (409 `dispute_exists`, enforced by a partial unique index, so a
+        concurrent double-submit is race-safe). Once a dispute is resolved or
+        rejected a new one may be raised; the whole thread is kept.
+
+        `reason` is required, trimmed, and capped at 2000 characters.
+      operationId: raiseBookingDispute
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RaiseDisputeRequest" }
+      responses:
+        "201":
+          description: The created dispute.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispute" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not a participant in this booking (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The lesson is not `confirmed` / `completed` (`dispute_not_allowed`),
+            or it already has an open dispute (`dispute_exists`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+    get:
+      tags: [disputes]
+      summary: A booking's dispute thread
+      description: >
+        Participant-only. Every dispute ever raised on the booking, open and
+        closed, newest first.
+      operationId: listBookingDisputes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The dispute thread (possibly empty).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DisputeList" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not a participant in this booking (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /v1/payments/webhook:
     post:
       tags: [payments]
@@ -1340,6 +1427,164 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/admin/bookings:
+    get:
+      tags: [admin]
+      summary: Every booking on the platform
+      description: >
+        Permission: `bookings.view`. Unlike `GET /v1/bookings` (the caller's own
+        lessons) this lists every booking, newest lesson first. `status` is an
+        optional exact filter; `q` matches the teacher's display name or slug and
+        the student's email or display name, case-insensitively.
+      operationId: adminListBookings
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/BookingStatus" } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of bookings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBookingList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/bookings/{id}:
+    get:
+      tags: [admin]
+      summary: Booking detail (operator view)
+      description: >
+        Permission: `bookings.view`. The list-row fields plus the payment detail,
+        the effective meeting link, the no-show flag, the cancellation
+        who/why/when, and the booking's full dispute thread. The meeting link is
+        shown regardless of booking status — unlike the participant-facing
+        `Booking`, which hides it before confirmation.
+      operationId: adminGetBooking
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The booking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBookingDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`booking_not_found`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/bookings/{id}/force-cancel:
+    post:
+      tags: [admin]
+      summary: Force-cancel a booking
+      description: >
+        Permission: `bookings.force_cancel`. The operator override of
+        `POST /v1/bookings/{id}/cancel`, which is participant-only: it cancels a
+        `pending_payment` or `confirmed` booking on anyone's behalf and records
+        `cancelled_by = admin` plus the required `reason`. 409 `invalid_state`
+        for a booking that is already completed or cancelled.
+
+        It runs the same cancellation path a participant cancel does — pending
+        lesson reminders are dropped and the participants are emailed — and with
+        `refund: true` the booking's payment is released (an authorized hold) or
+        refunded (a capture). With `refund: false` no payment call is made.
+      operationId: adminForceCancelBooking
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ForceCancelBookingRequest" }
+      responses:
+        "200":
+          description: The updated booking detail.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBookingDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`booking_not_found`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: "`invalid_state` — the booking is already completed or cancelled."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/disputes:
+    get:
+      tags: [admin]
+      summary: The dispute queue
+      description: >
+        Permission: `disputes.resolve`. Disputes newest first, each with the
+        booking and both parties. `status` defaults to `open`; pass `all` to
+        include closed disputes.
+      operationId: adminListDisputes
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [open, resolved, rejected, all], default: open } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of disputes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminDisputeList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/disputes/{id}/resolve:
+    post:
+      tags: [admin]
+      summary: Resolve or reject a dispute
+      description: >
+        Permission: `disputes.resolve`. Closes an OPEN dispute, recording the
+        outcome, the required `resolution` note (trimmed, at most 2000
+        characters), the operator and the timestamp. 409 `already_resolved` when
+        the dispute is no longer open — the UPDATE is guarded on the open status,
+        so a lost race is reported rather than overwriting the other operator's
+        resolution.
+
+        With `outcome: resolved` and `refund: true` the booking's payment is
+        refunded; the booking's own lifecycle is deliberately left alone (use
+        force-cancel to also cancel the lesson). `refund` is ignored for
+        `outcome: rejected`.
+      operationId: adminResolveDispute
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveDisputeRequest" }
+      responses:
+        "200":
+          description: The closed dispute.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispute" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`dispute_not_found`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: "`already_resolved` — the dispute is no longer open."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
 
 components:
   securitySchemes:
@@ -1827,9 +2072,12 @@ components:
         - price
         - created_at
         - cancelled_at
+        - cancelled_by
         - no_show_party
         - can_review
         - review
+        - can_raise_dispute
+        - open_dispute
         - teacher
         - student
         - payment
@@ -1850,6 +2098,13 @@ components:
         cancellation_reason:
           type: string
           description: Present (may be empty) only once cancelled; omitted otherwise.
+        cancelled_by:
+          type: string
+          enum: ["", student, teacher, admin]
+          description: >
+            Empty until the booking is cancelled, then who cancelled it: the
+            `student`, the `teacher` (a teacher no-show counts as a teacher
+            cancellation), or an `admin` force-cancel.
         meeting_url:
           type: string
           description: >
@@ -1878,6 +2133,19 @@ components:
           description: >
             The caller's review of this booking if one exists (visible to both
             participants); null otherwise.
+        can_raise_dispute:
+          type: boolean
+          description: >
+            True only when the caller is a participant, `status` is `confirmed`
+            or `completed`, and no dispute is currently open — the frontend shows
+            the "report a problem" action off this without a second call.
+        open_dispute:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/BookingOpenDispute" }]
+          description: >
+            The booking's currently open dispute (visible to both participants);
+            null when there is none. The full thread, including closed disputes,
+            is at `GET /v1/bookings/{id}/disputes`.
         teacher: { $ref: "#/components/schemas/BookingTeacherSummary" }
         student: { $ref: "#/components/schemas/BookingStudentSummary" }
         payment:
@@ -2069,6 +2337,97 @@ components:
           type: integer
           description: Total reviews for the teacher (not just this page).
 
+    # --- Disputes (phase D) ---
+
+    DisputeStatus:
+      type: string
+      enum: [open, resolved, rejected]
+      description: "`open` is the only non-terminal state."
+
+    DisputeUser:
+      type: object
+      description: The account that raised or resolved a dispute.
+      required: [id, display_name]
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+
+    BookingOpenDispute:
+      type: object
+      description: The open dispute embedded in a participant's booking response.
+      required: [id, status, reason, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/DisputeStatus" }
+        reason: { type: string }
+        created_at: { type: string, format: date-time, description: RFC3339 UTC. }
+
+    Dispute:
+      type: object
+      required: [id, booking_id, status, reason, resolution, raised_by, resolved_by, created_at, resolved_at]
+      properties:
+        id: { type: string, format: uuid }
+        booking_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/DisputeStatus" }
+        reason:
+          type: string
+          description: The participant's account of the problem, at most 2000 characters.
+        resolution:
+          type: string
+          description: The operator's closing note. Empty while the dispute is open.
+        raised_by: { $ref: "#/components/schemas/DisputeUser" }
+        resolved_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/DisputeUser" }]
+          description: The operator who closed it; null while open.
+        created_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: RFC3339 UTC; null while open.
+
+    DisputeList:
+      type: object
+      required: [disputes]
+      properties:
+        disputes:
+          type: array
+          items: { $ref: "#/components/schemas/Dispute" }
+          description: Newest first.
+
+    RaiseDisputeRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Trimmed; must be non-empty.
+
+    ResolveDisputeRequest:
+      type: object
+      required: [outcome, resolution]
+      properties:
+        outcome:
+          type: string
+          enum: [resolved, rejected]
+          description: >
+            `resolved` sides with the person who raised it, `rejected` closes it
+            without action.
+        resolution:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: The operator's closing note. Trimmed; must be non-empty.
+        refund:
+          type: boolean
+          default: false
+          description: >
+            Refund the booking's payment. Only honoured with
+            `outcome: resolved`; the booking's own status is not changed.
+
     # --- Admin (phase A/B) ---
 
     AdminMetrics:
@@ -2205,4 +2564,144 @@ components:
                 id: { type: string, format: uuid }
                 email: { type: string, format: email }
                 display_name: { type: string }
+
+    # --- Admin bookings + disputes (phase D) ---
+
+    AdminBookingTeacher:
+      type: object
+      required: [slug, display_name]
+      properties:
+        slug: { type: string }
+        display_name: { type: string }
+
+    AdminBookingStudent:
+      type: object
+      required: [id, email, display_name]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        display_name: { type: string }
+
+    AdminBookingRow:
+      type: object
+      required: [id, status, start_at, end_at, teacher, student, price, payment_status, created_at, has_open_dispute]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/BookingStatus" }
+        start_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        end_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        teacher: { $ref: "#/components/schemas/AdminBookingTeacher" }
+        student: { $ref: "#/components/schemas/AdminBookingStudent" }
+        price: { $ref: "#/components/schemas/Money" }
+        payment_status:
+          type: string
+          nullable: true
+          enum: [requires_payment, authorized, captured, refunded, failed, null]
+          description: Null when the booking has no payment intent yet.
+        created_at: { type: string, format: date-time }
+        has_open_dispute:
+          type: boolean
+          description: True while the booking has a dispute in the `open` state.
+
+    AdminBookingList:
+      type: object
+      required: [bookings, total]
+      properties:
+        bookings: { type: array, items: { $ref: "#/components/schemas/AdminBookingRow" } }
+        total: { type: integer, description: Total matches, not just this page. }
+
+    AdminBookingDispute:
+      type: object
+      description: One entry of a booking's dispute thread, as the operator sees it.
+      required: [id, status, reason, resolution, raised_by, resolved_by, created_at, resolved_at]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/DisputeStatus" }
+        reason: { type: string }
+        resolution: { type: string }
+        raised_by: { $ref: "#/components/schemas/DisputeUser" }
+        resolved_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/DisputeUser" }]
+        created_at: { type: string, format: date-time }
+        resolved_at: { type: string, format: date-time, nullable: true }
+
+    AdminBookingDetail:
+      description: The list row plus the lifecycle extras, the payment, and the dispute thread.
+      allOf:
+        - $ref: "#/components/schemas/AdminBookingRow"
+        - type: object
+          required:
+            - duration_minutes
+            - is_trial
+            - payment
+            - meeting_url
+            - no_show_party
+            - cancelled_at
+            - cancelled_by
+            - cancellation_reason
+            - disputes
+          properties:
+            duration_minutes: { type: integer }
+            is_trial: { type: boolean }
+            payment:
+              nullable: true
+              allOf: [{ $ref: "#/components/schemas/BookingPayment" }]
+              description: Null when the booking has no payment intent yet.
+            meeting_url:
+              type: string
+              description: >
+                The effective link (per-booking override, else the teacher's
+                default). Empty when neither is set. Shown to operators
+                regardless of booking status.
+            no_show_party: { type: string, enum: ["", student, teacher] }
+            cancelled_at: { type: string, format: date-time, nullable: true }
+            cancelled_by: { type: string, enum: ["", student, teacher, admin] }
+            cancellation_reason: { type: string }
+            disputes:
+              type: array
+              items: { $ref: "#/components/schemas/AdminBookingDispute" }
+              description: The booking's full dispute thread, newest first.
+
+    ForceCancelBookingRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          description: >
+            Why the operator cancelled. Required, trimmed, and stored on the
+            booking as `cancellation_reason`.
+        refund:
+          type: boolean
+          default: false
+          description: >
+            Release / refund the booking's payment. False makes no payment call
+            at all.
+
+    AdminDisputeRow:
+      description: A queued dispute plus the booking and parties it is about.
+      allOf:
+        - $ref: "#/components/schemas/Dispute"
+        - type: object
+          required: [booking]
+          properties:
+            booking:
+              type: object
+              required: [id, status, start_at, price, teacher, student]
+              properties:
+                id: { type: string, format: uuid }
+                status: { $ref: "#/components/schemas/BookingStatus" }
+                start_at: { type: string, format: date-time }
+                price: { $ref: "#/components/schemas/Money" }
+                teacher: { $ref: "#/components/schemas/AdminBookingTeacher" }
+                student: { $ref: "#/components/schemas/AdminBookingStudent" }
+
+    AdminDisputeList:
+      type: object
+      required: [disputes, total]
+      properties:
+        disputes: { type: array, items: { $ref: "#/components/schemas/AdminDisputeRow" } }
+        total: { type: integer, description: Total matches, not just this page. }
 

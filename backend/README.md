@@ -35,6 +35,8 @@ internal/
   bookings/   concrete scheduled lessons — slots, booking lifecycle, meeting links, no-show
   payments/   payment intents + fake provider + payout ledger
   reviews/    phase-6: lesson reviews + incremental teacher-rating aggregate (bookings.ReviewReader port)
+  disputes/   phase-D: lesson disputes — participant routes on /v1/bookings, the
+              operator queue on /v1/admin (bookings.DisputeReader port)
   email/      transactional email (Resend / logging backend) + booking templates
   lessons/    phase-5 wiring: asynq reminder scheduler + email notifier (bookings ports)
 migrations/   golang-migrate SQL files
@@ -108,6 +110,13 @@ See `../openapi.yaml`. Currently implemented:
 | POST | `/v1/admin/teachers/{slug}/reject` | `{note}` (required) → `rejected`; from pending only; perm `teachers.moderate` |
 | POST | `/v1/admin/teachers/{slug}/suspend` | `{note}` (required) → `suspended`; from approved only; leaves bookings intact; perm `teachers.moderate` |
 | POST | `/v1/admin/teachers/{slug}/verify` | `{verified: bool}`; independent of status; perm `teachers.verify` |
+| GET | `/v1/admin/bookings` | `?status&q&page&page_size` — every booking on the platform, newest lesson first; perm `bookings.view` |
+| GET | `/v1/admin/bookings/{id}` | full booking + payment + meeting link + cancellation who/why/when + the dispute thread; perm `bookings.view`; 404 `booking_not_found` |
+| POST | `/v1/admin/bookings/{id}/force-cancel` | `{reason, refund?}` — operator override of the participant-only cancel; records `cancelled_by = admin`; 409 `invalid_state`; perm `bookings.force_cancel` |
+| POST | `/v1/bookings/{id}/disputes` | `{reason}`; participant only; booking must be `confirmed`/`completed` (409 `dispute_not_allowed`); one open dispute per booking (409 `dispute_exists`); 201 |
+| GET | `/v1/bookings/{id}/disputes` | the booking's whole dispute thread, newest first; participant only |
+| GET | `/v1/admin/disputes` | `?status=open\|resolved\|rejected\|all&page&page_size` (default `open`) — the operator queue with booking + parties; perm `disputes.resolve` |
+| POST | `/v1/admin/disputes/{id}/resolve` | `{outcome: resolved\|rejected, resolution, refund?}`; 404 `dispute_not_found`, 409 `already_resolved`; perm `disputes.resolve` |
 
 ```bash
 curl 'localhost:8080/v1/teachers?language=uz&sort=price_asc'
@@ -172,6 +181,22 @@ curl -X POST localhost:8080/v1/admin/teachers/malika-abdurakhmonova/approve \
   -H "Authorization: Bearer $ADMIN"
 curl -X POST localhost:8080/v1/admin/teachers/malika-abdurakhmonova/verify \
   -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d '{"verified":true}'
+
+# Bookings admin + disputes (phase D). The seed leaves one open dispute.
+curl 'localhost:8080/v1/admin/bookings?status=confirmed' -H "Authorization: Bearer $ADMIN"
+DID=$(curl -s localhost:8080/v1/admin/disputes -H "Authorization: Bearer $ADMIN" | jq -r '.disputes[0].id')
+BOOKED=$(curl -s localhost:8080/v1/admin/disputes -H "Authorization: Bearer $ADMIN" | jq -r '.disputes[0].booking.id')
+curl "localhost:8080/v1/admin/bookings/$BOOKED" -H "Authorization: Bearer $ADMIN"
+curl -X POST "localhost:8080/v1/admin/disputes/$DID/resolve" \
+  -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' \
+  -d '{"outcome":"resolved","resolution":"Refunded the lesson.","refund":true}'
+
+# A participant raises a dispute; an operator can force-cancel a live booking.
+curl -X POST "localhost:8080/v1/bookings/$BID/disputes" -H "Authorization: Bearer $STU" \
+  -H 'Content-Type: application/json' -d '{"reason":"The teacher never joined."}'
+curl -X POST "localhost:8080/v1/admin/bookings/$BID/force-cancel" \
+  -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' \
+  -d '{"reason":"Duplicate booking","refund":true}'
 
 # RBAC: create a scoped role, assign it, and the holder logs in to see permissions.
 curl localhost:8080/v1/admin/roles -H "Authorization: Bearer $ADMIN"
@@ -388,6 +413,68 @@ teacher profile), 3 verified seed teachers (Nodira, Elena, Kim), and one
 `pending` demo teacher (`malika-abdurakhmonova`, account `malika@example.com` /
 `password`) so the moderation queue isn't empty on a fresh DB.
 
+### Bookings admin, force-cancel & disputes (phase D)
+
+Migration `000010_disputes` adds **`bookings.cancelled_by`** (`''` | `student` |
+`teacher` | `admin`) and the **`disputes`** table.
+
+**Bookings admin.** `GET /v1/admin/bookings` (`bookings.view`) lists every
+booking on the platform — the participant `GET /v1/bookings` only ever shows the
+caller's — with `?status` and a `?q` that matches the teacher's display name /
+slug and the student's email / display name. Each row carries both parties, the
+money, the payment status (`null` when there is no intent yet) and
+`has_open_dispute`. `GET /v1/admin/bookings/{id}` adds the payment detail, the
+effective meeting link (operators see it at any status, unlike participants),
+`no_show_party`, the cancellation who/why/when, and the full dispute thread. All
+of it is read straight from the tables via `admin.sql`, per the admin-repo rule
+above.
+
+**Force-cancel** (`POST /v1/admin/bookings/{id}/force-cancel`,
+`bookings.force_cancel`) is the operator override of the participant-only
+`cancel`: `{reason}` is required, `{refund}` optional. The admin module owns none
+of the cancellation logic — it validates the state off the detail it just read
+(409 `invalid_state` unless `pending_payment` / `confirmed`) and delegates
+through the **`admin.BookingModerator`** port, which `*bookings.Service`
+satisfies (`AdminForceCancel`). Inside bookings, `Cancel`, the teacher no-show
+and the admin override all funnel through one private `doCancel`: write the
+cancellation (now including `cancelled_by`), refund when asked, drop the pending
+reminders, mail the participants. Nothing is duplicated, so nothing can drift.
+The port carries no bookings-domain error, so `admin` never imports `bookings`.
+
+**Disputes** (`internal/disputes`). A dispute is raised **by a participant** on a
+`confirmed` or `completed` lesson and resolved **by an operator**. `status` goes
+`open -> resolved | rejected` (terminal). A booking may hold at most one OPEN
+dispute, enforced by the partial unique index
+`disputes_one_open_per_booking (booking_id) WHERE status = 'open'`: the
+repository inserts and maps SQLSTATE `23505` to 409 `dispute_exists` — race-safe,
+never a check-then-insert, the same pattern as `payment_events` and
+`reviews_booking_uniq`. Closed disputes are exempt, so a booking can be disputed
+again and keeps its whole thread. `resolve` is a status-guarded `UPDATE ... WHERE
+status = 'open'`; no rows back means the row is either unknown (404
+`dispute_not_found`) or already closed (409 `already_resolved`), told apart by a
+second read rather than by clobbering another operator's resolution.
+
+Module boundaries, all following the existing rules:
+
+| direction | how |
+| --- | --- |
+| participant routes need the booking's parties + status | `disputes` reads the booking context with its own SQL (`disputes.sql`), exactly as `reviews` does; the routes mount on the `/v1/bookings` group via `disputes.RegisterBookingRoutes` |
+| operator routes | `disputes.RegisterAdminRoutes` mounts on `/v1/admin` behind `rbacGuard.Require(disputes.resolve)`, like `rbac.RegisterAdminRoutes` |
+| a booking DTO carrying `can_raise_dispute` / `open_dispute` | `bookings.DisputeReader` (mirrors `ReviewReader`) — bookings defines it, `disputes.NewBookingGateway` implements it, `cmd/api` injects it with `SetDisputeReader`. Nil-safe. **bookings never imports disputes** |
+| refunding a resolved dispute | `disputes.Refunder` — the consuming module defines it, `*bookings.Service.AdminRefund` satisfies it, `cmd/api` injects it with `SetRefunder`. It refunds the payment and deliberately leaves the booking's lifecycle alone (use force-cancel to also cancel the lesson) |
+| the booking detail's dispute thread on the admin surface | `admin.sql` reads the `disputes` table directly — it's an ops tool (see above), so it does not route through the disputes service |
+
+A failed refund on a resolution is logged, not returned: the operator's decision
+is already committed and must not be lost to a provider hiccup — the same rule
+the refund-on-cancel path follows. `TODO(payments): enqueue a refund retry.`
+
+**Seed (phase D)**: three demo bookings — one `completed` a week ago carrying an
+**open dispute** filed by the student, one `confirmed` in three days, one
+`pending_payment` — so `/v1/admin/bookings` and `/v1/admin/disputes` are both
+non-empty on a fresh database. The teardown clears `disputes` first (its
+`booking_id` cascades, but `raised_by` / `resolved_by` reference `users`, which
+does not).
+
 ## Tests
 
 ```bash
@@ -396,8 +483,9 @@ make vet
 ```
 
 `internal/auth`, `internal/teachers`, `internal/availability`,
-`internal/bookings`, `internal/payments`, `internal/reviews`, `internal/email`,
-`internal/lessons` and `cmd/worker` have unit tests (fakes + httptest);
+`internal/bookings`, `internal/payments`, `internal/reviews`, `internal/rbac`,
+`internal/admin`, `internal/disputes`, `internal/email`, `internal/lessons` and
+`cmd/worker` have unit tests (fakes + httptest);
 `internal/bookings` also
 has a slot-generation table test covering the tricky timezone / weekday /
 midnight-wrap cases. The payments tests cover authorize-ok, decline (402),
@@ -428,8 +516,13 @@ suite.
   signing key rotation, no refund-retry queue (a failed refund on cancel is
   logged, not retried), and the `payout_ledger` has no clearing window or payout
   run (`held` → `available` is instant).
-- Any cancellation window / penalty rules (no-show has no dispute / appeal flow
-  — the teacher's report is final for the MVP, and only the teacher can file it).
+- Any cancellation window / penalty rules. A no-show is still filed by the
+  teacher alone, but either participant can now dispute the lesson afterwards
+  (phase D) and an operator resolves it.
+- Disputes have no message thread of their own (one `reason` in, one
+  `resolution` out — no back-and-forth), no attachments, no notification when
+  one is raised or closed, and no auto-expiry of a dispute nobody triages.
+  Resolving with `refund: true` refunds in full — there is no partial refund.
 - Reviews cannot be edited or deleted, there is no teacher reply, and the
   `teachers.rating` aggregate is only ever nudged forward (a deleted review would
   not un-nudge it). The seeded per-teacher `rating` / `review_count` stay the

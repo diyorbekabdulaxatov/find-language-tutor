@@ -164,8 +164,12 @@ func (r *repositoryPostgres) SetStatus(ctx context.Context, id uuid.UUID, status
 	return r.GetBooking(ctx, id)
 }
 
-func (r *repositoryPostgres) Cancel(ctx context.Context, id uuid.UUID, reason string) (Booking, error) {
-	if err := r.q.CancelBooking(ctx, sqlc.CancelBookingParams{ID: id, CancellationReason: reason}); err != nil {
+func (r *repositoryPostgres) Cancel(ctx context.Context, id uuid.UUID, reason, by string) (Booking, error) {
+	if err := r.q.CancelBooking(ctx, sqlc.CancelBookingParams{
+		ID:                 id,
+		CancellationReason: reason,
+		CancelledBy:        by,
+	}); err != nil {
 		return Booking{}, fmt.Errorf("cancel booking: %w", err)
 	}
 	return r.GetBooking(ctx, id)
@@ -196,6 +200,7 @@ func rowToBooking(row sqlc.GetBookingByIDRow) Booking {
 		Price:              Money{AmountMinor: row.PriceMinor, Currency: row.Currency},
 		CreatedAt:          row.CreatedAt.Time.UTC(),
 		CancellationReason: row.CancellationReason,
+		CancelledBy:        row.CancelledBy,
 		MeetingURLOverride: row.MeetingUrlOverride,
 		TeacherMeetingURL:  row.TeacherMeetingUrl,
 		NoShowParty:        row.NoShowParty,

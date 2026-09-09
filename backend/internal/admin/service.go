@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 
@@ -23,6 +24,27 @@ type Repository interface {
 
 	SetTeacherStatus(ctx context.Context, slug, status, note string) error
 	SetTeacherVerified(ctx context.Context, slug string, verified bool) error
+
+	ListBookings(ctx context.Context, status, q string, limit, offset int) (rows []BookingRow, total int, err error)
+	// GetBookingDetail returns ErrBookingNotFound for an unknown id.
+	GetBookingDetail(ctx context.Context, id uuid.UUID) (BookingDetail, error)
+}
+
+// BookingModerator is the write port back into the bookings module for the one
+// admin action that changes a booking: the force-cancel override. The admin
+// module deliberately owns none of the cancellation logic — the refund, the
+// reminder teardown and the cancellation mail all live in bookings and are
+// reused verbatim. *bookings.Service satisfies this; cmd/api injects it with
+// Service.SetBookingModerator.
+//
+// The state rule (only pending_payment / confirmed can be cancelled) is checked
+// HERE too, off the detail this service already read, so no bookings-domain
+// error has to cross the port.
+type BookingModerator interface {
+	// AdminForceCancel cancels the booking regardless of who is asking,
+	// recording cancelled_by = 'admin'. refund=true releases / refunds the
+	// booking's payment.
+	AdminForceCancel(ctx context.Context, bookingID uuid.UUID, reason string, refund bool) error
 }
 
 // TeacherProfiles is the read port back into the teachers module for the one
@@ -38,11 +60,17 @@ type TeacherProfiles interface {
 type Service struct {
 	repo     Repository
 	teachers TeacherProfiles
+	bookings BookingModerator // nil until SetBookingModerator
 }
 
 func NewService(repo Repository, tp TeacherProfiles) *Service {
 	return &Service{repo: repo, teachers: tp}
 }
+
+// SetBookingModerator wires the bookings force-cancel port in. Called once at
+// startup (cmd/api). Without it, force-cancel fails loudly (500) rather than
+// silently pretending to cancel.
+func (s *Service) SetBookingModerator(m BookingModerator) { s.bookings = m }
 
 // --- phase A ---
 
@@ -147,6 +175,60 @@ func (s *Service) SetVerified(ctx context.Context, slug string, verified bool) (
 		return TeacherDetail{}, err
 	}
 	return s.GetTeacher(ctx, slug)
+}
+
+// --- phase D ---
+
+// ListBookings returns one page of every booking on the platform. status is an
+// optional exact filter (""= all); q matches the teacher's display name / slug
+// and the student's email / display name.
+func (s *Service) ListBookings(ctx context.Context, status, q string, page, pageSize int) (BookingsPage, error) {
+	limit, offset := normalizePage(page, pageSize)
+	rows, total, err := s.repo.ListBookings(ctx, status, q, limit, offset)
+	if err != nil {
+		return BookingsPage{}, err
+	}
+	if rows == nil {
+		rows = []BookingRow{}
+	}
+	return BookingsPage{Bookings: rows, Total: total}, nil
+}
+
+// GetBooking returns the full operator view of one booking, or
+// ErrBookingNotFound.
+func (s *Service) GetBooking(ctx context.Context, id uuid.UUID) (BookingDetail, error) {
+	return s.repo.GetBookingDetail(ctx, id)
+}
+
+// ForceCancelBooking is the operator override: it cancels a booking neither
+// participant asked to cancel. Allowed from pending_payment / confirmed only
+// (ErrInvalidState otherwise); a reason is required and is stored on the
+// booking. refund=true releases / refunds the payment.
+//
+// The cancellation itself is delegated to the bookings module through the
+// BookingModerator port, so the refund, the reminder teardown and the
+// "your lesson was cancelled" mail are exactly the ones a participant cancel
+// triggers — this module adds only the override.
+func (s *Service) ForceCancelBooking(ctx context.Context, id uuid.UUID, reason string, refund bool) (BookingDetail, error) {
+	if reason == "" {
+		return BookingDetail{}, invalid("a reason is required when force-cancelling a booking.")
+	}
+	if s.bookings == nil {
+		return BookingDetail{}, fmt.Errorf("admin: no booking moderator wired")
+	}
+
+	current, err := s.repo.GetBookingDetail(ctx, id)
+	if err != nil {
+		return BookingDetail{}, err
+	}
+	if current.Status != BookingPendingPayment && current.Status != BookingConfirmed {
+		return BookingDetail{}, ErrInvalidState
+	}
+
+	if err := s.bookings.AdminForceCancel(ctx, id, reason, refund); err != nil {
+		return BookingDetail{}, err
+	}
+	return s.repo.GetBookingDetail(ctx, id)
 }
 
 // transition validates the current status against allow, writes the new status

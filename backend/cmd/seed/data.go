@@ -143,6 +143,46 @@ type seedReview struct {
 	Comment          string
 }
 
+// seedBooking is a demo lesson inserted in an explicit lifecycle state (the API
+// path always starts at pending_payment), so the operator surfaces —
+// GET /v1/admin/bookings and the dispute queue — are not empty on a fresh
+// database. StartOffsetHours is relative to seed time: negative is in the past.
+//
+// No payment rows are seeded, so these bookings show `payment_status: null`.
+type seedBooking struct {
+	TeacherSlug      string
+	StudentFirstName string
+	Status           string
+	StartOffsetHours int
+	DurationMinutes  int
+	// Dispute, when non-empty, opens a dispute on the booking filed by the
+	// student — the row GET /v1/admin/disputes lists on a fresh database.
+	Dispute string
+}
+
+// seedBookings deliberately pairs teachers with students who are not their own
+// demo account (a teacher cannot book themselves) and keeps every start time
+// distinct per participant, so the bookings EXCLUDE constraints hold.
+var seedBookings = []seedBooking{
+	{
+		// A week ago, done and paid for — and contested: the open dispute an
+		// operator sees at /v1/admin/disputes on a fresh database.
+		TeacherSlug: "nodira-karimova", StudentFirstName: "sardor",
+		Status: "completed", StartOffsetHours: -168, DurationMinutes: 60,
+		Dispute: "The lesson ended twenty minutes early and I never got the writing feedback I paid for.",
+	},
+	{
+		// Upcoming and paid: an uneventful confirmed booking for the list view.
+		TeacherSlug: "elena-kim", StudentFirstName: "jasur",
+		Status: "confirmed", StartOffsetHours: 72, DurationMinutes: 60,
+	},
+	{
+		// Awaiting payment: the third lifecycle state the admin filter exposes.
+		TeacherSlug: "aziza-tosheva", StudentFirstName: "bekzod",
+		Status: "pending_payment", StartOffsetHours: 96, DurationMinutes: 30,
+	},
+}
+
 // seedReviews is keyed by teacher slug. 3–4 rows each so
 // GET /v1/teachers/{slug}/reviews returns content on a fresh database.
 var seedReviews = map[string][]seedReview{

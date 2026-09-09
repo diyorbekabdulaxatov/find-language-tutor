@@ -44,6 +44,10 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler, guard *rbac.Guard) {
 	rg.POST("/teachers/:slug/reject", guard.Require(rbac.PermTeachersModerate), h.Reject)
 	rg.POST("/teachers/:slug/suspend", guard.Require(rbac.PermTeachersModerate), h.Suspend)
 	rg.POST("/teachers/:slug/verify", guard.Require(rbac.PermTeachersVerify), h.Verify)
+
+	rg.GET("/bookings", guard.Require(rbac.PermBookingsView), h.ListBookings)
+	rg.GET("/bookings/:id", guard.Require(rbac.PermBookingsView), h.GetBooking)
+	rg.POST("/bookings/:id/force-cancel", guard.Require(rbac.PermBookingsForceCancel), h.ForceCancelBooking)
 }
 
 // Metrics handles GET /v1/admin/metrics.
@@ -180,6 +184,74 @@ func (h *Handler) Verify(c *gin.Context) {
 	c.JSON(http.StatusOK, toTeacherDetailDTO(res))
 }
 
+// --- phase D: bookings ---
+
+// ListBookings handles GET /v1/admin/bookings?status&q&page&page_size.
+func (h *Handler) ListBookings(c *gin.Context) {
+	status := c.Query("status")
+	if status != "" && !ValidBookingStatus(status) {
+		web.BadRequest(c, "`status` must be one of pending_payment, confirmed, completed, cancelled.")
+		return
+	}
+	page, err := optionalInt(c.Query("page"))
+	if err != nil {
+		web.BadRequest(c, "`page` must be an integer.")
+		return
+	}
+	pageSize, err := optionalInt(c.Query("page_size"))
+	if err != nil {
+		web.BadRequest(c, "`page_size` must be an integer.")
+		return
+	}
+
+	res, err := h.svc.ListBookings(c.Request.Context(), status, c.Query("q"), page, pageSize)
+	if h.rendered(c, err, "admin list bookings") {
+		return
+	}
+	c.JSON(http.StatusOK, toBookingsPageDTO(res))
+}
+
+// GetBooking handles GET /v1/admin/bookings/{id}.
+func (h *Handler) GetBooking(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		web.BadRequest(c, "The booking id must be a UUID.")
+		return
+	}
+	res, err := h.svc.GetBooking(c.Request.Context(), id)
+	if h.rendered(c, err, "admin get booking", slog.String("booking_id", id.String())) {
+		return
+	}
+	c.JSON(http.StatusOK, toBookingDetailDTO(res))
+}
+
+type forceCancelRequest struct {
+	Reason string `json:"reason"`
+	Refund bool   `json:"refund"`
+}
+
+// ForceCancelBooking handles POST /v1/admin/bookings/{id}/force-cancel —
+// body {"reason": "...", "refund": bool}.
+func (h *Handler) ForceCancelBooking(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		web.BadRequest(c, "The booking id must be a UUID.")
+		return
+	}
+
+	var req forceCancelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		web.BadRequest(c, `Request body must be {"reason": string, "refund"?: bool}.`)
+		return
+	}
+
+	res, err := h.svc.ForceCancelBooking(c.Request.Context(), id, strings.TrimSpace(req.Reason), req.Refund)
+	if h.rendered(c, err, "admin force-cancel booking", slog.String("booking_id", id.String())) {
+		return
+	}
+	c.JSON(http.StatusOK, toBookingDetailDTO(res))
+}
+
 // rendered maps a service error to an HTTP response. Returns true when it wrote
 // one (the caller should stop).
 func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.Attr) bool {
@@ -192,8 +264,12 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 		web.NotFound(c, "No user with that id.")
 	case errors.Is(err, ErrTeacherNotFound), errors.Is(err, teachers.ErrNotFound):
 		web.NotFound(c, "No teacher with that slug.")
+	case errors.Is(err, ErrBookingNotFound):
+		web.WriteError(c, http.StatusNotFound, "booking_not_found", "No booking with that id.")
 	case errors.Is(err, ErrInvalidTransition):
 		web.WriteError(c, http.StatusConflict, "invalid_transition", "The teacher is not in a state that allows this moderation action.")
+	case errors.Is(err, ErrInvalidState):
+		web.WriteError(c, http.StatusConflict, "invalid_state", "The booking is not in a state that allows this action.")
 	case errors.As(err, &ve):
 		web.BadRequest(c, ve.Error())
 	default:

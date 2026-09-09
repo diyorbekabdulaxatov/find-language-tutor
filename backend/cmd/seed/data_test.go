@@ -31,6 +31,67 @@ func TestSeedDemoEmailsAreUniqueAndWellFormed(t *testing.T) {
 	}
 }
 
+// TestSeedBookingsAreWellFormed guards the demo bookings against the rules the
+// database enforces (valid status, positive duration, no double-booking of a
+// teacher or a student) and against a teacher booking their own profile, so
+// `make seed` cannot be broken by an edit to the data.
+func TestSeedBookingsAreWellFormed(t *testing.T) {
+	knownSlugs := map[string]string{} // slug -> owning demo first name
+	for _, tr := range seedTeachers {
+		knownSlugs[tr.Slug] = strings.ToLower(firstName(tr.DisplayName))
+	}
+	knownStudents := map[string]bool{}
+	for _, tr := range seedTeachers {
+		knownStudents[strings.ToLower(firstName(tr.DisplayName))] = true
+	}
+
+	validStatus := map[string]bool{
+		"pending_payment": true, "confirmed": true, "completed": true, "cancelled": true,
+	}
+	validDuration := map[int]bool{30: true, 60: true, 90: true, 120: true}
+
+	type span struct{ start, end int }
+	byTeacher := map[string][]span{}
+	byStudent := map[string][]span{}
+
+	for _, b := range seedBookings {
+		owner, ok := knownSlugs[b.TeacherSlug]
+		if !ok {
+			t.Errorf("seedBookings has slug %q with no matching teacher", b.TeacherSlug)
+			continue
+		}
+		if !knownStudents[b.StudentFirstName] {
+			t.Errorf("seedBookings %s: no demo account for %q", b.TeacherSlug, b.StudentFirstName)
+		}
+		if owner == b.StudentFirstName {
+			t.Errorf("seedBookings %s: %q would be booking their own profile", b.TeacherSlug, owner)
+		}
+		if !validStatus[b.Status] {
+			t.Errorf("seedBookings %s: unknown status %q", b.TeacherSlug, b.Status)
+		}
+		if !validDuration[b.DurationMinutes] {
+			t.Errorf("seedBookings %s: duration %d is not one of 30/60/90/120", b.TeacherSlug, b.DurationMinutes)
+		}
+		if b.Dispute != "" && b.Status != "confirmed" && b.Status != "completed" {
+			t.Errorf("seedBookings %s: a %s booking cannot carry a dispute", b.TeacherSlug, b.Status)
+		}
+
+		s := span{start: b.StartOffsetHours * 60, end: b.StartOffsetHours*60 + b.DurationMinutes}
+		for _, prev := range byTeacher[b.TeacherSlug] {
+			if s.start < prev.end && prev.start < s.end {
+				t.Errorf("seedBookings: two lessons overlap for teacher %s", b.TeacherSlug)
+			}
+		}
+		for _, prev := range byStudent[b.StudentFirstName] {
+			if s.start < prev.end && prev.start < s.end {
+				t.Errorf("seedBookings: two lessons overlap for student %s", b.StudentFirstName)
+			}
+		}
+		byTeacher[b.TeacherSlug] = append(byTeacher[b.TeacherSlug], s)
+		byStudent[b.StudentFirstName] = append(byStudent[b.StudentFirstName], s)
+	}
+}
+
 // TestSeedAvailabilityIsWellFormed guards the demo availability against the
 // same rules the database (CHECK constraints + the no-overlap exclusion
 // constraint) and the availability service enforce, so `make seed` can't be

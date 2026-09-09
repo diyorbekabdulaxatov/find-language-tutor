@@ -20,6 +20,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/bookings"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/disputes"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/email"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/httpapi"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/lessons"
@@ -97,10 +98,8 @@ func run(logger *slog.Logger) error {
 	// Admin surface (phase A/B). Reads across tables directly; reuses the
 	// teachers read model for the one full-profile endpoint. Authorization is
 	// per-route via rbacGuard.
-	adminHandler := admin.NewHandler(
-		admin.NewService(admin.NewPostgresRepository(pool), teacherService),
-		logger,
-	)
+	adminService := admin.NewService(admin.NewPostgresRepository(pool), teacherService)
+	adminHandler := admin.NewHandler(adminService, logger)
 
 	availabilityHandler := availability.NewHandler(
 		availability.NewService(availability.NewPostgresRepository(pool)),
@@ -142,6 +141,20 @@ func run(logger *slog.Logger) error {
 	reviewHandler := reviews.NewHandler(reviewService, logger)
 	bookingService.SetReviewReader(reviews.NewBookingGateway(reviewService))
 
+	// Phase D: lesson disputes + the bookings admin surface. The disputes module
+	// owns both the participant routes (mounted on /v1/bookings) and the
+	// operator queue (mounted on /v1/admin behind the RBAC guard); it exposes a
+	// read port back to bookings so a BookingDTO carries can_raise_dispute /
+	// open_dispute without a second call. The two write paths that reach into
+	// bookings — the admin force-cancel and the refund on a resolved dispute —
+	// go through ports defined by their consumers and satisfied by
+	// *bookings.Service.
+	disputeService := disputes.NewService(disputes.NewPostgresRepository(pool), logger)
+	disputeService.SetRefunder(bookingService)
+	disputeHandler := disputes.NewHandler(disputeService, logger)
+	bookingService.SetDisputeReader(disputes.NewBookingGateway(disputeService))
+	adminService.SetBookingModerator(bookingService)
+
 	router := httpapi.NewRouter(httpapi.Deps{
 		Config:              cfg,
 		Logger:              logger,
@@ -157,6 +170,7 @@ func run(logger *slog.Logger) error {
 		BookingHandler:      bookingHandler,
 		PaymentHandler:      paymentHandler,
 		ReviewHandler:       reviewHandler,
+		DisputeHandler:      disputeHandler,
 	})
 
 	srv := &http.Server{

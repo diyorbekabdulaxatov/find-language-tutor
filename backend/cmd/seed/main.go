@@ -49,11 +49,15 @@ func main() {
 
 	q := sqlc.New(tx)
 
-	// FK order: reviews -> bookings/teachers/users, payout_ledger /
-	// payment_events -> payments -> bookings -> teachers/users, teachers.user_id
-	// -> users. None of these FKs cascade, so the seed clears them explicitly
-	// deepest-first. (We do not seed payment rows; those deletes just keep
-	// `make seed` working once real payments exist. We DO seed sample reviews.)
+	// FK order: disputes -> bookings/users, reviews -> bookings/teachers/users,
+	// payout_ledger / payment_events -> payments -> bookings -> teachers/users,
+	// teachers.user_id -> users. Only disputes.booking_id cascades, so the seed
+	// clears every table explicitly deepest-first. (We do not seed payment rows;
+	// those deletes just keep `make seed` working once real payments exist. We DO
+	// seed bookings, sample reviews, and one open dispute.)
+	if err := q.DeleteAllDisputes(ctx); err != nil {
+		log.Fatalf("clear disputes: %v", err)
+	}
 	if err := q.DeleteAllReviews(ctx); err != nil {
 		log.Fatalf("clear reviews: %v", err)
 	}
@@ -93,8 +97,10 @@ func main() {
 		log.Fatalf("hash demo password: %v", err)
 	}
 
-	// Populated as teachers are inserted; used for the sample-review pass below.
+	// Populated as teachers are inserted; used for the sample-review and
+	// booking passes below.
 	teacherIDBySlug := make(map[string]uuid.UUID, len(seedTeachers))
+	teacherPriceBySlug := make(map[string]int64, len(seedTeachers))
 	userIDByFirstName := make(map[string]uuid.UUID, len(seedTeachers))
 
 	for _, t := range seedTeachers {
@@ -143,6 +149,7 @@ func main() {
 			log.Fatalf("create %s: %v", t.Slug, err)
 		}
 		teacherIDBySlug[t.Slug] = id
+		teacherPriceBySlug[t.Slug] = t.PriceMinor
 
 		for i, l := range t.Teaches {
 			addLang(ctx, q, id, sqlc.LanguageRoleTeaches, l, i)
@@ -238,12 +245,58 @@ func main() {
 		}
 	}
 
+	// Demo bookings + the one open dispute, so the phase-D operator surfaces
+	// (/v1/admin/bookings, /v1/admin/disputes) have something to show on a fresh
+	// database. Start times are pinned to the hour so repeated seeds stay
+	// deterministic within the hour and never collide with each other.
+	now := time.Now().UTC().Truncate(time.Hour)
+	disputeCount := 0
+	for _, b := range seedBookings {
+		teacherID, ok := teacherIDBySlug[b.TeacherSlug]
+		if !ok {
+			log.Fatalf("seedBookings has slug %q with no matching teacher", b.TeacherSlug)
+		}
+		studentID, ok := userIDByFirstName[b.StudentFirstName]
+		if !ok {
+			log.Fatalf("seedBookings %s: no demo account for %q", b.TeacherSlug, b.StudentFirstName)
+		}
+		start := now.Add(time.Duration(b.StartOffsetHours) * time.Hour)
+		end := start.Add(time.Duration(b.DurationMinutes) * time.Minute)
+		// Same half-up hourly proration the booking service applies.
+		priceMinor := (teacherPriceBySlug[b.TeacherSlug]*int64(b.DurationMinutes) + 30) / 60
+
+		bookingID, err := q.SeedInsertBooking(ctx, sqlc.SeedInsertBookingParams{
+			TeacherID:       teacherID,
+			StudentID:       studentID,
+			StartAt:         pgtype.Timestamptz{Time: start, Valid: true},
+			EndAt:           pgtype.Timestamptz{Time: end, Valid: true},
+			DurationMinutes: int32(b.DurationMinutes),
+			Status:          b.Status,
+			PriceMinor:      priceMinor,
+			Currency:        string(sqlc.CurrencyCodeUZS),
+		})
+		if err != nil {
+			log.Fatalf("seed booking %s/%s: %v", b.TeacherSlug, b.StudentFirstName, err)
+		}
+		if b.Dispute == "" {
+			continue
+		}
+		if err := q.SeedInsertDispute(ctx, sqlc.SeedInsertDisputeParams{
+			BookingID: bookingID,
+			RaisedBy:  studentID,
+			Reason:    b.Dispute,
+		}); err != nil {
+			log.Fatalf("seed dispute %s/%s: %v", b.TeacherSlug, b.StudentFirstName, err)
+		}
+		disputeCount++
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		log.Fatalf("commit: %v", err)
 	}
 
-	log.Printf("seeded %d teachers (+ %d demo accounts, password %q), 3 roles, 1 admin (admin@findtutor.local / \"admin\", superadmin), %d sample reviews",
-		len(seedTeachers), len(seedTeachers), demoPassword, reviewCount)
+	log.Printf("seeded %d teachers (+ %d demo accounts, password %q), 3 roles, 1 admin (admin@findtutor.local / \"admin\", superadmin), %d sample reviews, %d bookings, %d open disputes",
+		len(seedTeachers), len(seedTeachers), demoPassword, reviewCount, len(seedBookings), disputeCount)
 }
 
 // seedRole creates a non-system role with the given permissions.

@@ -12,6 +12,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/availability"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/bookings"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/disputes"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payments"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/rbac"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/reviews"
@@ -34,6 +35,7 @@ type Deps struct {
 	BookingHandler      *bookings.Handler
 	PaymentHandler      *payments.Handler
 	ReviewHandler       *reviews.Handler
+	DisputeHandler      *disputes.Handler
 }
 
 // NewRouter builds the gin engine with middleware, the health check, and every
@@ -66,6 +68,7 @@ func NewRouter(d Deps) *gin.Engine {
 	bookingRoutes := v1.Group("/bookings")
 	bookings.RegisterRoutes(bookingRoutes, d.BookingHandler, d.AuthMiddleware)
 	reviews.RegisterBookingRoutes(bookingRoutes, d.ReviewHandler, d.AuthMiddleware)
+	disputes.RegisterBookingRoutes(bookingRoutes, d.DisputeHandler, d.AuthMiddleware)
 
 	payments.RegisterRoutes(v1.Group("/payments"), d.PaymentHandler, d.AuthMiddleware)
 
@@ -74,6 +77,7 @@ func NewRouter(d Deps) *gin.Engine {
 	adminGroup := v1.Group("/admin", d.AuthMiddleware)
 	admin.RegisterRoutes(adminGroup, d.AdminHandler, d.RBACGuard)
 	rbac.RegisterAdminRoutes(adminGroup, d.RBACHandler, d.RBACGuard)
+	disputes.RegisterAdminRoutes(adminGroup, d.DisputeHandler, d.RBACGuard)
 
 	return r
 }
