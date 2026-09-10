@@ -274,6 +274,7 @@ type Review struct {
 	Rating    int16
 	Comment   string
 	CreatedAt pgtype.Timestamptz
+	Hidden    bool
 }
 
 type Role struct {
@@ -331,6 +332,8 @@ type Teacher struct {
 	Status            string
 	Verified          bool
 	ModerationNote    string
+	RatingBase        float32
+	ReviewCountBase   int32
 }
 
 type TeacherAvailabilitySlot struct {

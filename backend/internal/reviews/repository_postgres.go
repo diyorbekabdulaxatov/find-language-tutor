@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db/sqlc"
@@ -45,7 +46,7 @@ func (r *repositoryPostgres) BookingForReview(ctx context.Context, bookingID uui
 	}, nil
 }
 
-// CreateReview inserts the review and bumps the teacher aggregate in one
+// CreateReview inserts the review and recomputes the teacher aggregate in one
 // transaction. The insert is first, so a duplicate is rejected before the
 // aggregate moves.
 func (r *repositoryPostgres) CreateReview(ctx context.Context, p CreateParams) (Review, error) {
@@ -72,11 +73,8 @@ func (r *repositoryPostgres) CreateReview(ctx context.Context, p CreateParams) (
 		return Review{}, fmt.Errorf("insert review: %w", err)
 	}
 
-	if err := qtx.BumpTeacherRatingForReview(ctx, sqlc.BumpTeacherRatingForReviewParams{
-		NewRating: int32(p.Rating),
-		TeacherID: p.TeacherID,
-	}); err != nil {
-		return Review{}, fmt.Errorf("bump teacher rating: %w", err)
+	if err := qtx.RecomputeTeacherRating(ctx, p.TeacherID); err != nil {
+		return Review{}, fmt.Errorf("recompute teacher rating: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -161,4 +159,119 @@ func (r *repositoryPostgres) ListByTeacher(ctx context.Context, teacherID uuid.U
 		}
 	}
 	return out, int(total), nil
+}
+
+// --- phase F: moderation ---
+
+func nullText(s string) pgtype.Text {
+	return pgtype.Text{String: s, Valid: s != ""}
+}
+
+func (r *repositoryPostgres) ListForModeration(ctx context.Context, q ModerationQuery, limit, offset int) ([]AdminReview, int, error) {
+	rows, err := r.q.AdminListReviews(ctx, sqlc.AdminListReviewsParams{
+		Visibility:  nullText(string(q.Visibility)),
+		TeacherSlug: nullText(q.TeacherSlug),
+		MaxRating:   pgtype.Int4{Int32: int32(q.MaxRating), Valid: q.MaxRating != 0},
+		PageLimit:   int32(limit),
+		PageOffset:  int32(offset),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("admin list reviews: %w", err)
+	}
+	total, err := r.q.AdminCountReviews(ctx, sqlc.AdminCountReviewsParams{
+		Visibility:  nullText(string(q.Visibility)),
+		TeacherSlug: nullText(q.TeacherSlug),
+		MaxRating:   pgtype.Int4{Int32: int32(q.MaxRating), Valid: q.MaxRating != 0},
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("admin count reviews: %w", err)
+	}
+
+	out := make([]AdminReview, len(rows))
+	for i, row := range rows {
+		ar := AdminReview{
+			ID:          row.ID,
+			TeacherSlug: row.TeacherSlug,
+			TeacherName: row.TeacherDisplayName,
+			StudentName: row.StudentDisplayName,
+			Rating:      int(row.Rating),
+			Comment:     row.Comment,
+			Hidden:      row.Hidden,
+			CreatedAt:   row.CreatedAt.Time.UTC(),
+		}
+		if row.BookingID.Valid {
+			b := row.BookingID.UUID
+			ar.BookingID = &b
+		}
+		out[i] = ar
+	}
+	return out, int(total), nil
+}
+
+func (r *repositoryPostgres) SetReviewHidden(ctx context.Context, reviewID uuid.UUID, hidden bool) (AdminReview, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return AdminReview{}, fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
+	qtx := r.q.WithTx(tx)
+
+	row, err := qtx.AdminGetReview(ctx, reviewID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AdminReview{}, ErrReviewNotFound
+		}
+		return AdminReview{}, fmt.Errorf("get review: %w", err)
+	}
+
+	if err := qtx.SetReviewHidden(ctx, sqlc.SetReviewHiddenParams{ID: reviewID, Hidden: hidden}); err != nil {
+		return AdminReview{}, fmt.Errorf("set review hidden: %w", err)
+	}
+	if err := qtx.RecomputeTeacherRating(ctx, row.TeacherID); err != nil {
+		return AdminReview{}, fmt.Errorf("recompute teacher rating: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return AdminReview{}, fmt.Errorf("commit: %w", err)
+	}
+
+	ar := AdminReview{
+		ID:          row.ID,
+		TeacherSlug: row.TeacherSlug,
+		TeacherName: row.TeacherDisplayName,
+		StudentName: row.StudentDisplayName,
+		Rating:      int(row.Rating),
+		Comment:     row.Comment,
+		Hidden:      hidden,
+		CreatedAt:   row.CreatedAt.Time.UTC(),
+	}
+	if row.BookingID.Valid {
+		b := row.BookingID.UUID
+		ar.BookingID = &b
+	}
+	return ar, nil
+}
+
+func (r *repositoryPostgres) RemoveReview(ctx context.Context, reviewID uuid.UUID) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
+	qtx := r.q.WithTx(tx)
+
+	row, err := qtx.AdminGetReview(ctx, reviewID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrReviewNotFound
+		}
+		return fmt.Errorf("get review: %w", err)
+	}
+
+	if err := qtx.DeleteReview(ctx, reviewID); err != nil {
+		return fmt.Errorf("delete review: %w", err)
+	}
+	if err := qtx.RecomputeTeacherRating(ctx, row.TeacherID); err != nil {
+		return fmt.Errorf("recompute teacher rating: %w", err)
+	}
+	return tx.Commit(ctx)
 }

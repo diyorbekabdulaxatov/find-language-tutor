@@ -69,6 +69,46 @@ type Page struct {
 	Total   int
 }
 
+// --- phase F: moderation ---
+
+// AdminReview is one row of the operator moderation queue: the review plus the
+// teacher it is about and its current visibility.
+type AdminReview struct {
+	ID          uuid.UUID
+	TeacherSlug string
+	TeacherName string
+	StudentName string
+	BookingID   *uuid.UUID // nil for a seeded sample review
+	Rating      int
+	Comment     string
+	Hidden      bool
+	CreatedAt   time.Time
+}
+
+// AdminPage is a page of the moderation queue plus the total match count.
+type AdminPage struct {
+	Reviews []AdminReview
+	Total   int
+}
+
+// Visibility is the moderation-queue visibility filter.
+type Visibility string
+
+const (
+	VisibilityAll     Visibility = ""        // both hidden and visible
+	VisibilityVisible Visibility = "visible" // shown on the teacher profile
+	VisibilityHidden  Visibility = "hidden"  // removed from display by an operator
+)
+
+// ModerationQuery is the validated input to the moderation list.
+type ModerationQuery struct {
+	Visibility  Visibility
+	TeacherSlug string // "" = any teacher
+	MaxRating   int    // 0 = no ceiling; else 1..5
+	Page        int
+	PageSize    int
+}
+
 // Domain errors. The handler maps each to an HTTP status; anything else is 500.
 var (
 	// ErrTeacherNotFound — no teacher has the requested slug.
@@ -87,6 +127,9 @@ var (
 	// ErrAlreadyReviewed — a review already exists for this booking (the
 	// partial-unique index rejected the insert). Rendered 409 already_reviewed.
 	ErrAlreadyReviewed = errors.New("reviews: this booking has already been reviewed")
+
+	// ErrReviewNotFound — a moderation action for an unknown review id. Rendered 404.
+	ErrReviewNotFound = errors.New("reviews: review not found")
 )
 
 // ValidationError is a client-fixable problem with a request. The handler
