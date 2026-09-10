@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"log/slog"
 	"net/mail"
 	"strings"
 	"time"
@@ -53,6 +54,38 @@ type Repository interface {
 	// RevokeAllUserSessions revokes every still-active session for a user
 	// (used on refresh-token reuse detection).
 	RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) error
+
+	// --- account recovery (migration 000013) ---
+
+	// UserByEmail returns the account for a login-style email lookup, or
+	// ErrUserNotFound. Like UserWithHashByEmail without the hash.
+	UserByEmail(ctx context.Context, email string) (User, error)
+	// SetUserPassword replaces the stored password hash.
+	SetUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error
+	// MarkEmailVerified stamps email_verified_at (idempotent).
+	MarkEmailVerified(ctx context.Context, userID uuid.UUID) error
+
+	// CreateAuthToken stores a single-use link token (SHA-256 only) and
+	// returns nothing — the raw value is the caller's to email.
+	CreateAuthToken(ctx context.Context, userID uuid.UUID, purpose TokenPurpose, tokenHash []byte, expiresAt time.Time) error
+	// LiveAuthToken resolves a raw token hash + purpose to the owning user,
+	// only while the token is unconsumed and unexpired. ErrInvalidToken otherwise.
+	LiveAuthToken(ctx context.Context, tokenHash []byte, purpose TokenPurpose) (userID uuid.UUID, err error)
+	// AuthTokenUser resolves a hash + purpose to the owning user regardless of
+	// consumed / expired state (ok=false when no such token ever existed).
+	AuthTokenUser(ctx context.Context, tokenHash []byte, purpose TokenPurpose) (userID uuid.UUID, ok bool, err error)
+	// ConsumeUserAuthTokens invalidates a user's outstanding tokens of a purpose.
+	ConsumeUserAuthTokens(ctx context.Context, userID uuid.UUID, purpose TokenPurpose) error
+	// LatestAuthTokenAt is the created_at of the newest still-live token of a
+	// purpose for a user (zero time when there is none) — the resend cooldown.
+	LatestAuthTokenAt(ctx context.Context, userID uuid.UUID, purpose TokenPurpose) (time.Time, error)
+
+	// ResetPassword applies a validated reset in one transaction: set the new
+	// password hash, consume the token, and revoke every session.
+	ResetPassword(ctx context.Context, userID uuid.UUID, tokenHash []byte, passwordHash string) error
+	// ConfirmEmail applies a validated verification in one transaction: stamp
+	// email_verified_at and consume the token.
+	ConfirmEmail(ctx context.Context, userID uuid.UUID, tokenHash []byte) error
 }
 
 // AuthResult is what a successful register / login / refresh produces. The
@@ -74,15 +107,36 @@ type Service struct {
 	refreshTTL time.Duration
 	now        func() time.Time
 	perms      PermissionsPort // nil until SetPermissionsPort; nil is a safe no-op
+	mailer     Mailer          // noopMailer until SetMailer
+	logger     *slog.Logger
 }
 
 func NewService(repo Repository, tokens *TokenManager, refreshTTL time.Duration) *Service {
-	return &Service{repo: repo, tokens: tokens, refreshTTL: refreshTTL, now: time.Now}
+	return &Service{
+		repo: repo, tokens: tokens, refreshTTL: refreshTTL,
+		now: time.Now, mailer: noopMailer{}, logger: slog.Default(),
+	}
 }
 
 // SetPermissionsPort wires the RBAC permission resolver in. Optional: without it
 // every auth response carries an empty `permissions` array.
 func (s *Service) SetPermissionsPort(p PermissionsPort) { s.perms = p }
+
+// SetMailer wires the account-recovery email sender in. Optional: without it the
+// forgot-password / verify-email flows still work but send nothing.
+func (s *Service) SetMailer(m Mailer) {
+	if m != nil {
+		s.mailer = m
+	}
+}
+
+// SetLogger overrides the default slog logger (recovery flows log send failures
+// rather than surfacing them).
+func (s *Service) SetLogger(l *slog.Logger) {
+	if l != nil {
+		s.logger = l
+	}
+}
 
 // PermissionsFor returns the caller's effective permission keys for embedding in
 // GET /v1/auth/me. Nil-safe; never errors out a request.
@@ -116,7 +170,127 @@ func (s *Service) Register(ctx context.Context, email, password, displayName, us
 		return AuthResult{}, err // ErrEmailTaken or a real failure
 	}
 
+	// Mail the "confirm your address" link. Best-effort — a mail failure must
+	// not fail the registration (the user can resend from the app).
+	s.issueEmailVerification(ctx, user)
+
 	return s.startSessionResult(ctx, user, userAgent)
+}
+
+// --- account recovery (migration 000013) ---
+
+// RequestPasswordReset mails a reset link if the address has an account. It
+// always returns nil: the caller (the handler) answers 202 either way, so an
+// attacker can't probe which emails are registered.
+func (s *Service) RequestPasswordReset(ctx context.Context, email string) error {
+	email = normalizeEmail(email)
+	if !validEmail(email) {
+		return nil
+	}
+	user, err := s.repo.UserByEmail(ctx, email)
+	if err != nil {
+		return nil // unknown address — say nothing
+	}
+	if s.onCooldown(ctx, user.ID, PurposePasswordReset) {
+		return nil
+	}
+
+	raw, hash, err := newOpaqueToken()
+	if err != nil {
+		s.logger.Error("password reset: token", slog.Any("error", err))
+		return nil
+	}
+	_ = s.repo.ConsumeUserAuthTokens(ctx, user.ID, PurposePasswordReset)
+	if err := s.repo.CreateAuthToken(ctx, user.ID, PurposePasswordReset, hash, s.now().Add(passwordResetTTL)); err != nil {
+		s.logger.Error("password reset: store token", slog.Any("error", err))
+		return nil
+	}
+	if err := s.mailer.SendPasswordReset(ctx, user.Email, user.DisplayName, raw); err != nil {
+		s.logger.Error("password reset: send mail", slog.String("user_id", user.ID.String()), slog.Any("error", err))
+	}
+	return nil
+}
+
+// ResetPassword redeems a reset token and sets a new password. The token is
+// consumed and every session is revoked in one transaction. ErrInvalidToken for
+// an unknown / used / expired token; ValidationError for a weak password.
+func (s *Service) ResetPassword(ctx context.Context, rawToken, newPassword string) error {
+	if len(newPassword) < minPasswordLen {
+		return invalid("Password must be at least 8 characters.")
+	}
+	hash := hashOpaqueToken(rawToken)
+	userID, err := s.repo.LiveAuthToken(ctx, hash, PurposePasswordReset)
+	if err != nil {
+		return ErrInvalidToken
+	}
+	pwHash, err := HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	return s.repo.ResetPassword(ctx, userID, hash, pwHash)
+}
+
+// VerifyEmail redeems an email-verification token. A double-submit (a client
+// retry, React StrictMode's double-invoked effect) that hits a just-consumed
+// token still returns nil when the account is already verified — the outcome
+// this exact token produced.
+func (s *Service) VerifyEmail(ctx context.Context, rawToken string) error {
+	hash := hashOpaqueToken(rawToken)
+	userID, err := s.repo.LiveAuthToken(ctx, hash, PurposeEmailVerification)
+	if err != nil {
+		if uid, ok, e := s.repo.AuthTokenUser(ctx, hash, PurposeEmailVerification); e == nil && ok {
+			if u, e := s.repo.UserByID(ctx, uid); e == nil && u.EmailVerified {
+				return nil
+			}
+		}
+		return ErrInvalidToken
+	}
+	return s.repo.ConfirmEmail(ctx, userID, hash)
+}
+
+// ResendEmailVerification re-issues the verification link for the caller's own
+// account. ErrAlreadyVerified when there is nothing to confirm.
+func (s *Service) ResendEmailVerification(ctx context.Context, userID uuid.UUID) error {
+	user, err := s.repo.UserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user.EmailVerified {
+		return ErrAlreadyVerified
+	}
+	if s.onCooldown(ctx, user.ID, PurposeEmailVerification) {
+		return nil
+	}
+	s.issueEmailVerification(ctx, user)
+	return nil
+}
+
+// issueEmailVerification creates + mails a verification token. Best-effort: all
+// failures are logged, none propagate.
+func (s *Service) issueEmailVerification(ctx context.Context, user User) {
+	raw, hash, err := newOpaqueToken()
+	if err != nil {
+		s.logger.Error("email verification: token", slog.Any("error", err))
+		return
+	}
+	_ = s.repo.ConsumeUserAuthTokens(ctx, user.ID, PurposeEmailVerification)
+	if err := s.repo.CreateAuthToken(ctx, user.ID, PurposeEmailVerification, hash, s.now().Add(emailVerificationTTL)); err != nil {
+		s.logger.Error("email verification: store token", slog.Any("error", err))
+		return
+	}
+	if err := s.mailer.SendEmailVerification(ctx, user.Email, user.DisplayName, raw); err != nil {
+		s.logger.Error("email verification: send mail", slog.String("user_id", user.ID.String()), slog.Any("error", err))
+	}
+}
+
+// onCooldown reports whether a still-live token of this purpose was issued for
+// the user within resendCooldown.
+func (s *Service) onCooldown(ctx context.Context, userID uuid.UUID, purpose TokenPurpose) bool {
+	last, err := s.repo.LatestAuthTokenAt(ctx, userID, purpose)
+	if err != nil {
+		return false // fail open — a DB hiccup shouldn't block recovery
+	}
+	return !last.IsZero() && s.now().Sub(last) < resendCooldown
 }
 
 // Login verifies credentials and starts a session. Always returns

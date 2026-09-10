@@ -22,11 +22,25 @@ type updateMeRequest struct {
 	DisplayName *string `json:"display_name"`
 }
 
+type forgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+type resetPasswordRequest struct {
+	Token    string `json:"token"`
+	Password string `json:"password"`
+}
+
+type tokenRequest struct {
+	Token string `json:"token"`
+}
+
 type userDTO struct {
-	ID          string   `json:"id"`
-	Email       string   `json:"email"`
-	DisplayName string   `json:"display_name"`
-	Permissions []string `json:"permissions"` // effective RBAC permission keys, sorted; the frontend gates /admin on these
+	ID            string   `json:"id"`
+	Email         string   `json:"email"`
+	DisplayName   string   `json:"display_name"`
+	EmailVerified bool     `json:"email_verified"`
+	Permissions   []string `json:"permissions"` // effective RBAC permission keys, sorted; the frontend gates /admin on these
 }
 
 // authResponse is returned by register / login / refresh. The access token is
@@ -41,7 +55,13 @@ func toUserDTO(u User, permissions []string) userDTO {
 	if permissions == nil {
 		permissions = []string{}
 	}
-	return userDTO{ID: u.ID.String(), Email: u.Email, DisplayName: u.DisplayName, Permissions: permissions}
+	return userDTO{
+		ID:            u.ID.String(),
+		Email:         u.Email,
+		DisplayName:   u.DisplayName,
+		EmailVerified: u.EmailVerified,
+		Permissions:   permissions,
+	}
 }
 
 func toAuthResponse(r AuthResult) authResponse {

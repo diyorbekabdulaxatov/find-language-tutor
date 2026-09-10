@@ -122,8 +122,15 @@ export function AuthForm({ mode }: { mode: Mode }) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
-        {mode === "signup" && (
+        {mode === "signup" ? (
           <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+        ) : (
+          <Link
+            href="/forgot-password"
+            className="self-end text-xs font-medium text-primary hover:underline"
+          >
+            Forgot your password?
+          </Link>
         )}
       </div>
 

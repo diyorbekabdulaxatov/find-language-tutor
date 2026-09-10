@@ -22,6 +22,10 @@ type Config struct {
 	Port           string
 	AllowedOrigins []string // CORS allow-list for the browser frontend
 
+	// AppBaseURL is the public origin of the frontend — used to build the links
+	// in account-recovery emails (APP_BASE_URL, default http://localhost:3000).
+	AppBaseURL string
+
 	// Postgres — a pgx-compatible connection string.
 	DatabaseURL string
 
@@ -86,6 +90,7 @@ func Load() (*Config, error) {
 		Env:             env,
 		Port:            getenv("PORT", "8080"),
 		AllowedOrigins:  splitAndTrim(getenv("ALLOWED_ORIGINS", "http://localhost:3000")),
+		AppBaseURL:      getenv("APP_BASE_URL", "http://localhost:3000"),
 		DatabaseURL:     os.Getenv("DATABASE_URL"),
 		RedisURL:        getenv("REDIS_URL", "redis://localhost:6379/0"),
 		JWTSecret:       os.Getenv("AUTH_JWT_SECRET"),

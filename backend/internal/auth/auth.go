@@ -19,11 +19,12 @@ import (
 // User is the account aggregate as the rest of the app sees it — never the
 // password hash.
 type User struct {
-	ID          uuid.UUID
-	Email       string
-	DisplayName string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID            uuid.UUID
+	Email         string
+	DisplayName   string
+	EmailVerified bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // Session is one issued refresh token. The raw token itself is never stored —
@@ -56,6 +57,30 @@ var (
 	// ErrUserNotFound — CurrentUser for an id with no row (e.g. deleted account
 	// still holding a valid-looking access token).
 	ErrUserNotFound = errors.New("auth: user not found")
+	// ErrInvalidToken — a password-reset / email-verification link token that is
+	// unknown, already used, or expired. Deliberately one error for all three.
+	ErrInvalidToken = errors.New("auth: invalid or expired token")
+	// ErrAlreadyVerified — resend-verification for an account that is already
+	// verified.
+	ErrAlreadyVerified = errors.New("auth: email already verified")
+)
+
+// TokenPurpose is the kind of single-use link token (matches the auth_tokens
+// CHECK constraint).
+type TokenPurpose string
+
+const (
+	PurposePasswordReset     TokenPurpose = "password_reset"
+	PurposeEmailVerification TokenPurpose = "email_verification"
+)
+
+// Token lifetimes.
+const (
+	passwordResetTTL     = time.Hour
+	emailVerificationTTL = 24 * time.Hour
+	// resendCooldown throttles how often forgot-password / resend-verification
+	// will issue a fresh token+email for the same account.
+	resendCooldown = 60 * time.Second
 )
 
 // ValidationError is a client-fixable problem with registration input (bad

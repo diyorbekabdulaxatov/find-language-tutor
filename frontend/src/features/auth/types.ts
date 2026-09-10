@@ -8,6 +8,8 @@ export interface AuthUser {
   id: string;
   email: string;
   displayName: string;
+  /** False until the account confirms its address via the emailed link. */
+  emailVerified: boolean;
   /** RBAC permission keys the caller holds (union across their roles). Empty
    *  for an ordinary user; a non-empty list means they have some admin access. */
   permissions: string[];
