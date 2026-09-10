@@ -13,9 +13,11 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/bookings"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/disputes"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/files"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payments"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payouts"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/rbac"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/resources"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/reviews"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/teachers"
 )
@@ -38,6 +40,8 @@ type Deps struct {
 	ReviewHandler       *reviews.Handler
 	DisputeHandler      *disputes.Handler
 	PayoutHandler       *payouts.Handler
+	FileHandler         *files.Handler
+	ResourceHandler     *resources.Handler
 }
 
 // NewRouter builds the gin engine with middleware, the health check, and every
@@ -73,6 +77,9 @@ func NewRouter(d Deps) *gin.Engine {
 	disputes.RegisterBookingRoutes(bookingRoutes, d.DisputeHandler, d.AuthMiddleware)
 
 	payments.RegisterRoutes(v1.Group("/payments"), d.PaymentHandler, d.AuthMiddleware)
+
+	files.RegisterRoutes(v1, d.FileHandler, d.AuthMiddleware)
+	resources.RegisterRoutes(v1.Group("/resources"), d.ResourceHandler, d.AuthMiddleware)
 
 	// /v1/admin is behind a valid access token; each route then enforces its
 	// own RBAC permission via the guard.

@@ -51,6 +51,12 @@ tags:
       lesson; an operator holding `disputes.resolve` closes it as resolved or
       rejected, optionally refunding the student. A booking may have at most one
       OPEN dispute at a time, but keeps the full thread of closed ones.
+  - name: resources
+    description: >
+      A teacher's reusable library of learning content — materials, articles,
+      and graded tasks (quiz / listening / reading / writing). Authored once,
+      later attached to a scheduled lesson as homework or dropped into a course.
+      Blob uploads (PDF / image / audio) back the materials and listening audio.
   - name: system
 
 paths:
@@ -1173,6 +1179,224 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  # ----------------------------------------------------------------------------
+  # Files + learning resources (phase A1). A teacher's reusable library of
+  # materials and graded tasks; blob uploads back the materials + listening
+  # audio. All routes need a valid access token; resource routes also require
+  # the caller to own a teacher profile.
+  # ----------------------------------------------------------------------------
+
+  /v1/uploads:
+    post:
+      tags: [resources]
+      summary: Upload a file
+      description: >
+        Multipart form, field `file`. PDF / image / audio only, under 25 MB.
+        Returns a file id + the `url` to fetch the bytes back
+        (`GET /v1/files/{id}`).
+      operationId: uploadFile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: The stored file.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileAsset" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413":
+          description: "`file_too_large`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "415":
+          description: "`unsupported_type`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/files/{id}:
+    get:
+      tags: [resources]
+      summary: Download a file
+      description: >
+        Streams the bytes (or 302-redirects to a signed URL on R2). Phase A1:
+        the file owner only; phase A2 widens this to a student the resource has
+        been assigned to.
+      operationId: getFile
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The file bytes. }
+        "302": { description: Redirect to a short-lived signed URL. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/resources:
+    get:
+      tags: [resources]
+      summary: The caller's resource library
+      operationId: listResources
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: type, in: query, schema: { $ref: "#/components/schemas/ResourceType" } }
+        - { name: status, in: query, schema: { type: string, enum: [draft, published] } }
+        - { name: archived, in: query, schema: { type: string, enum: ["true"] }, description: Include archived resources. }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of the library.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResourceList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`no_teacher_profile` — the caller has no teacher profile."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    post:
+      tags: [resources]
+      summary: Create a resource
+      operationId: createResource
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateResourceRequest" }
+      responses:
+        "201":
+          description: The created resource.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Resource" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`no_teacher_profile`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/resources/{id}:
+    get:
+      tags: [resources]
+      summary: One of the caller's resources
+      operationId: getResource
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The resource.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Resource" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [resources]
+      summary: Edit a resource
+      description: Title / instructions / content are replaced. Type is immutable; content is re-validated against it.
+      operationId: updateResource
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateResourceRequest" }
+      responses:
+        "200":
+          description: The updated resource.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Resource" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [resources]
+      summary: Delete a resource
+      description: Only if it has never been attached to a lesson or course; otherwise 409 — archive it instead.
+      operationId: deleteResource
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`resource_in_use`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/resources/{id}/publish:
+    post:
+      tags: [resources]
+      summary: Publish a resource
+      operationId: publishResource
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The resource, now published., content: { application/json: { schema: { $ref: "#/components/schemas/Resource" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/resources/{id}/unpublish:
+    post:
+      tags: [resources]
+      summary: Return a resource to draft
+      operationId: unpublishResource
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The resource, now a draft., content: { application/json: { schema: { $ref: "#/components/schemas/Resource" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/resources/{id}/archive:
+    post:
+      tags: [resources]
+      summary: Archive a resource
+      operationId: archiveResource
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The archived resource., content: { application/json: { schema: { $ref: "#/components/schemas/Resource" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/resources/{id}/unarchive:
+    post:
+      tags: [resources]
+      summary: Restore an archived resource
+      operationId: unarchiveResource
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The restored resource., content: { application/json: { schema: { $ref: "#/components/schemas/Resource" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ----------------------------------------------------------------------------
   # Admin (phase A/B). Everything under /v1/admin needs a valid access token
@@ -2679,6 +2903,104 @@ components:
           description: >
             True for a seeded, booking-less review — part of the teacher's
             historical display set, never folded into the live rating aggregate.
+
+    # --- Files + learning resources (phase A1) ---
+
+    FileAsset:
+      type: object
+      required: [id, filename, content_type, bytes, url]
+      properties:
+        id: { type: string, format: uuid }
+        filename: { type: string }
+        content_type: { type: string }
+        bytes: { type: integer, format: int64 }
+        url: { type: string, description: "GET path for the bytes: /v1/files/{id}." }
+
+    ResourceType:
+      type: string
+      enum: [material, article, quiz, listening, reading, writing]
+
+    ResourceChoice:
+      type: object
+      required: [id, text]
+      properties:
+        id: { type: string }
+        text: { type: string }
+
+    ResourceQuestion:
+      type: object
+      required: [id, prompt, kind, correct, points]
+      properties:
+        id: { type: string }
+        prompt: { type: string }
+        kind: { type: string, enum: [single, multi, text] }
+        choices:
+          type: array
+          items: { $ref: "#/components/schemas/ResourceChoice" }
+        correct:
+          type: array
+          items: { type: string }
+          description: Choice ids (single/multi) or accepted answer strings (text). Present in the authoring view; stripped from the student view (phase A2).
+        points: { type: integer }
+
+    ResourceContent:
+      description: >
+        The type-specific payload; only the fields relevant to the resource's
+        `type` are populated.
+      type: object
+      properties:
+        file_asset_id: { type: string, format: uuid, description: "material" }
+        url: { type: string, description: "material — external link" }
+        description: { type: string, description: "material" }
+        body: { type: string, description: "article — markdown" }
+        passage: { type: string, description: "reading" }
+        audio_asset_id: { type: string, format: uuid, description: "listening" }
+        questions:
+          type: array
+          description: "quiz / listening / reading"
+          items: { $ref: "#/components/schemas/ResourceQuestion" }
+        prompt: { type: string, description: "writing" }
+        min_words: { type: integer, description: "writing" }
+        rubric: { type: string, description: "writing" }
+
+    Resource:
+      type: object
+      required: [id, type, title, instructions, status, archived, content, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: "#/components/schemas/ResourceType" }
+        title: { type: string }
+        instructions: { type: string }
+        status: { type: string, enum: [draft, published] }
+        archived: { type: boolean }
+        content: { $ref: "#/components/schemas/ResourceContent" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ResourceList:
+      type: object
+      required: [resources, total]
+      properties:
+        resources: { type: array, items: { $ref: "#/components/schemas/Resource" } }
+        total: { type: integer, description: Total matches, not just this page. }
+
+    CreateResourceRequest:
+      type: object
+      required: [type, title, content]
+      properties:
+        type: { $ref: "#/components/schemas/ResourceType" }
+        title: { type: string, minLength: 1 }
+        instructions: { type: string }
+        publish: { type: boolean, description: Publish immediately instead of saving a draft. }
+        content: { $ref: "#/components/schemas/ResourceContent" }
+
+    UpdateResourceRequest:
+      type: object
+      required: [title, content]
+      properties:
+        title: { type: string, minLength: 1 }
+        instructions: { type: string }
+        content: { $ref: "#/components/schemas/ResourceContent" }
 
     AdminReviewList:
       type: object

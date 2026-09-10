@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -23,11 +24,13 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/disputes"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/email"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/files"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/httpapi"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/lessons"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payments"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payouts"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/rbac"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/resources"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/reviews"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/teachers"
 )
@@ -176,6 +179,22 @@ func run(logger *slog.Logger) error {
 		logger,
 	)
 
+	// Phase A1: the learning-resource library + its blob store. The store is
+	// local disk in dev (FILES_DISK_PATH); an R2 backend drops in behind the
+	// same port later. internal/resources references file_asset ids only.
+	blob, err := files.NewBlob(cfg.FilesStore, cfg.FilesDiskPath)
+	if err != nil {
+		return fmt.Errorf("file store: %w", err)
+	}
+	fileHandler := files.NewHandler(
+		files.NewService(files.NewPostgresRepository(pool), blob, logger),
+		logger,
+	)
+	resourceHandler := resources.NewHandler(
+		resources.NewService(resources.NewPostgresRepository(pool), logger),
+		logger,
+	)
+
 	router := httpapi.NewRouter(httpapi.Deps{
 		Config:              cfg,
 		Logger:              logger,
@@ -193,6 +212,8 @@ func run(logger *slog.Logger) error {
 		ReviewHandler:       reviewHandler,
 		DisputeHandler:      disputeHandler,
 		PayoutHandler:       payoutHandler,
+		FileHandler:         fileHandler,
+		ResourceHandler:     resourceHandler,
 	})
 
 	srv := &http.Server{
