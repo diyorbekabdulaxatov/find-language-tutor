@@ -50,11 +50,12 @@ func main() {
 	q := sqlc.New(tx)
 
 	// FK order: disputes -> bookings/users, reviews -> bookings/teachers/users,
-	// payout_ledger / payment_events -> payments -> bookings -> teachers/users,
+	// payout_ledger -> payout_batches / bookings / teachers, payment_events ->
+	// payments -> bookings -> teachers/users, payout_batches.created_by -> users,
 	// teachers.user_id -> users. Only disputes.booking_id cascades, so the seed
-	// clears every table explicitly deepest-first. (We do not seed payment rows;
-	// those deletes just keep `make seed` working once real payments exist. We DO
-	// seed bookings, sample reviews, and one open dispute.)
+	// clears every table explicitly deepest-first. We seed bookings, sample
+	// reviews, one open dispute, and the payments + payout rows behind the
+	// operator payout dashboard.
 	if err := q.DeleteAllDisputes(ctx); err != nil {
 		log.Fatalf("clear disputes: %v", err)
 	}
@@ -63,6 +64,9 @@ func main() {
 	}
 	if err := q.DeleteAllPayoutLedger(ctx); err != nil {
 		log.Fatalf("clear payout ledger: %v", err)
+	}
+	if err := q.DeleteAllPayoutBatches(ctx); err != nil {
+		log.Fatalf("clear payout batches: %v", err)
 	}
 	if err := q.DeleteAllPaymentEvents(ctx); err != nil {
 		log.Fatalf("clear payment events: %v", err)
@@ -245,12 +249,16 @@ func main() {
 		}
 	}
 
-	// Demo bookings + the one open dispute, so the phase-D operator surfaces
-	// (/v1/admin/bookings, /v1/admin/disputes) have something to show on a fresh
-	// database. Start times are pinned to the hour so repeated seeds stay
+	// Demo bookings + the one open dispute + the settled lessons behind the
+	// payout dashboard, so the phase-D/E operator surfaces (/v1/admin/bookings,
+	// /v1/admin/disputes, /v1/admin/payouts) all have something to show on a
+	// fresh database. Start times are pinned to the hour so repeated seeds stay
 	// deterministic within the hour and never collide with each other.
 	now := time.Now().UTC().Truncate(time.Hour)
 	disputeCount := 0
+	// Bookings whose earning is already disbursed. Collected here because the
+	// batch row they point at can only be written once its totals are known.
+	var paidOut []seedPayoutRow
 	for _, b := range seedBookings {
 		teacherID, ok := teacherIDBySlug[b.TeacherSlug]
 		if !ok {
@@ -278,25 +286,112 @@ func main() {
 		if err != nil {
 			log.Fatalf("seed booking %s/%s: %v", b.TeacherSlug, b.StudentFirstName, err)
 		}
-		if b.Dispute == "" {
+
+		if b.Dispute != "" {
+			if err := q.SeedInsertDispute(ctx, sqlc.SeedInsertDisputeParams{
+				BookingID: bookingID,
+				RaisedBy:  studentID,
+				Reason:    b.Dispute,
+			}); err != nil {
+				log.Fatalf("seed dispute %s/%s: %v", b.TeacherSlug, b.StudentFirstName, err)
+			}
+			disputeCount++
+		}
+
+		if b.Payout == "" {
 			continue
 		}
-		if err := q.SeedInsertDispute(ctx, sqlc.SeedInsertDisputeParams{
-			BookingID: bookingID,
-			RaisedBy:  studentID,
-			Reason:    b.Dispute,
+		// A settled lesson: the captured intent behind the money, then the
+		// ledger row. "paid" rows wait for the batch id (below); "available"
+		// ones stay `held` with a deadline already in the past, which is exactly
+		// how the clearing window reads a cleared earning.
+		if err := q.SeedInsertCapturedPayment(ctx, sqlc.SeedInsertCapturedPaymentParams{
+			BookingID:   bookingID,
+			ProviderRef: pgtype.Text{String: "seed_" + bookingID.String()[:8], Valid: true},
+			AmountMinor: priceMinor,
+			Currency:    string(sqlc.CurrencyCodeUZS),
 		}); err != nil {
-			log.Fatalf("seed dispute %s/%s: %v", b.TeacherSlug, b.StudentFirstName, err)
+			log.Fatalf("seed payment %s/%s: %v", b.TeacherSlug, b.StudentFirstName, err)
 		}
-		disputeCount++
+		row := seedPayoutRow{
+			bookingID:      bookingID,
+			teacherID:      teacherID,
+			amountMinor:    priceMinor,
+			state:          "held",
+			clearedDaysAgo: b.PayoutClearedDaysAgo,
+		}
+		if b.Payout == "paid" {
+			row.state = "paid"
+			paidOut = append(paidOut, row)
+			continue
+		}
+		if err := insertSeedPayoutRow(ctx, q, row, uuid.NullUUID{}); err != nil {
+			log.Fatalf("seed payout ledger %s/%s: %v", b.TeacherSlug, b.StudentFirstName, err)
+		}
+	}
+
+	// The completed payout batch the seeded `paid` rows belong to, run by the
+	// demo admin — so GET /v1/admin/payouts has run history and
+	// GET /v1/admin/payouts/batches/{id} has a batch to open.
+	if len(paidOut) > 0 {
+		var total int64
+		teachers := map[uuid.UUID]struct{}{}
+		for _, r := range paidOut {
+			total += r.amountMinor
+			teachers[r.teacherID] = struct{}{}
+		}
+		batch, err := q.InsertPayoutBatch(ctx, sqlc.InsertPayoutBatchParams{
+			CreatedBy:    adminUser.ID,
+			Status:       "completed",
+			TotalMinor:   total,
+			Currency:     string(sqlc.CurrencyCodeUZS),
+			TeacherCount: int32(len(teachers)),
+			LineCount:    int32(len(paidOut)),
+		})
+		if err != nil {
+			log.Fatalf("seed payout batch: %v", err)
+		}
+		for _, r := range paidOut {
+			if err := insertSeedPayoutRow(ctx, q, r, uuid.NullUUID{UUID: batch.ID, Valid: true}); err != nil {
+				log.Fatalf("seed paid payout ledger row: %v", err)
+			}
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		log.Fatalf("commit: %v", err)
 	}
 
-	log.Printf("seeded %d teachers (+ %d demo accounts, password %q), 3 roles, 1 admin (admin@findtutor.local / \"admin\", superadmin), %d sample reviews, %d bookings, %d open disputes",
-		len(seedTeachers), len(seedTeachers), demoPassword, reviewCount, len(seedBookings), disputeCount)
+	payoutCount := 0
+	for _, b := range seedBookings {
+		if b.Payout != "" {
+			payoutCount++
+		}
+	}
+	log.Printf("seeded %d teachers (+ %d demo accounts, password %q), 3 roles, 1 admin (admin@findtutor.local / \"admin\", superadmin), %d sample reviews, %d bookings, %d open disputes, %d settled lessons (%d already paid out)",
+		len(seedTeachers), len(seedTeachers), demoPassword, reviewCount, len(seedBookings), disputeCount,
+		payoutCount, len(paidOut))
+}
+
+// seedPayoutRow is one payout_ledger row the seed is about to write. `paid`
+// rows are buffered until the batch that settled them exists.
+type seedPayoutRow struct {
+	bookingID      uuid.UUID
+	teacherID      uuid.UUID
+	amountMinor    int64
+	state          string
+	clearedDaysAgo int
+}
+
+func insertSeedPayoutRow(ctx context.Context, q *sqlc.Queries, r seedPayoutRow, batchID uuid.NullUUID) error {
+	return q.SeedInsertPayoutLedgerRow(ctx, sqlc.SeedInsertPayoutLedgerRowParams{
+		BookingID:      r.bookingID,
+		AmountMinor:    r.amountMinor,
+		Currency:       string(sqlc.CurrencyCodeUZS),
+		State:          r.state,
+		ClearedDaysAgo: int32(r.clearedDaysAgo),
+		PayoutBatchID:  batchID,
+	})
 }
 
 // seedRole creates a non-system role with the given permissions.

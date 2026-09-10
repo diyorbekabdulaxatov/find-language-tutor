@@ -22,11 +22,21 @@ const pgUniqueViolation = "23505"
 type repositoryPostgres struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
+	// clearingDays is the payout clearing window (PAYOUTS_CLEARING_DAYS): a
+	// captured lesson's ledger row is written with available_at = now() + this
+	// many days and is not payable until then. Stored per row rather than
+	// recomputed at read time, so changing the setting never moves money that
+	// has already been promised.
+	clearingDays int
 }
 
 // NewPostgresRepository builds a Repository backed by the given pgx pool.
-func NewPostgresRepository(pool *pgxpool.Pool) Repository {
-	return &repositoryPostgres{pool: pool, q: sqlc.New(pool)}
+// clearingDays is the payout clearing window in days (0 = payable immediately).
+func NewPostgresRepository(pool *pgxpool.Pool, clearingDays int) Repository {
+	if clearingDays < 0 {
+		clearingDays = 0
+	}
+	return &repositoryPostgres{pool: pool, q: sqlc.New(pool), clearingDays: clearingDays}
 }
 
 func rowToPayment(r sqlc.Payment) Payment {
@@ -117,6 +127,7 @@ func (r *repositoryPostgres) EarningLines(ctx context.Context, teacherID uuid.UU
 			AmountMinor:        row.AmountMinor,
 			Currency:           row.Currency,
 			State:              LedgerState(row.State),
+			AvailableAt:        row.AvailableAt.Time.UTC(),
 		}
 	}
 	return out, nil
@@ -171,16 +182,16 @@ func (r *repositoryPostgres) ApplyEvent(ctx context.Context, e Event) (bool, err
 		if err := qtx.MarkPaymentCaptured(ctx, p.ID); err != nil {
 			return false, fmt.Errorf("mark captured: %w", err)
 		}
+		// The row opens the clearing window and stays `held`; nothing flips it
+		// to `available` — that state is derived from available_at at read time,
+		// and a payout run (internal/payouts) settles it as `paid`.
 		if err := qtx.InsertLedgerHeld(ctx, sqlc.InsertLedgerHeldParams{
-			ID:          p.BookingID,
-			AmountMinor: p.Amount.AmountMinor,
-			Currency:    p.Amount.Currency,
+			BookingID:    p.BookingID,
+			AmountMinor:  p.Amount.AmountMinor,
+			Currency:     p.Amount.Currency,
+			ClearingDays: int32(r.clearingDays),
 		}); err != nil {
 			return false, fmt.Errorf("insert ledger: %w", err)
-		}
-		// MVP: no clearing window — held clears to available immediately.
-		if err := qtx.MarkLedgerAvailable(ctx, p.BookingID); err != nil {
-			return false, fmt.Errorf("mark ledger available: %w", err)
 		}
 
 	case EventRefunded:

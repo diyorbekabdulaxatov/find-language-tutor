@@ -16,6 +16,13 @@
 // atomically. Neither package imports the other's Go types; only cmd/api and
 // internal/httpapi wire the concrete types together.
 //
+// Boundary with internal/payouts (phase E): this package owns the payout_ledger
+// writes on the money path — a `held` row on capture, opening the clearing
+// window, and a reversal on refund — plus the teacher-facing GET
+// /v1/payments/me read. internal/payouts owns payout_batches and the settlement
+// write that marks rows `paid`. They share the table, not Go types: neither
+// imports the other, and each reads it with its own SQL.
+//
 // Money is integer minor units everywhere. Never float.
 package payments
 
@@ -41,11 +48,20 @@ const (
 )
 
 // LedgerState is the payout_ledger row state.
+//
+// `held` and `available` are two sides of the SAME stored row: a capture writes
+// `held` with an available_at deadline (capture time + the configured clearing
+// window) and nothing ever flips it — `available` is DERIVED by comparing that
+// deadline against now(), in effectiveState below. `paid` is written by a payout
+// batch (internal/payouts), `reversed` by a refund. A stored `available` is a
+// pre-clearing-window row (migration 000011) and reads exactly like a cleared
+// `held` one.
 type LedgerState string
 
 const (
 	LedgerHeld      LedgerState = "held"
 	LedgerAvailable LedgerState = "available"
+	LedgerPaid      LedgerState = "paid"
 	LedgerReversed  LedgerState = "reversed"
 )
 
@@ -74,6 +90,10 @@ type Payment struct {
 
 // EarningLine is one captured (or reversed) lesson in a teacher's earnings
 // summary.
+//
+// State is the STORED ledger state as loaded; summarize rewrites it to the
+// effective one (a `held` row past AvailableAt reads as `available`), so
+// everything above the repository sees the state the teacher is shown.
 type EarningLine struct {
 	BookingID          uuid.UUID
 	StudentDisplayName string
@@ -81,13 +101,17 @@ type EarningLine struct {
 	AmountMinor        int64
 	Currency           string
 	State              LedgerState
+	// AvailableAt is when the clearing window closes and the money becomes
+	// payable. Meaningless once the row is paid or reversed.
+	AvailableAt time.Time
 }
 
 // Earnings is the teacher earnings summary. Totals are derived from the lines.
 type Earnings struct {
-	TotalEarnedMinor int64 // captured, net of reversals (held + available)
-	HeldMinor        int64
-	AvailableMinor   int64
+	TotalEarnedMinor int64 // captured, net of reversals (held + available + paid)
+	HeldMinor        int64 // captured but still inside the clearing window
+	AvailableMinor   int64 // cleared, awaiting the next payout run
+	PaidMinor        int64 // settled by a payout batch
 	Currency         string
 	Lines            []EarningLine
 }
@@ -207,19 +231,41 @@ type PaymentDeclined struct{ Reason string }
 
 func (e PaymentDeclined) Error() string { return "payment failed: " + e.Reason }
 
-// summarize folds ledger lines into the totals the earnings endpoint returns.
-func summarize(lines []EarningLine, fallbackCurrency string) Earnings {
+// effectiveState resolves a stored ledger state against the clearing window:
+// an open row (`held`, or a pre-000011 `available`) reads as `available` once
+// its deadline has passed and `held` until then. `paid` and `reversed` are
+// terminal and pass through.
+func effectiveState(stored LedgerState, availableAt, now time.Time) LedgerState {
+	switch stored {
+	case LedgerPaid, LedgerReversed:
+		return stored
+	default:
+		if availableAt.After(now) {
+			return LedgerHeld
+		}
+		return LedgerAvailable
+	}
+}
+
+// summarize folds ledger lines into the totals the earnings endpoint returns,
+// resolving each line's effective state against now first (see effectiveState).
+func summarize(lines []EarningLine, now time.Time, fallbackCurrency string) Earnings {
 	e := Earnings{Lines: lines, Currency: fallbackCurrency}
-	for _, l := range lines {
+	for i, l := range lines {
 		if e.Currency == "" {
 			e.Currency = l.Currency
 		}
-		switch l.State {
+		state := effectiveState(l.State, l.AvailableAt, now)
+		e.Lines[i].State = state
+		switch state {
 		case LedgerHeld:
 			e.HeldMinor += l.AmountMinor
 			e.TotalEarnedMinor += l.AmountMinor
 		case LedgerAvailable:
 			e.AvailableMinor += l.AmountMinor
+			e.TotalEarnedMinor += l.AmountMinor
+		case LedgerPaid:
+			e.PaidMinor += l.AmountMinor
 			e.TotalEarnedMinor += l.AmountMinor
 		case LedgerReversed:
 			// reversed lessons contribute nothing

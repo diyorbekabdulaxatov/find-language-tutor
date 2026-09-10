@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -90,8 +91,10 @@ func TestHandler_Earnings_OK(t *testing.T) {
 	owner := uuid.New()
 	tid := uuid.New()
 	repo.teacherByOwner[owner] = tid
+	cleared := time.Now().UTC().Add(-24 * time.Hour)
 	repo.earnings[tid] = []EarningLine{
-		{BookingID: uuid.New(), StudentDisplayName: "Aziz", AmountMinor: 9_000_000, Currency: "UZS", State: LedgerAvailable},
+		{BookingID: uuid.New(), StudentDisplayName: "Aziz", AmountMinor: 9_000_000, Currency: "UZS", State: LedgerHeld, AvailableAt: cleared},
+		{BookingID: uuid.New(), StudentDisplayName: "Bek", AmountMinor: 4_000_000, Currency: "UZS", State: LedgerPaid, AvailableAt: cleared},
 	}
 	tm := testTokenManager()
 	r := newTestRouter(s, "", tm)
@@ -102,8 +105,12 @@ func TestHandler_Earnings_OK(t *testing.T) {
 	}
 	var body earningsDTO
 	_ = json.Unmarshal(w.Body.Bytes(), &body)
-	if body.AvailableMinor != 9_000_000 || body.TotalEarnedMinor != 9_000_000 || len(body.Lessons) != 1 {
+	if body.AvailableMinor != 9_000_000 || body.PaidMinor != 4_000_000 ||
+		body.TotalEarnedMinor != 13_000_000 || len(body.Lessons) != 2 {
 		t.Errorf("unexpected body: %+v", body)
+	}
+	if body.Lessons[0].State != string(LedgerAvailable) {
+		t.Errorf("cleared lesson state = %q, want available", body.Lessons[0].State)
 	}
 	if body.Lessons[0].StudentDisplayName != "Aziz" {
 		t.Errorf("student name = %q", body.Lessons[0].StudentDisplayName)

@@ -240,15 +240,30 @@ type PaymentEvent struct {
 	ReceivedAt pgtype.Timestamptz
 }
 
+type PayoutBatch struct {
+	ID           uuid.UUID
+	CreatedBy    uuid.UUID
+	Status       string
+	TotalMinor   int64
+	Currency     string
+	TeacherCount int32
+	LineCount    int32
+	CreatedAt    pgtype.Timestamptz
+	CompletedAt  pgtype.Timestamptz
+}
+
 type PayoutLedger struct {
-	ID          uuid.UUID
-	TeacherID   uuid.UUID
-	BookingID   uuid.UUID
-	AmountMinor int64
-	Currency    string
-	State       string
-	CreatedAt   pgtype.Timestamptz
-	UpdatedAt   pgtype.Timestamptz
+	ID            uuid.UUID
+	TeacherID     uuid.UUID
+	BookingID     uuid.UUID
+	AmountMinor   int64
+	Currency      string
+	State         string
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+	AvailableAt   pgtype.Timestamptz
+	PaidAt        pgtype.Timestamptz
+	PayoutBatchID uuid.NullUUID
 }
 
 type Review struct {

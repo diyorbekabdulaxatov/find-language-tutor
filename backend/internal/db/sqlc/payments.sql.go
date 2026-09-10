@@ -160,22 +160,35 @@ func (q *Queries) GetPaymentByID(ctx context.Context, id uuid.UUID) (Payment, er
 }
 
 const insertLedgerHeld = `-- name: InsertLedgerHeld :exec
-INSERT INTO payout_ledger (teacher_id, booking_id, amount_minor, currency, state)
-SELECT b.teacher_id, b.id, $2, $3, 'held'
+INSERT INTO payout_ledger (teacher_id, booking_id, amount_minor, currency, state, available_at)
+SELECT b.teacher_id, b.id,
+       $1::bigint,
+       $2::text,
+       'held',
+       now() + make_interval(days => $3::int)
 FROM bookings b
-WHERE b.id = $1
+WHERE b.id = $4
 ON CONFLICT (booking_id) DO NOTHING
 `
 
 type InsertLedgerHeldParams struct {
-	ID          uuid.UUID
-	AmountMinor int64
-	Currency    string
+	AmountMinor  int64
+	Currency     string
+	ClearingDays int32
+	BookingID    uuid.UUID
 }
 
-// One row per captured booking. teacher_id is copied from the booking.
+// One row per captured booking. teacher_id is copied from the booking, and
+// available_at opens the clearing window: capture time + PAYOUTS_CLEARING_DAYS.
+// The row stays 'held' until a payout run settles it (phase E) — nothing flips
+// it to 'available'; that state is derived from available_at at read time.
 func (q *Queries) InsertLedgerHeld(ctx context.Context, arg InsertLedgerHeldParams) error {
-	_, err := q.db.Exec(ctx, insertLedgerHeld, arg.ID, arg.AmountMinor, arg.Currency)
+	_, err := q.db.Exec(ctx, insertLedgerHeld,
+		arg.AmountMinor,
+		arg.Currency,
+		arg.ClearingDays,
+		arg.BookingID,
+	)
 	return err
 }
 
@@ -198,7 +211,7 @@ func (q *Queries) InsertPaymentEvent(ctx context.Context, arg InsertPaymentEvent
 }
 
 const listTeacherEarnings = `-- name: ListTeacherEarnings :many
-SELECT pl.booking_id, pl.amount_minor, pl.currency, pl.state,
+SELECT pl.booking_id, pl.amount_minor, pl.currency, pl.state, pl.available_at,
        b.start_at,
        u.display_name AS student_display_name
 FROM payout_ledger pl
@@ -213,6 +226,7 @@ type ListTeacherEarningsRow struct {
 	AmountMinor        int64
 	Currency           string
 	State              string
+	AvailableAt        pgtype.Timestamptz
 	StartAt            pgtype.Timestamptz
 	StudentDisplayName string
 }
@@ -231,6 +245,7 @@ func (q *Queries) ListTeacherEarnings(ctx context.Context, teacherID uuid.UUID) 
 			&i.AmountMinor,
 			&i.Currency,
 			&i.State,
+			&i.AvailableAt,
 			&i.StartAt,
 			&i.StudentDisplayName,
 		); err != nil {
@@ -244,25 +259,14 @@ func (q *Queries) ListTeacherEarnings(ctx context.Context, teacherID uuid.UUID) 
 	return items, nil
 }
 
-const markLedgerAvailable = `-- name: MarkLedgerAvailable :exec
-UPDATE payout_ledger
-SET state = 'available', updated_at = now()
-WHERE booking_id = $1 AND state = 'held'
-`
-
-// MVP: 'held' clears to 'available' immediately (no hold period).
-// TODO(payouts): real clearing window.
-func (q *Queries) MarkLedgerAvailable(ctx context.Context, bookingID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, markLedgerAvailable, bookingID)
-	return err
-}
-
 const markLedgerReversed = `-- name: MarkLedgerReversed :exec
 UPDATE payout_ledger
 SET state = 'reversed', updated_at = now()
-WHERE booking_id = $1 AND state <> 'reversed'
+WHERE booking_id = $1 AND state NOT IN ('reversed', 'paid')
 `
 
+// A refund reverses the teacher's earning — unless a payout batch already paid
+// it out, which cannot be un-paid from here (the money has left the platform).
 func (q *Queries) MarkLedgerReversed(ctx context.Context, bookingID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, markLedgerReversed, bookingID)
 	return err
@@ -320,5 +324,30 @@ WHERE id = $1
 
 func (q *Queries) MarkPaymentRefunded(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, markPaymentRefunded, id)
+	return err
+}
+
+const seedInsertCapturedPayment = `-- name: SeedInsertCapturedPayment :exec
+INSERT INTO payments (booking_id, provider, provider_ref, status, amount_minor,
+                      currency, authorized_at, captured_at)
+VALUES ($1, 'fake', $2, 'captured', $3, $4, now(), now())
+`
+
+type SeedInsertCapturedPaymentParams struct {
+	BookingID   uuid.UUID
+	ProviderRef pgtype.Text
+	AmountMinor int64
+	Currency    string
+}
+
+// Seed-only: a settled payment for a booking the seed created directly in the
+// `completed` state, so the payout ledger row it carries has a matching intent.
+func (q *Queries) SeedInsertCapturedPayment(ctx context.Context, arg SeedInsertCapturedPaymentParams) error {
+	_, err := q.db.Exec(ctx, seedInsertCapturedPayment,
+		arg.BookingID,
+		arg.ProviderRef,
+		arg.AmountMinor,
+		arg.Currency,
+	)
 	return err
 }

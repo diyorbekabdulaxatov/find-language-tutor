@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -178,7 +179,10 @@ func (s *Service) HandleWebhook(ctx context.Context, e Event) (applied bool, err
 	return s.repo.ApplyEvent(ctx, e)
 }
 
-// Earnings returns the teacher-owner's earnings summary.
+// Earnings returns the teacher-owner's earnings summary. The held / available
+// split is resolved against the clearing window at read time (see
+// effectiveState): a captured lesson is `held` until its available_at deadline
+// passes, then `available` until a payout run settles it as `paid`.
 func (s *Service) Earnings(ctx context.Context, ownerID uuid.UUID) (Earnings, error) {
 	tid, ok, err := s.repo.TeacherIDByOwner(ctx, ownerID)
 	if err != nil {
@@ -191,7 +195,7 @@ func (s *Service) Earnings(ctx context.Context, ownerID uuid.UUID) (Earnings, er
 	if err != nil {
 		return Earnings{}, err
 	}
-	return summarize(lines, defaultCurrency), nil
+	return summarize(lines, time.Now().UTC(), defaultCurrency), nil
 }
 
 // defaultCurrency is used for an earnings summary with no lessons yet. The

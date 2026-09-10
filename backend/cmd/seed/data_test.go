@@ -75,6 +75,20 @@ func TestSeedBookingsAreWellFormed(t *testing.T) {
 		if b.Dispute != "" && b.Status != "confirmed" && b.Status != "completed" {
 			t.Errorf("seedBookings %s: a %s booking cannot carry a dispute", b.TeacherSlug, b.Status)
 		}
+		switch b.Payout {
+		case "":
+		case "available", "paid":
+			// Only a completed lesson has been captured, so only a completed
+			// lesson can carry a payout-ledger row.
+			if b.Status != "completed" {
+				t.Errorf("seedBookings %s: a %s booking cannot carry a payout", b.TeacherSlug, b.Status)
+			}
+			if b.PayoutClearedDaysAgo <= 0 {
+				t.Errorf("seedBookings %s: a seeded payout must have cleared in the past", b.TeacherSlug)
+			}
+		default:
+			t.Errorf("seedBookings %s: unknown payout %q", b.TeacherSlug, b.Payout)
+		}
 
 		s := span{start: b.StartOffsetHours * 60, end: b.StartOffsetHours*60 + b.DurationMinutes}
 		for _, prev := range byTeacher[b.TeacherSlug] {

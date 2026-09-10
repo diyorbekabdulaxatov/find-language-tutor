@@ -22,12 +22,14 @@ type Querier interface {
 	AdminBookingStats(ctx context.Context) (AdminBookingStatsRow, error)
 	AdminCountBookings(ctx context.Context, arg AdminCountBookingsParams) (int64, error)
 	AdminCountDisputes(ctx context.Context, status pgtype.Text) (int64, error)
+	AdminCountPayoutBatches(ctx context.Context) (int64, error)
 	AdminCountTeachers(ctx context.Context, arg AdminCountTeachersParams) (int64, error)
 	AdminCountUsers(ctx context.Context, q_ pgtype.Text) (int64, error)
 	// One booking with everything the operator detail view shows: the list-row
 	// fields plus the lifecycle extras, the effective meeting link (the per-booking
 	// override if set, else the teacher's default), and the payment detail.
 	AdminGetBooking(ctx context.Context, id uuid.UUID) (AdminGetBookingRow, error)
+	AdminGetPayoutBatch(ctx context.Context, id uuid.UUID) (AdminGetPayoutBatchRow, error)
 	AdminGetTeacherModeration(ctx context.Context, slug string) (AdminGetTeacherModerationRow, error)
 	AdminGetUser(ctx context.Context, id uuid.UUID) (AdminGetUserRow, error)
 	AdminGetUserTeacherProfile(ctx context.Context, userID uuid.NullUUID) (AdminGetUserTeacherProfileRow, error)
@@ -45,10 +47,27 @@ type Querier interface {
 	// The operator queue: disputes filtered by status (default 'open' in the
 	// service), each with the booking + parties context the list view renders.
 	AdminListDisputes(ctx context.Context, arg AdminListDisputesParams) ([]AdminListDisputesRow, error)
+	// Payouts module (phase E): the operator payout dashboard and the payout run
+	// that settles what teachers are owed.
+	//
+	// The clearing window is derived, not materialised: a ledger row is payable when
+	// its state is still open (`held`, or the legacy `available` written before
+	// migration 000011) AND its available_at deadline has passed. Money is integer
+	// minor units everywhere.
+	// What the platform owes right now, one row per teacher: the sum of the ledger
+	// rows past their clearing deadline and not yet paid out, biggest first.
+	AdminListOwedPayouts(ctx context.Context) ([]AdminListOwedPayoutsRow, error)
+	// One line per teacher paid by a batch, biggest first.
+	AdminListPayoutBatchLines(ctx context.Context, payoutBatchID uuid.NullUUID) ([]AdminListPayoutBatchLinesRow, error)
+	// Past payout runs, newest first.
+	AdminListPayoutBatches(ctx context.Context, arg AdminListPayoutBatchesParams) ([]AdminListPayoutBatchesRow, error)
 	AdminListTeachers(ctx context.Context, arg AdminListTeachersParams) ([]AdminListTeachersRow, error)
 	// The 50 newest bookings the user takes part in, as student or as teacher-owner.
 	AdminListUserBookings(ctx context.Context, studentID uuid.UUID) ([]AdminListUserBookingsRow, error)
 	AdminListUsers(ctx context.Context, arg AdminListUsersParams) ([]AdminListUsersRow, error)
+	// Platform-wide ledger totals: payable now, still inside the clearing window,
+	// and already disbursed. Reversed rows count towards none of them.
+	AdminPayoutTotals(ctx context.Context) (AdminPayoutTotalsRow, error)
 	AdminSetTeacherStatus(ctx context.Context, arg AdminSetTeacherStatusParams) error
 	AdminSetTeacherVerified(ctx context.Context, arg AdminSetTeacherVerifiedParams) error
 	AdminTeacherCounts(ctx context.Context) (AdminTeacherCountsRow, error)
@@ -107,6 +126,10 @@ type Querier interface {
 	// so the seed must clear payment rows (and the event log / ledger that
 	// reference them) before bookings.
 	DeleteAllPayments(ctx context.Context) error
+	// Seed-only. payout_ledger.payout_batch_id references payout_batches with no
+	// ON DELETE CASCADE, so the seed clears the ledger first, and payout_batches
+	// before users (created_by).
+	DeleteAllPayoutBatches(ctx context.Context) error
 	DeleteAllPayoutLedger(ctx context.Context) error
 	// Seed-only. reviews references teachers / users / bookings with no cascade, so
 	// the seed clears it before all three.
@@ -178,11 +201,18 @@ type Querier interface {
 	// disputes_one_open_per_booking, which the repository maps to ErrDisputeExists
 	// (race-safe, never a check-then-insert).
 	InsertDispute(ctx context.Context, arg InsertDisputeParams) (Dispute, error)
-	// One row per captured booking. teacher_id is copied from the booking.
+	// One row per captured booking. teacher_id is copied from the booking, and
+	// available_at opens the clearing window: capture time + PAYOUTS_CLEARING_DAYS.
+	// The row stays 'held' until a payout run settles it (phase E) — nothing flips
+	// it to 'available'; that state is derived from available_at at read time.
 	InsertLedgerHeld(ctx context.Context, arg InsertLedgerHeldParams) error
 	// The idempotency gate. A duplicate event_id raises SQLSTATE 23505, which the
 	// repository treats as "already processed".
 	InsertPaymentEvent(ctx context.Context, arg InsertPaymentEventParams) error
+	// The fake provider settles in-process, so a batch is written already
+	// 'completed' in the same transaction that marks its rows paid. A real
+	// disbursement API would insert 'processing' here and flip it afterwards.
+	InsertPayoutBatch(ctx context.Context, arg InsertPayoutBatchParams) (InsertPayoutBatchRow, error)
 	// A real, booking-tied review. A duplicate for the same booking_id raises
 	// SQLSTATE 23505 on reviews_booking_uniq, which the repository maps to
 	// ErrAlreadyReviewed (race-safe, never a check-then-insert).
@@ -215,10 +245,19 @@ type Querier interface {
 	// Child collections (languages, focus, experience) are loaded separately by the
 	// repository using the returned ids.
 	ListTeachers(ctx context.Context, arg ListTeachersParams) ([]Teacher, error)
-	// MVP: 'held' clears to 'available' immediately (no hold period).
-	// TODO(payouts): real clearing window.
-	MarkLedgerAvailable(ctx context.Context, bookingID uuid.UUID) error
+	// The payout run's row selection, inside the run's transaction.
+	//
+	// FOR UPDATE SKIP LOCKED is the double-run guard: two operators running at the
+	// same time get disjoint row sets — the second skips the rows the first has
+	// locked rather than blocking on them or settling them a second time — and the
+	// loser typically ends up with nothing to pay (409 nothing_to_pay).
+	LockPayablePayoutLedger(ctx context.Context) ([]LockPayablePayoutLedgerRow, error)
+	// A refund reverses the teacher's earning — unless a payout batch already paid
+	// it out, which cannot be un-paid from here (the money has left the platform).
 	MarkLedgerReversed(ctx context.Context, bookingID uuid.UUID) error
+	// Settles exactly the rows the run locked. The state guard is belt-and-braces:
+	// FOR UPDATE SKIP LOCKED already makes the set exclusive.
+	MarkLedgerRowsPaid(ctx context.Context, arg MarkLedgerRowsPaidParams) error
 	MarkPaymentAuthorized(ctx context.Context, arg MarkPaymentAuthorizedParams) error
 	MarkPaymentCaptured(ctx context.Context, id uuid.UUID) error
 	MarkPaymentFailed(ctx context.Context, arg MarkPaymentFailedParams) error
@@ -243,9 +282,17 @@ type Querier interface {
 	// starts at pending_payment). Used to give the admin / dispute demo data
 	// something to point at on a fresh database.
 	SeedInsertBooking(ctx context.Context, arg SeedInsertBookingParams) (uuid.UUID, error)
+	// Seed-only: a settled payment for a booking the seed created directly in the
+	// `completed` state, so the payout ledger row it carries has a matching intent.
+	SeedInsertCapturedPayment(ctx context.Context, arg SeedInsertCapturedPaymentParams) error
 	// Seed-only: an open dispute on a seeded booking so /v1/admin/disputes is not
 	// empty on a fresh database.
 	SeedInsertDispute(ctx context.Context, arg SeedInsertDisputeParams) error
+	// Seed-only: a ledger row for a booking the seed created directly in the
+	// `completed` state, with its clearing deadline placed in the past so the
+	// payout dashboard is not empty on a fresh database. A non-null batch id also
+	// marks the row paid.
+	SeedInsertPayoutLedgerRow(ctx context.Context, arg SeedInsertPayoutLedgerRowParams) error
 	// Seed-only: a booking-less sample review. Does NOT touch the teacher aggregate.
 	SeedInsertReview(ctx context.Context, arg SeedInsertReviewParams) error
 	// Per-booking meeting link override. An empty string clears it (fall back to the

@@ -128,12 +128,16 @@ func (r *fakeRepo) ApplyEvent(_ context.Context, e Event) (bool, error) {
 		p.Status = StatusCaptured
 		p.CapturedAt = &now
 		if _, exists := r.ledger[p.BookingID]; !exists {
-			r.ledger[p.BookingID] = LedgerAvailable // held -> available (MVP: no window)
+			// The row opens the clearing window and stays held; nothing flips
+			// it to available (that state is derived from available_at).
+			r.ledger[p.BookingID] = LedgerHeld
 		}
 	case EventRefunded:
 		p.Status = StatusRefunded
 		p.RefundedAt = &now
-		if _, exists := r.ledger[p.BookingID]; exists {
+		// A row already paid out by a batch cannot be un-paid, matching the
+		// MarkLedgerReversed guard.
+		if st, exists := r.ledger[p.BookingID]; exists && st != LedgerPaid {
 			r.ledger[p.BookingID] = LedgerReversed
 		}
 	case EventFailed:

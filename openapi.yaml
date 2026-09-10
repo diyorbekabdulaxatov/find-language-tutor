@@ -1586,6 +1586,93 @@ paths:
           description: "`already_resolved` — the dispute is no longer open."
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
 
+  /v1/admin/payouts:
+    get:
+      tags: [admin]
+      summary: The payout dashboard
+      description: >
+        Permission: `payouts.view`. What the platform owes teachers right now —
+        every payout-ledger row whose clearing window has closed and that no
+        payout batch has settled — grouped by teacher, biggest first, plus the
+        platform ledger totals and a page of past payout runs (newest first).
+
+        `held_total_minor` is money still inside its clearing window (captured
+        less than `PAYOUTS_CLEARING_DAYS` ago, 7 by default),
+        `available_total_minor` is what the next run would pay, and
+        `paid_total_minor` is what past runs already disbursed. Reversed
+        (refunded) lessons count towards none of them.
+      operationId: adminPayoutDashboard
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 }, description: Pages the batch history. }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: What is owed, the totals, and a page of past runs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPayoutDashboard" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/payouts/batches/{id}:
+    get:
+      tags: [admin]
+      summary: One payout batch
+      description: "Permission: `payouts.view`. The batch plus one line per teacher it paid."
+      operationId: adminGetPayoutBatch
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The batch and its line items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutBatchDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`batch_not_found`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/payouts/run:
+    post:
+      tags: [admin]
+      summary: Run a payout batch
+      description: >
+        Permission: `payouts.run`. Settles EVERY currently available earning: in
+        one transaction it creates a `payout_batches` row and marks each included
+        `payout_ledger` row `paid` against it. No request body — a run always
+        pays everything that has cleared.
+
+        Race-safe against two operators running at once: the transaction selects
+        the payable rows `FOR UPDATE SKIP LOCKED`, so a concurrent run gets a
+        disjoint set instead of paying the same lesson twice, and typically ends
+        up with nothing to pay.
+
+        409 `nothing_to_pay` when no earning has cleared its window — an empty
+        batch is deliberately not recorded, so the history is a log of runs that
+        actually moved money.
+
+        The MVP's payment provider is the in-process fake, which has no
+        disbursement API, so the money-leaves step is logged rather than called.
+      operationId: adminRunPayout
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: The created batch and its line items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutBatchDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: "`nothing_to_pay` — no earning has cleared its holding period."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2204,14 +2291,24 @@ components:
 
     TeacherEarnings:
       type: object
-      required: [total_earned_minor, held_minor, available_minor, currency, lessons]
+      required: [total_earned_minor, held_minor, available_minor, paid_minor, currency, lessons]
       properties:
         total_earned_minor:
           type: integer
           format: int64
-          description: held + available (integer minor units); excludes reversed lessons.
-        held_minor: { type: integer, format: int64 }
-        available_minor: { type: integer, format: int64 }
+          description: held + available + paid (integer minor units); excludes reversed lessons.
+        held_minor:
+          type: integer
+          format: int64
+          description: Captured but still inside the payout clearing window.
+        available_minor:
+          type: integer
+          format: int64
+          description: Cleared the window, awaiting the next payout run.
+        paid_minor:
+          type: integer
+          format: int64
+          description: Already disbursed by a payout batch.
         currency: { type: string }
         lessons:
           type: array
@@ -2219,7 +2316,7 @@ components:
 
     EarningLesson:
       type: object
-      required: [booking_id, student_display_name, start_at, amount_minor, state]
+      required: [booking_id, student_display_name, start_at, amount_minor, state, available_at]
       properties:
         booking_id: { type: string, format: uuid }
         student_display_name: { type: string }
@@ -2227,7 +2324,18 @@ components:
         amount_minor: { type: integer, format: int64 }
         state:
           type: string
-          enum: [held, available, reversed]
+          description: >
+            Effective state, resolved against the clearing window at read time:
+            a captured lesson is `held` until its `available_at` passes, then
+            `available` until a payout run settles it as `paid`. `reversed` is a
+            refunded lesson.
+          enum: [held, available, paid, reversed]
+        available_at:
+          type: string
+          format: date-time
+          description: >
+            RFC3339 UTC. When the clearing window closes and the earning becomes
+            payable. In the past for every state other than `held`.
 
     BookingList:
       type: object
@@ -2704,4 +2812,107 @@ components:
       properties:
         disputes: { type: array, items: { $ref: "#/components/schemas/AdminDisputeRow" } }
         total: { type: integer, description: Total matches, not just this page. }
+
+    # --- Admin payouts (phase E) ---
+
+    PayoutTeacherRef:
+      type: object
+      required: [slug, display_name]
+      properties:
+        slug: { type: string }
+        display_name: { type: string }
+
+    PayoutOperatorRef:
+      description: The account that ran a payout batch.
+      type: object
+      required: [id, display_name]
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+
+    OwedPayoutRow:
+      description: One teacher's currently payable balance — cleared, unpaid ledger rows.
+      type: object
+      required: [teacher, available_minor, currency, oldest_available_at]
+      properties:
+        teacher: { $ref: "#/components/schemas/PayoutTeacherRef" }
+        available_minor: { type: integer, format: int64 }
+        currency: { type: string }
+        oldest_available_at:
+          type: string
+          format: date-time
+          description: RFC3339 UTC. The clearing date of the oldest unpaid earning in this balance.
+
+    PayoutTotals:
+      type: object
+      required: [available_total_minor, held_total_minor, paid_total_minor, currency]
+      properties:
+        available_total_minor:
+          type: integer
+          format: int64
+          description: Payable now — what the next run would settle.
+        held_total_minor:
+          type: integer
+          format: int64
+          description: Still inside the clearing window.
+        paid_total_minor:
+          type: integer
+          format: int64
+          description: Already disbursed by past batches.
+        currency: { type: string }
+
+    PayoutBatch:
+      description: One payout run.
+      type: object
+      required: [id, created_by, status, total_minor, currency, teacher_count, line_count, created_at, completed_at]
+      properties:
+        id: { type: string, format: uuid }
+        created_by: { $ref: "#/components/schemas/PayoutOperatorRef" }
+        status:
+          type: string
+          description: >
+            `completed` for the in-process fake provider, which settles
+            synchronously. `processing` / `failed` are for the real disbursement
+            API that replaces it.
+          enum: [processing, completed, failed]
+        total_minor: { type: integer, format: int64 }
+        currency: { type: string }
+        teacher_count: { type: integer, description: Distinct teachers paid by the batch. }
+        line_count: { type: integer, description: Ledger rows (lessons) the batch covered. }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+
+    PayoutBatchLine:
+      description: One teacher's share of a payout batch.
+      type: object
+      required: [teacher, amount_minor, currency, lesson_count]
+      properties:
+        teacher: { $ref: "#/components/schemas/PayoutTeacherRef" }
+        amount_minor: { type: integer, format: int64 }
+        currency: { type: string }
+        lesson_count: { type: integer }
+
+    PayoutBatchDetail:
+      description: A payout batch plus one line per teacher it paid.
+      allOf:
+        - $ref: "#/components/schemas/PayoutBatch"
+        - type: object
+          required: [lines]
+          properties:
+            lines: { type: array, items: { $ref: "#/components/schemas/PayoutBatchLine" } }
+
+    AdminPayoutDashboard:
+      type: object
+      required: [owed, totals, batches, batches_total]
+      properties:
+        owed:
+          type: array
+          description: What the platform owes right now, one row per teacher, biggest first.
+          items: { $ref: "#/components/schemas/OwedPayoutRow" }
+        totals: { $ref: "#/components/schemas/PayoutTotals" }
+        batches:
+          type: array
+          description: A page of past payout runs, newest first.
+          items: { $ref: "#/components/schemas/PayoutBatch" }
+        batches_total: { type: integer, description: Total past runs, not just this page. }
 

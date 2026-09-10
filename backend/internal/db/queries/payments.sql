@@ -59,27 +59,29 @@ SET status = 'confirmed', updated_at = now()
 WHERE id = $1 AND status = 'pending_payment';
 
 -- name: InsertLedgerHeld :exec
--- One row per captured booking. teacher_id is copied from the booking.
-INSERT INTO payout_ledger (teacher_id, booking_id, amount_minor, currency, state)
-SELECT b.teacher_id, b.id, $2, $3, 'held'
+-- One row per captured booking. teacher_id is copied from the booking, and
+-- available_at opens the clearing window: capture time + PAYOUTS_CLEARING_DAYS.
+-- The row stays 'held' until a payout run settles it (phase E) — nothing flips
+-- it to 'available'; that state is derived from available_at at read time.
+INSERT INTO payout_ledger (teacher_id, booking_id, amount_minor, currency, state, available_at)
+SELECT b.teacher_id, b.id,
+       sqlc.arg('amount_minor')::bigint,
+       sqlc.arg('currency')::text,
+       'held',
+       now() + make_interval(days => sqlc.arg('clearing_days')::int)
 FROM bookings b
-WHERE b.id = $1
+WHERE b.id = sqlc.arg('booking_id')
 ON CONFLICT (booking_id) DO NOTHING;
 
--- name: MarkLedgerAvailable :exec
--- MVP: 'held' clears to 'available' immediately (no hold period).
--- TODO(payouts): real clearing window.
-UPDATE payout_ledger
-SET state = 'available', updated_at = now()
-WHERE booking_id = $1 AND state = 'held';
-
 -- name: MarkLedgerReversed :exec
+-- A refund reverses the teacher's earning — unless a payout batch already paid
+-- it out, which cannot be un-paid from here (the money has left the platform).
 UPDATE payout_ledger
 SET state = 'reversed', updated_at = now()
-WHERE booking_id = $1 AND state <> 'reversed';
+WHERE booking_id = $1 AND state NOT IN ('reversed', 'paid');
 
 -- name: ListTeacherEarnings :many
-SELECT pl.booking_id, pl.amount_minor, pl.currency, pl.state,
+SELECT pl.booking_id, pl.amount_minor, pl.currency, pl.state, pl.available_at,
        b.start_at,
        u.display_name AS student_display_name
 FROM payout_ledger pl
@@ -87,6 +89,13 @@ JOIN bookings b ON b.id = pl.booking_id
 JOIN users    u ON u.id = b.student_id
 WHERE pl.teacher_id = $1
 ORDER BY b.start_at DESC, pl.booking_id;
+
+-- name: SeedInsertCapturedPayment :exec
+-- Seed-only: a settled payment for a booking the seed created directly in the
+-- `completed` state, so the payout ledger row it carries has a matching intent.
+INSERT INTO payments (booking_id, provider, provider_ref, status, amount_minor,
+                      currency, authorized_at, captured_at)
+VALUES ($1, 'fake', $2, 'captured', $3, $4, now(), now());
 
 -- name: DeleteAllPayments :exec
 -- Seed-only. payments.booking_id references bookings with no ON DELETE CASCADE,

@@ -7,6 +7,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,6 +46,13 @@ type Config struct {
 	// header; empty disables verification (dev only).
 	PaymentsProvider      string
 	PaymentsWebhookSecret string
+
+	// PayoutsClearingDays is the payout clearing window: how many days after a
+	// lesson is captured its earning stays `held` before an operator payout run
+	// can pay it out. Stamped onto each payout_ledger row as `available_at` when
+	// the row is written, so a change never moves money already promised.
+	// PAYOUTS_CLEARING_DAYS, default 7; 0 makes earnings payable immediately.
+	PayoutsClearingDays int
 
 	// Email. ResendAPIKey selects the transactional-email backend: when empty
 	// (the dev default) a logging emailer is used; when set, mail is POSTed to
@@ -86,6 +94,7 @@ func Load() (*Config, error) {
 
 		PaymentsProvider:      getenv("PAYMENTS_PROVIDER", "fake"),
 		PaymentsWebhookSecret: os.Getenv("PAYMENTS_WEBHOOK_SECRET"),
+		PayoutsClearingDays:   getenvInt("PAYOUTS_CLEARING_DAYS", 7),
 
 		ResendAPIKey: os.Getenv("RESEND_API_KEY"),
 		EmailFrom:    getenv("EMAIL_FROM", "findtutor <noreply@findtutor.local>"),
@@ -123,6 +132,20 @@ func getenvBool(key string, fallback bool) bool {
 	default:
 		return false
 	}
+}
+
+// getenvInt reads a non-negative integer; anything unparseable or negative
+// falls back.
+func getenvInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return fallback
+	}
+	return n
 }
 
 func getenvDuration(key string, fallback time.Duration) time.Duration {

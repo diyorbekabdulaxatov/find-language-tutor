@@ -25,14 +25,16 @@ type Repository interface {
 	// was already handled, and ApplyEvent returns applied=false, err=nil
 	// without touching any other row. Otherwise it applies the type-specific
 	// state change (payment status + timestamps, plus the guarded booking
-	// confirm on authorize and the payout-ledger write on capture / reverse on
-	// refund) and commits, returning applied=true.
+	// confirm on authorize, the `held` payout-ledger row opening the clearing
+	// window on capture, and its reversal on refund) and commits, returning
+	// applied=true.
 	ApplyEvent(ctx context.Context, e Event) (applied bool, err error)
 
 	// TeacherIDByOwner resolves the teacher profile owned by an account.
 	TeacherIDByOwner(ctx context.Context, ownerID uuid.UUID) (id uuid.UUID, ok bool, err error)
 
 	// EarningLines returns every payout-ledger line for a teacher, newest
-	// lesson first.
+	// lesson first, with the STORED state and the clearing deadline — the
+	// effective held/available split is resolved above the repository.
 	EarningLines(ctx context.Context, teacherID uuid.UUID) ([]EarningLine, error)
 }

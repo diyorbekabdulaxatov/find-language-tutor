@@ -3,6 +3,7 @@ package payments
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -71,8 +72,8 @@ func TestService_Capture_WritesLedger(t *testing.T) {
 	if p.Status != StatusCaptured {
 		t.Errorf("status = %s, want captured", p.Status)
 	}
-	if repo.ledger[bid] != LedgerAvailable {
-		t.Errorf("ledger[%s] = %q, want available", bid, repo.ledger[bid])
+	if repo.ledger[bid] != LedgerHeld {
+		t.Errorf("ledger[%s] = %q, want held (the clearing window just opened)", bid, repo.ledger[bid])
 	}
 }
 
@@ -91,7 +92,7 @@ func TestService_Capture_TransientFailure(t *testing.T) {
 	if _, err := s.Capture(ctx(), bid); err != nil {
 		t.Fatalf("retry capture: %v", err)
 	}
-	if repo.ledger[bid] != LedgerAvailable {
+	if repo.ledger[bid] != LedgerHeld {
 		t.Errorf("ledger not written after retry: %q", repo.ledger[bid])
 	}
 }
@@ -153,16 +154,25 @@ func TestService_HandleWebhook_Idempotent(t *testing.T) {
 	}
 }
 
+// TestService_Earnings_Math covers the clearing-window split: a `held` row is
+// only counted as held while its available_at deadline is in the future, and it
+// reads as available once the deadline has passed. `paid` lands in its own
+// bucket but still counts as earned; `reversed` counts nowhere.
 func TestService_Earnings_Math(t *testing.T) {
 	s, repo := newTestService()
 	owner := uuid.New()
 	tid := uuid.New()
 	repo.teacherByOwner[owner] = tid
+
+	future := time.Now().UTC().Add(72 * time.Hour) // still inside the window
+	past := time.Now().UTC().Add(-24 * time.Hour)  // cleared
 	repo.earnings[tid] = []EarningLine{
-		{BookingID: uuid.New(), AmountMinor: 5_000_000, Currency: "UZS", State: LedgerHeld},
-		{BookingID: uuid.New(), AmountMinor: 7_000_000, Currency: "UZS", State: LedgerAvailable},
-		{BookingID: uuid.New(), AmountMinor: 9_000_000, Currency: "UZS", State: LedgerAvailable},
-		{BookingID: uuid.New(), AmountMinor: 3_000_000, Currency: "UZS", State: LedgerReversed},
+		{BookingID: uuid.New(), AmountMinor: 5_000_000, Currency: "UZS", State: LedgerHeld, AvailableAt: future},
+		{BookingID: uuid.New(), AmountMinor: 7_000_000, Currency: "UZS", State: LedgerHeld, AvailableAt: past},
+		// A pre-000011 row: stored `available`, read exactly like a cleared one.
+		{BookingID: uuid.New(), AmountMinor: 9_000_000, Currency: "UZS", State: LedgerAvailable, AvailableAt: past},
+		{BookingID: uuid.New(), AmountMinor: 4_000_000, Currency: "UZS", State: LedgerPaid, AvailableAt: past},
+		{BookingID: uuid.New(), AmountMinor: 3_000_000, Currency: "UZS", State: LedgerReversed, AvailableAt: past},
 	}
 
 	e, err := s.Earnings(ctx(), owner)
@@ -175,11 +185,49 @@ func TestService_Earnings_Math(t *testing.T) {
 	if e.AvailableMinor != 16_000_000 {
 		t.Errorf("available = %d, want 16_000_000", e.AvailableMinor)
 	}
-	if e.TotalEarnedMinor != 21_000_000 {
-		t.Errorf("total = %d, want 21_000_000 (reversed excluded)", e.TotalEarnedMinor)
+	if e.PaidMinor != 4_000_000 {
+		t.Errorf("paid = %d, want 4_000_000", e.PaidMinor)
 	}
-	if e.Currency != "UZS" || len(e.Lines) != 4 {
+	if e.TotalEarnedMinor != 25_000_000 {
+		t.Errorf("total = %d, want 25_000_000 (reversed excluded)", e.TotalEarnedMinor)
+	}
+	if e.Currency != "UZS" || len(e.Lines) != 5 {
 		t.Errorf("currency=%q lines=%d", e.Currency, len(e.Lines))
+	}
+	// The lines carry the EFFECTIVE state, not the stored one.
+	if e.Lines[1].State != LedgerAvailable {
+		t.Errorf("cleared held line state = %q, want available", e.Lines[1].State)
+	}
+	if e.Lines[0].State != LedgerHeld {
+		t.Errorf("uncleared line state = %q, want held", e.Lines[0].State)
+	}
+}
+
+// TestService_Capture_HoldsUntilClearingWindow is the end-to-end version: a
+// freshly captured lesson is held money, not available money.
+func TestService_Capture_HoldsUntilClearingWindow(t *testing.T) {
+	s, repo := newTestService()
+	owner, tid, bid := uuid.New(), uuid.New(), uuid.New()
+	repo.teacherByOwner[owner] = tid
+	repo.seedPayment(bid, StatusRequiresPayment, 9_000_000, "UZS")
+	if _, err := s.Authorize(ctx(), bid, "pm_ok"); err != nil {
+		t.Fatalf("authorize: %v", err)
+	}
+	if _, err := s.Capture(ctx(), bid); err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	// The repository would stamp available_at = now + PAYOUTS_CLEARING_DAYS.
+	repo.earnings[tid] = []EarningLine{{
+		BookingID: bid, AmountMinor: 9_000_000, Currency: "UZS",
+		State: repo.ledger[bid], AvailableAt: time.Now().UTC().Add(7 * 24 * time.Hour),
+	}}
+
+	e, err := s.Earnings(ctx(), owner)
+	if err != nil {
+		t.Fatalf("earnings: %v", err)
+	}
+	if e.HeldMinor != 9_000_000 || e.AvailableMinor != 0 {
+		t.Errorf("held=%d available=%d, want 9_000_000 / 0", e.HeldMinor, e.AvailableMinor)
 	}
 }
 
