@@ -76,6 +76,50 @@ export async function fetchCurrentUser(): Promise<AuthUser> {
   return fromWireUser(data);
 }
 
+/* -------------------------- account recovery --------------------------- */
+
+/** Ask for a password-reset link. Resolves regardless of whether the email is
+ *  registered — the backend answers 202 either way. */
+export async function requestPasswordReset(email: string): Promise<void> {
+  await browserApi.POST("/v1/auth/forgot-password", { body: { email } });
+}
+
+/** Redeem a reset token and set a new password. Throws AuthError on a bad
+ *  token (`invalid_token`) or a weak password. */
+export async function resetPassword(
+  token: string,
+  password: string,
+): Promise<void> {
+  const { error, response } = await browserApi.POST("/v1/auth/reset-password", {
+    body: { token, password },
+  });
+  if (error) {
+    throw toAuthError(error, response.status, "Could not reset your password.");
+  }
+}
+
+/** Redeem an email-verification token. Throws AuthError (`invalid_token`) on a
+ *  bad or expired link. */
+export async function verifyEmail(token: string): Promise<void> {
+  const { error, response } = await browserApi.POST("/v1/auth/verify-email", {
+    body: { token },
+  });
+  if (error) {
+    throw toAuthError(error, response.status, "Could not verify your email.");
+  }
+}
+
+/** Re-send the verification email to the signed-in account. */
+export async function resendVerification(): Promise<void> {
+  const { error, response } = await browserApi.POST(
+    "/v1/auth/resend-verification",
+    {},
+  );
+  if (error) {
+    throw toAuthError(error, response.status, "Could not send the email.");
+  }
+}
+
 /** Update the signed-in user's own account (currently just the display name). */
 export async function updateProfile(input: {
   displayName: string;

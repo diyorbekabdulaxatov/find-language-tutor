@@ -7,13 +7,12 @@ type WireUser = components["schemas"]["AuthUser"];
 type WireAuthResponse = components["schemas"]["AuthResponse"];
 
 export function fromWireUser(u: WireUser): AuthUser {
-  // `permissions` lands with the RBAC schema regen; default to [] until then.
-  const permissions = (u as { permissions?: string[] }).permissions ?? [];
   return {
     id: u.id,
     email: u.email,
     displayName: u.display_name,
-    permissions,
+    emailVerified: u.email_verified,
+    permissions: u.permissions ?? [],
   };
 }
 
