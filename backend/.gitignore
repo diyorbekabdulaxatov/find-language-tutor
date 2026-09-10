@@ -5,6 +5,9 @@
 # Local env
 .env
 
+# Local blob store (uploaded resource files in dev)
+/.localdata/
+
 # Test / coverage
 *.out
 coverage.*
