@@ -374,6 +374,12 @@ func main() {
 		}
 	}
 
+	// Every demo account counts as email-verified so the "confirm your email"
+	// banner is quiet in the seeded app.
+	if err := q.SeedMarkEmailVerified(ctx); err != nil {
+		log.Fatalf("mark demo accounts verified: %v", err)
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		log.Fatalf("commit: %v", err)
 	}

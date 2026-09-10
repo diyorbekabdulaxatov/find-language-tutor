@@ -73,19 +73,23 @@ func (m *TokenManager) ParseAccess(tokenString string) (*AccessClaims, error) {
 	return &claims, nil
 }
 
-// newRefreshToken returns a fresh opaque token (base64url, no padding) and its
-// SHA-256 hash. Only the hash is persisted.
-func newRefreshToken() (raw string, hash []byte, err error) {
+// newOpaqueToken returns a fresh random token (base64url, no padding) and its
+// SHA-256 hash. Only the hash is ever persisted; the raw value lives in a cookie
+// (refresh tokens) or an emailed link (recovery tokens).
+func newOpaqueToken() (raw string, hash []byte, err error) {
 	b := make([]byte, refreshTokenBytes)
 	if _, err := rand.Read(b); err != nil {
-		return "", nil, fmt.Errorf("auth: read refresh token: %w", err)
+		return "", nil, fmt.Errorf("auth: read token: %w", err)
 	}
 	raw = base64.RawURLEncoding.EncodeToString(b)
-	return raw, hashRefreshToken(raw), nil
+	return raw, hashOpaqueToken(raw), nil
 }
 
-// hashRefreshToken is the one-way function from a raw token to its stored form.
-func hashRefreshToken(raw string) []byte {
+// hashOpaqueToken is the one-way function from a raw token to its stored form.
+func hashOpaqueToken(raw string) []byte {
 	sum := sha256.Sum256([]byte(raw))
 	return sum[:]
 }
+
+func newRefreshToken() (raw string, hash []byte, err error) { return newOpaqueToken() }
+func hashRefreshToken(raw string) []byte                    { return hashOpaqueToken(raw) }

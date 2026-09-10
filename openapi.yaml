@@ -194,6 +194,90 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /v1/auth/forgot-password:
+    post:
+      tags: [auth]
+      summary: Request a password-reset link
+      description: >
+        Mails a single-use reset link (valid 1 hour) if the address has an
+        account. Always returns 202 — the response is identical for a registered
+        and an unregistered address, so it can't be used to probe which emails
+        exist. A link is not re-issued within 60 seconds of the last one.
+      operationId: forgotPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "202": { description: If the address is registered, a reset link has been sent. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /v1/auth/reset-password:
+    post:
+      tags: [auth]
+      summary: Set a new password with a reset token
+      description: >
+        Redeems the token from the emailed link and sets a new password. The
+        token is consumed and every session for the account is revoked, so the
+        user must sign in again everywhere.
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string, minLength: 8 }
+      responses:
+        "204": { description: Password changed. }
+        "400":
+          description: "`invalid_token` (unknown / used / expired) or a validation error (weak password)."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/auth/verify-email:
+    post:
+      tags: [auth]
+      summary: Confirm an email address
+      description: Redeems the token from the verification link (valid 24 hours). Single-use.
+      operationId: verifyEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "204": { description: Email confirmed. }
+        "400":
+          description: "`invalid_token` — unknown, already used, or expired."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/auth/resend-verification:
+    post:
+      tags: [auth]
+      summary: Re-send the verification email
+      description: Issues a fresh verification link for the signed-in account (subject to the 60-second cooldown).
+      operationId: resendVerification
+      security:
+        - bearerAuth: []
+      responses:
+        "202": { description: A new verification link has been sent (or one was sent recently). }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: "`already_verified` — the address is already confirmed."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
   /healthz:
     get:
       tags: [system]
@@ -1872,11 +1956,17 @@ components:
 
     AuthUser:
       type: object
-      required: [id, email, display_name, permissions]
+      required: [id, email, display_name, email_verified, permissions]
       properties:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
         display_name: { type: string }
+        email_verified:
+          type: boolean
+          description: >
+            False until the account confirms its address via the link mailed on
+            registration. Nothing is blocked on this yet; the frontend shows a
+            nudge banner.
         permissions:
           type: array
           items: { type: string }

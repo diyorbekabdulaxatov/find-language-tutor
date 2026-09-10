@@ -122,6 +122,45 @@ func BookingCancelledContent(li LessonInfo, refunded bool) (subject, html, text 
 	return subject, html, text
 }
 
+// --- account recovery ---
+
+// PasswordResetContent is the "reset your password" email.
+func PasswordResetContent(name, resetURL string) (subject, html, text string) {
+	subject = "Reset your FindTutor password"
+	lines := []string{
+		greetingLine(name),
+		"",
+		"We got a request to reset your FindTutor password. Open this link to choose a new one:",
+		resetURL,
+		"",
+		"The link expires in 1 hour and can be used once. If you didn't ask for this, you can ignore this email — your password won't change.",
+	}
+	html, text = wrap(subject, lines)
+	return subject, html, text
+}
+
+// EmailVerificationContent is the "confirm your address" email.
+func EmailVerificationContent(name, verifyURL string) (subject, html, text string) {
+	subject = "Confirm your FindTutor email"
+	lines := []string{
+		greetingLine(name),
+		"",
+		"Confirm your email address to finish setting up your FindTutor account:",
+		verifyURL,
+		"",
+		"The link expires in 24 hours.",
+	}
+	html, text = wrap(subject, lines)
+	return subject, html, text
+}
+
+func greetingLine(name string) string {
+	if strings.TrimSpace(name) == "" {
+		return "Hi,"
+	}
+	return "Hi " + name + ","
+}
+
 // LessonReminderContent is the single reminder template; kind sets the wording.
 func LessonReminderContent(li LessonInfo, kind ReminderKind) (subject, html, text string) {
 	subject = fmt.Sprintf("Reminder: lesson with %s %s", li.TeacherName, kind.phrase())

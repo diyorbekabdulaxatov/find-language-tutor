@@ -3,6 +3,7 @@ import { Bricolage_Grotesque, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/features/auth/auth-context";
+import { EmailVerificationBanner } from "@/features/auth/components/email-verification-banner";
 import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
 
@@ -52,6 +53,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           <AuthProvider>
             <SiteHeader />
+            <EmailVerificationBanner />
             <main className="flex-1">{children}</main>
             <SiteFooter />
           </AuthProvider>

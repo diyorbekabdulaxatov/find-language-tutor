@@ -46,6 +46,11 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
 	rg.POST("/logout", h.Logout)
 	rg.GET("/me", RequireAuth(h.tokens), h.Me)
 	rg.PATCH("/me", RequireAuth(h.tokens), h.UpdateMe)
+
+	rg.POST("/forgot-password", h.ForgotPassword)
+	rg.POST("/reset-password", h.ResetPassword)
+	rg.POST("/verify-email", h.VerifyEmail)
+	rg.POST("/resend-verification", RequireAuth(h.tokens), h.ResendVerification)
 }
 
 // Register handles POST /v1/auth/register.
@@ -165,6 +170,91 @@ func (h *Handler) UpdateMe(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toUserDTO(user, h.svc.PermissionsFor(c.Request.Context(), uid)))
+}
+
+// ForgotPassword handles POST /v1/auth/forgot-password. Always 202 — the
+// response never reveals whether the address has an account.
+func (h *Handler) ForgotPassword(c *gin.Context) {
+	var req forgotPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		web.BadRequest(c, `Request body must be {"email": "..."}.`)
+		return
+	}
+	if err := h.svc.RequestPasswordReset(c.Request.Context(), req.Email); err != nil {
+		h.logger.Error("forgot password", slog.Any("error", err))
+		web.Internal(c)
+		return
+	}
+	c.Status(http.StatusAccepted)
+}
+
+// ResetPassword handles POST /v1/auth/reset-password. 204 on success.
+func (h *Handler) ResetPassword(c *gin.Context) {
+	var req resetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		web.BadRequest(c, `Request body must be {"token": "...", "password": "..."}.`)
+		return
+	}
+	err := h.svc.ResetPassword(c.Request.Context(), req.Token, req.Password)
+	if h.renderRecoveryError(c, err, "reset password") {
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// VerifyEmail handles POST /v1/auth/verify-email. 204 on success.
+func (h *Handler) VerifyEmail(c *gin.Context) {
+	var req tokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		web.BadRequest(c, `Request body must be {"token": "..."}.`)
+		return
+	}
+	err := h.svc.VerifyEmail(c.Request.Context(), req.Token)
+	if h.renderRecoveryError(c, err, "verify email") {
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// ResendVerification handles POST /v1/auth/resend-verification (RequireAuth).
+func (h *Handler) ResendVerification(c *gin.Context) {
+	uid, ok := UserID(c)
+	if !ok {
+		web.Unauthorized(c, "A valid access token is required.")
+		return
+	}
+	err := h.svc.ResendEmailVerification(c.Request.Context(), uid)
+	switch {
+	case errors.Is(err, ErrAlreadyVerified):
+		web.WriteError(c, http.StatusConflict, "already_verified", "Your email is already verified.")
+		return
+	case errors.Is(err, ErrUserNotFound):
+		web.Unauthorized(c, "Account no longer exists.")
+		return
+	case err != nil:
+		h.logger.Error("resend verification", slog.Any("error", err))
+		web.Internal(c)
+		return
+	}
+	c.Status(http.StatusAccepted)
+}
+
+// renderRecoveryError maps the reset / verify errors. Returns true if it wrote a
+// response.
+func (h *Handler) renderRecoveryError(c *gin.Context, err error, op string) bool {
+	var ve ValidationError
+	switch {
+	case err == nil:
+		return false
+	case errors.As(err, &ve):
+		web.BadRequest(c, ve.Error())
+	case errors.Is(err, ErrInvalidToken):
+		web.WriteError(c, http.StatusBadRequest, "invalid_token", "This link is invalid or has expired. Request a new one.")
+	default:
+		h.logger.Error(op, slog.Any("error", err))
+		web.Internal(c)
+	}
+	return true
 }
 
 // renderAuthError maps a service error to its HTTP response. It returns true if

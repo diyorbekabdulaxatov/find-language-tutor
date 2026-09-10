@@ -12,6 +12,61 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const consumeAuthToken = `-- name: ConsumeAuthToken :exec
+UPDATE auth_tokens SET consumed_at = now()
+WHERE token_sha256 = $1 AND consumed_at IS NULL
+`
+
+// Spend a token by its hash (the redeem flows already hold the hash, not the id).
+func (q *Queries) ConsumeAuthToken(ctx context.Context, tokenSha256 []byte) error {
+	_, err := q.db.Exec(ctx, consumeAuthToken, tokenSha256)
+	return err
+}
+
+const consumeUserAuthTokens = `-- name: ConsumeUserAuthTokens :exec
+UPDATE auth_tokens SET consumed_at = now()
+WHERE user_id = $1 AND purpose = $2 AND consumed_at IS NULL
+`
+
+type ConsumeUserAuthTokensParams struct {
+	UserID  uuid.UUID
+	Purpose string
+}
+
+// Invalidate a user's outstanding tokens of a purpose before issuing a new one,
+// so only the newest link works.
+func (q *Queries) ConsumeUserAuthTokens(ctx context.Context, arg ConsumeUserAuthTokensParams) error {
+	_, err := q.db.Exec(ctx, consumeUserAuthTokens, arg.UserID, arg.Purpose)
+	return err
+}
+
+const createAuthToken = `-- name: CreateAuthToken :one
+
+INSERT INTO auth_tokens (user_id, purpose, token_sha256, expires_at)
+VALUES ($1, $2, $3, $4)
+RETURNING id
+`
+
+type CreateAuthTokenParams struct {
+	UserID      uuid.UUID
+	Purpose     string
+	TokenSha256 []byte
+	ExpiresAt   pgtype.Timestamptz
+}
+
+// --- account-recovery link tokens (migration 000013) ---
+func (q *Queries) CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, createAuthToken,
+		arg.UserID,
+		arg.Purpose,
+		arg.TokenSha256,
+		arg.ExpiresAt,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const createSession = `-- name: CreateSession :one
 INSERT INTO sessions (user_id, refresh_token_hash, expires_at, user_agent)
 VALUES ($1, $2, $3, $4)
@@ -50,7 +105,7 @@ const createUser = `-- name: CreateUser :one
 
 INSERT INTO users (email, password_hash, display_name)
 VALUES ($1, $2, $3)
-RETURNING id, email, password_hash, display_name, created_at, updated_at
+RETURNING id, email, password_hash, display_name, email_verified_at, created_at, updated_at
 `
 
 type CreateUserParams struct {
@@ -59,15 +114,26 @@ type CreateUserParams struct {
 	DisplayName  string
 }
 
+type CreateUserRow struct {
+	ID              uuid.UUID
+	Email           string
+	PasswordHash    string
+	DisplayName     string
+	EmailVerifiedAt pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+}
+
 // Auth module: user accounts and refresh-token sessions.
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
 	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.PasswordHash, arg.DisplayName)
-	var i User
+	var i CreateUserRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
 		&i.PasswordHash,
 		&i.DisplayName,
+		&i.EmailVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -83,6 +149,50 @@ DELETE FROM users
 func (q *Queries) DeleteAllUsers(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, deleteAllUsers)
 	return err
+}
+
+const getAuthTokenUser = `-- name: GetAuthTokenUser :one
+SELECT user_id FROM auth_tokens WHERE token_sha256 = $1 AND purpose = $2
+`
+
+type GetAuthTokenUserParams struct {
+	TokenSha256 []byte
+	Purpose     string
+}
+
+// Whose token is this? Ignores consumed / expired — used to recognise a
+// just-redeemed verification token on a double-submit.
+func (q *Queries) GetAuthTokenUser(ctx context.Context, arg GetAuthTokenUserParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getAuthTokenUser, arg.TokenSha256, arg.Purpose)
+	var user_id uuid.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
+const getLiveAuthToken = `-- name: GetLiveAuthToken :one
+SELECT id, user_id
+FROM auth_tokens
+WHERE token_sha256 = $1 AND purpose = $2
+  AND consumed_at IS NULL AND expires_at > now()
+`
+
+type GetLiveAuthTokenParams struct {
+	TokenSha256 []byte
+	Purpose     string
+}
+
+type GetLiveAuthTokenRow struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+// A token that can still be redeemed: matches the hash + purpose, not consumed,
+// not expired.
+func (q *Queries) GetLiveAuthToken(ctx context.Context, arg GetLiveAuthTokenParams) (GetLiveAuthTokenRow, error) {
+	row := q.db.QueryRow(ctx, getLiveAuthToken, arg.TokenSha256, arg.Purpose)
+	var i GetLiveAuthTokenRow
+	err := row.Scan(&i.ID, &i.UserID)
+	return i, err
 }
 
 const getSessionByRefreshHash = `-- name: GetSessionByRefreshHash :one
@@ -108,19 +218,30 @@ func (q *Queries) GetSessionByRefreshHash(ctx context.Context, refreshTokenHash 
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, display_name, created_at, updated_at
+SELECT id, email, password_hash, display_name, email_verified_at, created_at, updated_at
 FROM users
 WHERE email = $1
 `
 
-func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
+type GetUserByEmailRow struct {
+	ID              uuid.UUID
+	Email           string
+	PasswordHash    string
+	DisplayName     string
+	EmailVerifiedAt pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+}
+
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error) {
 	row := q.db.QueryRow(ctx, getUserByEmail, email)
-	var i User
+	var i GetUserByEmailRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
 		&i.PasswordHash,
 		&i.DisplayName,
+		&i.EmailVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -128,23 +249,66 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, display_name, created_at, updated_at
+SELECT id, email, password_hash, display_name, email_verified_at, created_at, updated_at
 FROM users
 WHERE id = $1
 `
 
-func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
+type GetUserByIDRow struct {
+	ID              uuid.UUID
+	Email           string
+	PasswordHash    string
+	DisplayName     string
+	EmailVerifiedAt pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+}
+
+func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
-	var i User
+	var i GetUserByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
 		&i.PasswordHash,
 		&i.DisplayName,
+		&i.EmailVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const latestAuthTokenAt = `-- name: LatestAuthTokenAt :one
+SELECT coalesce(max(created_at), 'epoch'::timestamptz)::timestamptz AS latest
+FROM auth_tokens
+WHERE user_id = $1 AND purpose = $2 AND consumed_at IS NULL
+`
+
+type LatestAuthTokenAtParams struct {
+	UserID  uuid.UUID
+	Purpose string
+}
+
+// The most recent still-live token of a purpose for a user — drives the "one was
+// just sent, don't send another" cooldown. No row -> zero time.
+func (q *Queries) LatestAuthTokenAt(ctx context.Context, arg LatestAuthTokenAtParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, latestAuthTokenAt, arg.UserID, arg.Purpose)
+	var latest pgtype.Timestamptz
+	err := row.Scan(&latest)
+	return latest, err
+}
+
+const markUserEmailVerified = `-- name: MarkUserEmailVerified :exec
+UPDATE users
+SET email_verified_at = coalesce(email_verified_at, now()), updated_at = now()
+WHERE id = $1
+`
+
+// Idempotent: keeps the first verification time if the row is already verified.
+func (q *Queries) MarkUserEmailVerified(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, markUserEmailVerified, id)
+	return err
 }
 
 const revokeAllUserSessions = `-- name: RevokeAllUserSessions :exec
@@ -177,11 +341,39 @@ func (q *Queries) RevokeSession(ctx context.Context, arg RevokeSessionParams) er
 	return err
 }
 
+const seedMarkEmailVerified = `-- name: SeedMarkEmailVerified :exec
+UPDATE users SET email_verified_at = now() WHERE email_verified_at IS NULL
+`
+
+// Seed-only: stamp every demo account verified so the nudge banner is quiet.
+func (q *Queries) SeedMarkEmailVerified(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, seedMarkEmailVerified)
+	return err
+}
+
+const setUserPassword = `-- name: SetUserPassword :exec
+UPDATE users
+SET password_hash = $2, updated_at = now()
+WHERE id = $1
+`
+
+type SetUserPasswordParams struct {
+	ID           uuid.UUID
+	PasswordHash string
+}
+
+// Password reset: replace the hash and bump updated_at. The caller also revokes
+// every session in the same transaction.
+func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error {
+	_, err := q.db.Exec(ctx, setUserPassword, arg.ID, arg.PasswordHash)
+	return err
+}
+
 const updateUser = `-- name: UpdateUser :one
 UPDATE users
 SET display_name = $2, updated_at = now()
 WHERE id = $1
-RETURNING id, email, password_hash, display_name, created_at, updated_at
+RETURNING id, email, password_hash, display_name, email_verified_at, created_at, updated_at
 `
 
 type UpdateUserParams struct {
@@ -189,16 +381,27 @@ type UpdateUserParams struct {
 	DisplayName string
 }
 
+type UpdateUserRow struct {
+	ID              uuid.UUID
+	Email           string
+	PasswordHash    string
+	DisplayName     string
+	EmailVerifiedAt pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+}
+
 // Edit the caller's own account. Email is immutable here (changing it needs a
 // verification flow that does not exist yet).
-func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error) {
 	row := q.db.QueryRow(ctx, updateUser, arg.ID, arg.DisplayName)
-	var i User
+	var i UpdateUserRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
 		&i.PasswordHash,
 		&i.DisplayName,
+		&i.EmailVerifiedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
