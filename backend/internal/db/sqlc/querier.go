@@ -173,6 +173,9 @@ type Querier interface {
 	DeleteTeacherExperience(ctx context.Context, teacherID uuid.UUID) error
 	DeleteTeacherFocus(ctx context.Context, teacherID uuid.UUID) error
 	DeleteTeacherLanguages(ctx context.Context, teacherID uuid.UUID) error
+	// Whose token is this? Ignores consumed / expired — used to recognise a
+	// just-redeemed verification token on a double-submit.
+	GetAuthTokenUser(ctx context.Context, arg GetAuthTokenUserParams) (uuid.UUID, error)
 	GetBookingByID(ctx context.Context, id uuid.UUID) (GetBookingByIDRow, error)
 	// Booking module: concrete scheduled lessons. Times are UTC timestamptz. The
 	// recurring weekly availability is read via the availability queries; here we

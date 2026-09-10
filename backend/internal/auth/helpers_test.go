@@ -203,6 +203,16 @@ func (r *fakeRepo) LiveAuthToken(_ context.Context, tokenHash []byte, purpose To
 	return t.userID, nil
 }
 
+func (r *fakeRepo) AuthTokenUser(_ context.Context, tokenHash []byte, purpose TokenPurpose) (uuid.UUID, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.authTokens[hex.EncodeToString(tokenHash)]
+	if !ok || t.purpose != purpose {
+		return uuid.Nil, false, nil
+	}
+	return t.userID, true, nil
+}
+
 func (r *fakeRepo) ConsumeUserAuthTokens(_ context.Context, userID uuid.UUID, purpose TokenPurpose) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

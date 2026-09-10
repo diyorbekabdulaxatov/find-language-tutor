@@ -71,6 +71,9 @@ type Repository interface {
 	// LiveAuthToken resolves a raw token hash + purpose to the owning user,
 	// only while the token is unconsumed and unexpired. ErrInvalidToken otherwise.
 	LiveAuthToken(ctx context.Context, tokenHash []byte, purpose TokenPurpose) (userID uuid.UUID, err error)
+	// AuthTokenUser resolves a hash + purpose to the owning user regardless of
+	// consumed / expired state (ok=false when no such token ever existed).
+	AuthTokenUser(ctx context.Context, tokenHash []byte, purpose TokenPurpose) (userID uuid.UUID, ok bool, err error)
 	// ConsumeUserAuthTokens invalidates a user's outstanding tokens of a purpose.
 	ConsumeUserAuthTokens(ctx context.Context, userID uuid.UUID, purpose TokenPurpose) error
 	// LatestAuthTokenAt is the created_at of the newest still-live token of a
@@ -227,12 +230,19 @@ func (s *Service) ResetPassword(ctx context.Context, rawToken, newPassword strin
 	return s.repo.ResetPassword(ctx, userID, hash, pwHash)
 }
 
-// VerifyEmail redeems an email-verification token. Idempotent-friendly: a token
-// only works once, but MarkEmailVerified keeps the first verification time.
+// VerifyEmail redeems an email-verification token. A double-submit (a client
+// retry, React StrictMode's double-invoked effect) that hits a just-consumed
+// token still returns nil when the account is already verified — the outcome
+// this exact token produced.
 func (s *Service) VerifyEmail(ctx context.Context, rawToken string) error {
 	hash := hashOpaqueToken(rawToken)
 	userID, err := s.repo.LiveAuthToken(ctx, hash, PurposeEmailVerification)
 	if err != nil {
+		if uid, ok, e := s.repo.AuthTokenUser(ctx, hash, PurposeEmailVerification); e == nil && ok {
+			if u, e := s.repo.UserByID(ctx, uid); e == nil && u.EmailVerified {
+				return nil
+			}
+		}
 		return ErrInvalidToken
 	}
 	return s.repo.ConfirmEmail(ctx, userID, hash)

@@ -173,6 +173,17 @@ func (r *repositoryPostgres) LiveAuthToken(ctx context.Context, tokenHash []byte
 	return row.UserID, nil
 }
 
+func (r *repositoryPostgres) AuthTokenUser(ctx context.Context, tokenHash []byte, purpose TokenPurpose) (uuid.UUID, bool, error) {
+	uid, err := r.q.GetAuthTokenUser(ctx, sqlc.GetAuthTokenUserParams{TokenSha256: tokenHash, Purpose: string(purpose)})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, false, nil
+		}
+		return uuid.Nil, false, fmt.Errorf("get auth token user: %w", err)
+	}
+	return uid, true, nil
+}
+
 func (r *repositoryPostgres) ConsumeUserAuthTokens(ctx context.Context, userID uuid.UUID, purpose TokenPurpose) error {
 	if err := r.q.ConsumeUserAuthTokens(ctx, sqlc.ConsumeUserAuthTokensParams{UserID: userID, Purpose: string(purpose)}); err != nil {
 		return fmt.Errorf("consume user auth tokens: %w", err)

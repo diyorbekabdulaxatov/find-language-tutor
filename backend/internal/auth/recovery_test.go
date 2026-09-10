@@ -152,8 +152,13 @@ func TestEmailVerificationFlow(t *testing.T) {
 	if err := svc.ResendEmailVerification(ctx, reg.User.ID); !errors.Is(err, ErrAlreadyVerified) {
 		t.Errorf("resend when verified: got %v, want ErrAlreadyVerified", err)
 	}
-	// token single-use
-	if err := svc.VerifyEmail(ctx, fm.lastVerify()); !errors.Is(err, ErrInvalidToken) {
-		t.Errorf("reused verify token: got %v, want ErrInvalidToken", err)
+	// re-submitting the (now consumed) token is a no-op success, not an error —
+	// the account is already verified, which is what this token achieved.
+	if err := svc.VerifyEmail(ctx, fm.lastVerify()); err != nil {
+		t.Errorf("re-verify with consumed token: got %v, want nil", err)
+	}
+	// a token that never existed still fails
+	if err := svc.VerifyEmail(ctx, "totally-made-up-token"); !errors.Is(err, ErrInvalidToken) {
+		t.Errorf("unknown verify token: got %v, want ErrInvalidToken", err)
 	}
 }

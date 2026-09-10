@@ -151,6 +151,24 @@ func (q *Queries) DeleteAllUsers(ctx context.Context) error {
 	return err
 }
 
+const getAuthTokenUser = `-- name: GetAuthTokenUser :one
+SELECT user_id FROM auth_tokens WHERE token_sha256 = $1 AND purpose = $2
+`
+
+type GetAuthTokenUserParams struct {
+	TokenSha256 []byte
+	Purpose     string
+}
+
+// Whose token is this? Ignores consumed / expired — used to recognise a
+// just-redeemed verification token on a double-submit.
+func (q *Queries) GetAuthTokenUser(ctx context.Context, arg GetAuthTokenUserParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getAuthTokenUser, arg.TokenSha256, arg.Purpose)
+	var user_id uuid.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
 const getLiveAuthToken = `-- name: GetLiveAuthToken :one
 SELECT id, user_id
 FROM auth_tokens

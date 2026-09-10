@@ -55,6 +55,11 @@ FROM auth_tokens
 WHERE token_sha256 = $1 AND purpose = $2
   AND consumed_at IS NULL AND expires_at > now();
 
+-- name: GetAuthTokenUser :one
+-- Whose token is this? Ignores consumed / expired — used to recognise a
+-- just-redeemed verification token on a double-submit.
+SELECT user_id FROM auth_tokens WHERE token_sha256 = $1 AND purpose = $2;
+
 -- name: ConsumeAuthToken :exec
 -- Spend a token by its hash (the redeem flows already hold the hash, not the id).
 UPDATE auth_tokens SET consumed_at = now()
