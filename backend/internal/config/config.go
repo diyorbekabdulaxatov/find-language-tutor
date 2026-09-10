@@ -42,10 +42,13 @@ type Config struct {
 	// Payments. PaymentsProvider selects the payments.Provider implementation
 	// ("fake" is the only one for the MVP — Stripe does not operate in
 	// Uzbekistan). PaymentsWebhookSecret, when set, is the HMAC-SHA256 key the
-	// POST /v1/payments/webhook handler verifies against the X-Payment-Signature
-	// header; empty disables verification (dev only).
-	PaymentsProvider      string
-	PaymentsWebhookSecret string
+	// POST /v1/payments/webhook handler verifies the X-Payment-Signature header
+	// against (over "<X-Payment-Timestamp>.<body>"); empty disables verification
+	// (dev only). PaymentsWebhookMaxSkew is how far that timestamp may be from
+	// now before the delivery is rejected as stale / replayed.
+	PaymentsProvider       string
+	PaymentsWebhookSecret  string
+	PaymentsWebhookMaxSkew time.Duration
 
 	// PayoutsClearingDays is the payout clearing window: how many days after a
 	// lesson is captured its earning stays `held` before an operator payout run
@@ -92,9 +95,10 @@ func Load() (*Config, error) {
 		CookieSecure:    getenvBool("AUTH_COOKIE_SECURE", env == "production"),
 		ShutdownTimeout: getenvDuration("SHUTDOWN_TIMEOUT", 10*time.Second),
 
-		PaymentsProvider:      getenv("PAYMENTS_PROVIDER", "fake"),
-		PaymentsWebhookSecret: os.Getenv("PAYMENTS_WEBHOOK_SECRET"),
-		PayoutsClearingDays:   getenvInt("PAYOUTS_CLEARING_DAYS", 7),
+		PaymentsProvider:       getenv("PAYMENTS_PROVIDER", "fake"),
+		PaymentsWebhookSecret:  os.Getenv("PAYMENTS_WEBHOOK_SECRET"),
+		PaymentsWebhookMaxSkew: getenvDuration("PAYMENTS_WEBHOOK_MAX_SKEW", 5*time.Minute),
+		PayoutsClearingDays:    getenvInt("PAYOUTS_CLEARING_DAYS", 7),
 
 		ResendAPIKey: os.Getenv("RESEND_API_KEY"),
 		EmailFrom:    getenv("EMAIL_FROM", "findtutor <noreply@findtutor.local>"),
