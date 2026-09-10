@@ -28,12 +28,16 @@ type earningLineDTO struct {
 	StartAt            time.Time `json:"start_at"`
 	AmountMinor        int64     `json:"amount_minor"`
 	State              string    `json:"state"`
+	// AvailableAt is when the clearing window closes on a `held` lesson — the
+	// date a teacher is waiting for. Already in the past for every other state.
+	AvailableAt time.Time `json:"available_at"`
 }
 
 type earningsDTO struct {
 	TotalEarnedMinor int64            `json:"total_earned_minor"`
 	HeldMinor        int64            `json:"held_minor"`
 	AvailableMinor   int64            `json:"available_minor"`
+	PaidMinor        int64            `json:"paid_minor"`
 	Currency         string           `json:"currency"`
 	Lessons          []earningLineDTO `json:"lessons"`
 }
@@ -47,12 +51,14 @@ func toEarningsDTO(e Earnings) earningsDTO {
 			StartAt:            l.StartAt.UTC(),
 			AmountMinor:        l.AmountMinor,
 			State:              string(l.State),
+			AvailableAt:        l.AvailableAt.UTC(),
 		}
 	}
 	return earningsDTO{
 		TotalEarnedMinor: e.TotalEarnedMinor,
 		HeldMinor:        e.HeldMinor,
 		AvailableMinor:   e.AvailableMinor,
+		PaidMinor:        e.PaidMinor,
 		Currency:         e.Currency,
 		Lessons:          lessons,
 	}

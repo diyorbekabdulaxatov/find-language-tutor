@@ -25,6 +25,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/httpapi"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/lessons"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payments"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payouts"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/rbac"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/reviews"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/teachers"
@@ -127,7 +128,7 @@ func run(logger *slog.Logger) error {
 	// service's own HandleWebhook, so the idempotent webhook path runs on every
 	// operation.
 	paymentService := payments.NewService(
-		payments.NewPostgresRepository(pool),
+		payments.NewPostgresRepository(pool, cfg.PayoutsClearingDays),
 		cfg.PaymentsProvider,
 		logger,
 	)
@@ -155,6 +156,16 @@ func run(logger *slog.Logger) error {
 	bookingService.SetDisputeReader(disputes.NewBookingGateway(disputeService))
 	adminService.SetBookingModerator(bookingService)
 
+	// Phase E: teacher payouts. Its own module mounted on /v1/admin (like
+	// disputes), owning payout_batches and the settlement writes on
+	// payout_ledger; internal/payments keeps the ledger writes on the money path
+	// and GET /v1/payments/me. The two share the table, not Go types — neither
+	// imports the other, so there is no port to wire here.
+	payoutHandler := payouts.NewHandler(
+		payouts.NewService(payouts.NewPostgresRepository(pool), logger),
+		logger,
+	)
+
 	router := httpapi.NewRouter(httpapi.Deps{
 		Config:              cfg,
 		Logger:              logger,
@@ -171,6 +182,7 @@ func run(logger *slog.Logger) error {
 		PaymentHandler:      paymentHandler,
 		ReviewHandler:       reviewHandler,
 		DisputeHandler:      disputeHandler,
+		PayoutHandler:       payoutHandler,
 	})
 
 	srv := &http.Server{

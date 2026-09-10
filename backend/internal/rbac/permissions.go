@@ -21,9 +21,11 @@ const (
 	PermBookingsForceCancel Permission = "bookings.force_cancel" // POST /v1/admin/bookings/{id}/force-cancel
 	PermDisputesResolve     Permission = "disputes.resolve"      // GET /v1/admin/disputes, POST .../{id}/resolve
 
-	// Phases E/F — defined now, no endpoint yet.
-	PermPayoutsView     Permission = "payouts.view"
-	PermPayoutsRun      Permission = "payouts.run"
+	// Phase E — wired to endpoints.
+	PermPayoutsView Permission = "payouts.view" // GET /v1/admin/payouts[/batches/{id}]
+	PermPayoutsRun  Permission = "payouts.run"  // POST /v1/admin/payouts/run
+
+	// Phase F — defined now, no endpoint yet.
 	PermReviewsModerate Permission = "reviews.moderate"
 )
 
@@ -45,8 +47,8 @@ var Catalog = []PermissionInfo{
 	{PermBookingsView, "View any booking on the platform."},
 	{PermBookingsForceCancel, "Force-cancel a booking, with an optional refund."},
 	{PermDisputesResolve, "View the dispute queue and resolve or reject disputes."},
-	{PermPayoutsView, "View the teacher payout ledger (not yet wired to an endpoint)."},
-	{PermPayoutsRun, "Run a payout batch (not yet wired to an endpoint)."},
+	{PermPayoutsView, "View the teacher payout ledger and past payout batches."},
+	{PermPayoutsRun, "Run a payout batch, paying out every cleared teacher earning."},
 	{PermReviewsModerate, "Hide or remove reviews (not yet wired to an endpoint)."},
 }
 

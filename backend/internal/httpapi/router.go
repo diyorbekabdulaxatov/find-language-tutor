@@ -14,6 +14,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/disputes"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payments"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payouts"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/rbac"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/reviews"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/teachers"
@@ -36,6 +37,7 @@ type Deps struct {
 	PaymentHandler      *payments.Handler
 	ReviewHandler       *reviews.Handler
 	DisputeHandler      *disputes.Handler
+	PayoutHandler       *payouts.Handler
 }
 
 // NewRouter builds the gin engine with middleware, the health check, and every
@@ -78,6 +80,7 @@ func NewRouter(d Deps) *gin.Engine {
 	admin.RegisterRoutes(adminGroup, d.AdminHandler, d.RBACGuard)
 	rbac.RegisterAdminRoutes(adminGroup, d.RBACHandler, d.RBACGuard)
 	disputes.RegisterAdminRoutes(adminGroup, d.DisputeHandler, d.RBACGuard)
+	payouts.RegisterAdminRoutes(adminGroup, d.PayoutHandler, d.RBACGuard)
 
 	return r
 }

@@ -148,7 +148,8 @@ type seedReview struct {
 // GET /v1/admin/bookings and the dispute queue — are not empty on a fresh
 // database. StartOffsetHours is relative to seed time: negative is in the past.
 //
-// No payment rows are seeded, so these bookings show `payment_status: null`.
+// A booking is seeded with a captured payment + payout-ledger row only when
+// Payout is set; the others show `payment_status: null`.
 type seedBooking struct {
 	TeacherSlug      string
 	StudentFirstName string
@@ -158,6 +159,17 @@ type seedBooking struct {
 	// Dispute, when non-empty, opens a dispute on the booking filed by the
 	// student — the row GET /v1/admin/disputes lists on a fresh database.
 	Dispute string
+	// Payout, when non-empty, gives the booking a captured payment and a
+	// payout_ledger row whose clearing window closed PayoutClearedDaysAgo days
+	// ago, so /v1/admin/payouts is not empty on a fresh database:
+	//
+	//   "available" — cleared and unpaid: what the payout run would settle
+	//   "paid"      — already settled by the seeded completed payout batch
+	//
+	// A "paid" row is stored as state `paid`; an "available" one stays `held`
+	// (the state is derived from available_at — see migration 000011).
+	Payout               string
+	PayoutClearedDaysAgo int
 }
 
 // seedBookings deliberately pairs teachers with students who are not their own
@@ -166,10 +178,20 @@ type seedBooking struct {
 var seedBookings = []seedBooking{
 	{
 		// A week ago, done and paid for — and contested: the open dispute an
-		// operator sees at /v1/admin/disputes on a fresh database.
+		// operator sees at /v1/admin/disputes on a fresh database. Its earning
+		// cleared the holding period yesterday, so it is also the money waiting
+		// on /v1/admin/payouts.
 		TeacherSlug: "nodira-karimova", StudentFirstName: "sardor",
 		Status: "completed", StartOffsetHours: -168, DurationMinutes: 60,
 		Dispute: "The lesson ended twenty minutes early and I never got the writing feedback I paid for.",
+		Payout:  "available", PayoutClearedDaysAgo: 1,
+	},
+	{
+		// A month ago, done, paid for, and already disbursed: the one line of
+		// the seeded completed payout batch.
+		TeacherSlug: "sardor-yusupov", StudentFirstName: "kamola",
+		Status: "completed", StartOffsetHours: -720, DurationMinutes: 60,
+		Payout: "paid", PayoutClearedDaysAgo: 23,
 	},
 	{
 		// Upcoming and paid: an uneventful confirmed booking for the list view.

@@ -37,6 +37,9 @@ func TestNewRouter_MountsEveryRouteWithoutConflict(t *testing.T) {
 		"POST /v1/admin/bookings/:id/force-cancel",
 		"GET /v1/admin/disputes",
 		"POST /v1/admin/disputes/:id/resolve",
+		"GET /v1/admin/payouts",
+		"GET /v1/admin/payouts/batches/:id",
+		"POST /v1/admin/payouts/run",
 	}
 	got := map[string]bool{}
 	for _, ri := range r.Routes() {
