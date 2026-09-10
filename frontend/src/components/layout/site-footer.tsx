@@ -35,7 +35,7 @@ export function SiteFooter() {
             <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
               <GraduationCap className="size-5" />
             </span>
-            <span className="font-display text-lg">findtutor</span>
+            <span className="font-display text-lg">FindTutor</span>
           </div>
           <p className="mt-3 max-w-xs text-sm text-muted-foreground">
             One-on-one language lessons with teachers you choose, on a schedule
@@ -63,7 +63,7 @@ export function SiteFooter() {
       </div>
 
       <div className="mx-auto max-w-6xl px-4 pb-10 text-xs text-muted-foreground sm:px-6">
-        © {new Date().getFullYear()} findtutor. A portfolio project.
+        © {new Date().getFullYear()} FindTutor. A portfolio project.
       </div>
     </footer>
   );

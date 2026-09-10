@@ -5,7 +5,7 @@ import { AuthCard } from "@/features/auth/components/auth-card";
 
 export const metadata: Metadata = {
   title: "Log in",
-  description: "Sign in to your findtutor account.",
+  description: "Sign in to your FindTutor account.",
 };
 
 export default function LoginPage() {

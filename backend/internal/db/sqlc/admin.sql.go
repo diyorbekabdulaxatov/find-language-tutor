@@ -14,24 +14,41 @@ import (
 
 const adminBookingStats = `-- name: AdminBookingStats :one
 SELECT
-    count(*)                                                                       AS total,
-    count(*) FILTER (WHERE created_at >= now() - interval '7 days')                 AS this_week,
+    count(*)                                                                                 AS total,
+    count(*) FILTER (WHERE created_at >= now() - interval '7 days')                           AS this_week,
+    count(*) FILTER (WHERE status = 'confirmed' AND start_at > now())                         AS upcoming,
+    count(*) FILTER (WHERE status = 'completed')                                              AS completed,
+    count(*) FILTER (WHERE status = 'cancelled')                                              AS cancelled,
+    count(DISTINCT student_id)                                                                AS active_students,
     coalesce(sum(price_minor) FILTER (WHERE status IN ('confirmed', 'completed')), 0)::bigint AS gmv_minor
 FROM bookings
 `
 
 type AdminBookingStatsRow struct {
-	Total    int64
-	ThisWeek int64
-	GmvMinor int64
+	Total          int64
+	ThisWeek       int64
+	Upcoming       int64
+	Completed      int64
+	Cancelled      int64
+	ActiveStudents int64
+	GmvMinor       int64
 }
 
-// gmv_minor = money that actually flowed: bookings that reached confirmed or
-// completed. this_week = created in the last 7 days.
+// gmv_minor = booking price that actually flowed: bookings that reached
+// confirmed or completed. this_week = created in the last 7 days. upcoming =
+// confirmed and not yet started. active_students = distinct people who booked.
 func (q *Queries) AdminBookingStats(ctx context.Context) (AdminBookingStatsRow, error) {
 	row := q.db.QueryRow(ctx, adminBookingStats)
 	var i AdminBookingStatsRow
-	err := row.Scan(&i.Total, &i.ThisWeek, &i.GmvMinor)
+	err := row.Scan(
+		&i.Total,
+		&i.ThisWeek,
+		&i.Upcoming,
+		&i.Completed,
+		&i.Cancelled,
+		&i.ActiveStudents,
+		&i.GmvMinor,
+	)
 	return i, err
 }
 
@@ -608,6 +625,80 @@ func (q *Queries) AdminListUsers(ctx context.Context, arg AdminListUsersParams) 
 	return items, nil
 }
 
+const adminOpenDisputeCount = `-- name: AdminOpenDisputeCount :one
+SELECT count(*) FROM disputes WHERE status = 'open'
+`
+
+func (q *Queries) AdminOpenDisputeCount(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, adminOpenDisputeCount)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const adminPaymentStats = `-- name: AdminPaymentStats :one
+SELECT
+    coalesce(sum(amount_minor) FILTER (WHERE status = 'captured'), 0)::bigint AS captured_minor,
+    coalesce(sum(amount_minor) FILTER (WHERE status = 'refunded'), 0)::bigint AS refunded_minor
+FROM payments
+`
+
+type AdminPaymentStatsRow struct {
+	CapturedMinor int64
+	RefundedMinor int64
+}
+
+// Money the platform actually moved: captured = collected from students,
+// refunded = returned to them.
+func (q *Queries) AdminPaymentStats(ctx context.Context) (AdminPaymentStatsRow, error) {
+	row := q.db.QueryRow(ctx, adminPaymentStats)
+	var i AdminPaymentStatsRow
+	err := row.Scan(&i.CapturedMinor, &i.RefundedMinor)
+	return i, err
+}
+
+const adminPayoutStats = `-- name: AdminPayoutStats :one
+SELECT
+    coalesce(sum(amount_minor) FILTER (WHERE state IN ('held', 'available')), 0)::bigint AS owed_minor,
+    coalesce(sum(amount_minor) FILTER (WHERE state = 'paid'), 0)::bigint                 AS paid_minor
+FROM payout_ledger
+`
+
+type AdminPayoutStatsRow struct {
+	OwedMinor int64
+	PaidMinor int64
+}
+
+// owed_minor = earned by teachers but not yet disbursed (held or cleared);
+// paid_minor = disbursed by past payout runs. Reversed rows count towards none.
+func (q *Queries) AdminPayoutStats(ctx context.Context) (AdminPayoutStatsRow, error) {
+	row := q.db.QueryRow(ctx, adminPayoutStats)
+	var i AdminPayoutStatsRow
+	err := row.Scan(&i.OwedMinor, &i.PaidMinor)
+	return i, err
+}
+
+const adminReviewStats = `-- name: AdminReviewStats :one
+SELECT
+    count(*) FILTER (WHERE NOT hidden)                                                   AS visible_total,
+    coalesce(round(avg(rating) FILTER (WHERE NOT hidden), 1), 0)::double precision        AS average_rating
+FROM reviews
+`
+
+type AdminReviewStatsRow struct {
+	VisibleTotal  int64
+	AverageRating float64
+}
+
+// Visible reviews only (hidden ones are off the platform). average_rating is
+// rounded to one decimal, 0 when there are none.
+func (q *Queries) AdminReviewStats(ctx context.Context) (AdminReviewStatsRow, error) {
+	row := q.db.QueryRow(ctx, adminReviewStats)
+	var i AdminReviewStatsRow
+	err := row.Scan(&i.VisibleTotal, &i.AverageRating)
+	return i, err
+}
+
 const adminSetTeacherStatus = `-- name: AdminSetTeacherStatus :exec
 UPDATE teachers
 SET status = $2, moderation_note = $3, updated_at = now()
@@ -641,39 +732,32 @@ func (q *Queries) AdminSetTeacherVerified(ctx context.Context, arg AdminSetTeach
 	return err
 }
 
-const adminTeacherCounts = `-- name: AdminTeacherCounts :one
+const adminTeacherStats = `-- name: AdminTeacherStats :one
 SELECT
-    count(*)                                        AS total,
-    count(*) FILTER (WHERE status = 'pending')      AS pending
+    count(*)                                     AS total,
+    count(*) FILTER (WHERE status = 'pending')   AS pending,
+    count(*) FILTER (WHERE status = 'approved')  AS approved,
+    count(*) FILTER (WHERE verified)             AS verified
 FROM teachers
 `
 
-type AdminTeacherCountsRow struct {
-	Total   int64
-	Pending int64
+type AdminTeacherStatsRow struct {
+	Total    int64
+	Pending  int64
+	Approved int64
+	Verified int64
 }
 
-func (q *Queries) AdminTeacherCounts(ctx context.Context) (AdminTeacherCountsRow, error) {
-	row := q.db.QueryRow(ctx, adminTeacherCounts)
-	var i AdminTeacherCountsRow
-	err := row.Scan(&i.Total, &i.Pending)
+func (q *Queries) AdminTeacherStats(ctx context.Context) (AdminTeacherStatsRow, error) {
+	row := q.db.QueryRow(ctx, adminTeacherStats)
+	var i AdminTeacherStatsRow
+	err := row.Scan(
+		&i.Total,
+		&i.Pending,
+		&i.Approved,
+		&i.Verified,
+	)
 	return i, err
-}
-
-const adminUserCount = `-- name: AdminUserCount :one
-
-SELECT count(*) FROM users
-`
-
-// Admin module (phase A/B): read-across-tables queries for the ops dashboard and
-// the moderation write path. This is an internal tool behind auth.RequireAdmin,
-// so it reads other modules' tables directly rather than routing through their
-// services.
-func (q *Queries) AdminUserCount(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, adminUserCount)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
 }
 
 const adminUserPaymentsSummary = `-- name: AdminUserPaymentsSummary :one
@@ -738,4 +822,32 @@ func (q *Queries) AdminUserRoles(ctx context.Context, userID uuid.UUID) ([]Admin
 		return nil, err
 	}
 	return items, nil
+}
+
+const adminUserStats = `-- name: AdminUserStats :one
+
+
+SELECT
+    count(*)                                                       AS total,
+    count(*) FILTER (WHERE created_at >= now() - interval '7 days') AS this_week
+FROM users
+`
+
+type AdminUserStatsRow struct {
+	Total    int64
+	ThisWeek int64
+}
+
+// Admin module (phase A/B): read-across-tables queries for the ops dashboard and
+// the moderation write path. This is an internal tool behind auth.RequireAdmin,
+// so it reads other modules' tables directly rather than routing through their
+// services.
+// The dashboard counters (GET /v1/admin/metrics) are six small aggregate reads,
+// one per area. Each is cheap (a single sequential scan of one table); the
+// dashboard is a rare, operator-only call.
+func (q *Queries) AdminUserStats(ctx context.Context) (AdminUserStatsRow, error) {
+	row := q.db.QueryRow(ctx, adminUserStats)
+	var i AdminUserStatsRow
+	err := row.Scan(&i.Total, &i.ThisWeek)
+	return i, err
 }

@@ -5,7 +5,7 @@ import { AuthCard } from "@/features/auth/components/auth-card";
 
 export const metadata: Metadata = {
   title: "Sign up",
-  description: "Create a findtutor account to book lessons or teach.",
+  description: "Create a FindTutor account to book lessons or teach.",
 };
 
 export default function SignupPage() {

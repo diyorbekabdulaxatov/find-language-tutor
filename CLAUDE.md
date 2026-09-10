@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`findtutor` — an italki-style two-sided online language-tutoring marketplace, scoped to **Uzbekistan only**. Students book paid 1-on-1 video lessons with teachers. Prices shown in **UZS** (`120,000 so'm`), UI in **English** (no i18n yet). Most teachers are local (`Asia/Tashkent`), so timezone conversion matters mainly for the few abroad.
+`FindTutor` — an italki-style two-sided online language-tutoring marketplace, scoped to **Uzbekistan only**. Students book paid 1-on-1 video lessons with teachers. Prices shown in **UZS** (`120,000 so'm`), UI in **English** (no i18n yet). Most teachers are local (`Asia/Tashkent`), so timezone conversion matters mainly for the few abroad.
 
 Monorepo, two independently deployable apps plus a hand-written contract:
 

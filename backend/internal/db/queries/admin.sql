@@ -3,23 +3,64 @@
 -- so it reads other modules' tables directly rather than routing through their
 -- services.
 
--- name: AdminUserCount :one
-SELECT count(*) FROM users;
+-- The dashboard counters (GET /v1/admin/metrics) are six small aggregate reads,
+-- one per area. Each is cheap (a single sequential scan of one table); the
+-- dashboard is a rare, operator-only call.
 
--- name: AdminTeacherCounts :one
+-- name: AdminUserStats :one
 SELECT
-    count(*)                                        AS total,
-    count(*) FILTER (WHERE status = 'pending')      AS pending
+    count(*)                                                       AS total,
+    count(*) FILTER (WHERE created_at >= now() - interval '7 days') AS this_week
+FROM users;
+
+-- name: AdminTeacherStats :one
+SELECT
+    count(*)                                     AS total,
+    count(*) FILTER (WHERE status = 'pending')   AS pending,
+    count(*) FILTER (WHERE status = 'approved')  AS approved,
+    count(*) FILTER (WHERE verified)             AS verified
 FROM teachers;
 
 -- name: AdminBookingStats :one
--- gmv_minor = money that actually flowed: bookings that reached confirmed or
--- completed. this_week = created in the last 7 days.
+-- gmv_minor = booking price that actually flowed: bookings that reached
+-- confirmed or completed. this_week = created in the last 7 days. upcoming =
+-- confirmed and not yet started. active_students = distinct people who booked.
 SELECT
-    count(*)                                                                       AS total,
-    count(*) FILTER (WHERE created_at >= now() - interval '7 days')                 AS this_week,
+    count(*)                                                                                 AS total,
+    count(*) FILTER (WHERE created_at >= now() - interval '7 days')                           AS this_week,
+    count(*) FILTER (WHERE status = 'confirmed' AND start_at > now())                         AS upcoming,
+    count(*) FILTER (WHERE status = 'completed')                                              AS completed,
+    count(*) FILTER (WHERE status = 'cancelled')                                              AS cancelled,
+    count(DISTINCT student_id)                                                                AS active_students,
     coalesce(sum(price_minor) FILTER (WHERE status IN ('confirmed', 'completed')), 0)::bigint AS gmv_minor
 FROM bookings;
+
+-- name: AdminPaymentStats :one
+-- Money the platform actually moved: captured = collected from students,
+-- refunded = returned to them.
+SELECT
+    coalesce(sum(amount_minor) FILTER (WHERE status = 'captured'), 0)::bigint AS captured_minor,
+    coalesce(sum(amount_minor) FILTER (WHERE status = 'refunded'), 0)::bigint AS refunded_minor
+FROM payments;
+
+-- name: AdminPayoutStats :one
+-- owed_minor = earned by teachers but not yet disbursed (held or cleared);
+-- paid_minor = disbursed by past payout runs. Reversed rows count towards none.
+SELECT
+    coalesce(sum(amount_minor) FILTER (WHERE state IN ('held', 'available')), 0)::bigint AS owed_minor,
+    coalesce(sum(amount_minor) FILTER (WHERE state = 'paid'), 0)::bigint                 AS paid_minor
+FROM payout_ledger;
+
+-- name: AdminReviewStats :one
+-- Visible reviews only (hidden ones are off the platform). average_rating is
+-- rounded to one decimal, 0 when there are none.
+SELECT
+    count(*) FILTER (WHERE NOT hidden)                                                   AS visible_total,
+    coalesce(round(avg(rating) FILTER (WHERE NOT hidden), 1), 0)::double precision        AS average_rating
+FROM reviews;
+
+-- name: AdminOpenDisputeCount :one
+SELECT count(*) FROM disputes WHERE status = 'open';
 
 -- name: AdminListUsers :many
 SELECT

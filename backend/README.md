@@ -1,6 +1,6 @@
-# findtutor — backend
+# FindTutor — backend
 
-Go + gin JSON API for the findtutor language-tutoring marketplace (Uzbekistan).
+Go + gin JSON API for the FindTutor language-tutoring marketplace (Uzbekistan).
 Split into two binaries: the HTTP API (`cmd/api`) and the background worker
 (`cmd/worker`).
 
@@ -327,7 +327,7 @@ and fans each message out to both participants.
 Both ports are optional on the booking service: a nil `ReminderScheduler` /
 `Notifier` makes every call a guarded no-op, so `cmd/api` without Redis and the
 unit tests keep working. Config: `RESEND_API_KEY` (empty → `logEmailer`),
-`EMAIL_FROM` (default `findtutor <noreply@findtutor.local>`).
+`EMAIL_FROM` (default `FindTutor <noreply@findtutor.local>`).
 
 ### Reviews (phase 6)
 

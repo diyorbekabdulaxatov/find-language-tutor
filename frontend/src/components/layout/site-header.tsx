@@ -17,7 +17,7 @@ export function SiteHeader() {
             <GraduationCap className="size-5" />
           </span>
           <span className="font-display text-xl tracking-tight text-foreground">
-            findtutor
+            FindTutor
           </span>
         </Link>
 

@@ -1,4 +1,4 @@
-// Command api runs the HTTP server for the findtutor backend.
+// Command api runs the HTTP server for the FindTutor backend.
 package main
 
 import (

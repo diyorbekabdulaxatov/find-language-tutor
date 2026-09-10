@@ -32,8 +32,14 @@ func errCode(w *httptest.ResponseRecorder) string {
 
 func TestMetrics_ShapeAndPermission(t *testing.T) {
 	repo := &fakeRepo{metrics: Metrics{
-		UsersTotal: 12, TeachersTotal: 11, TeachersPending: 1,
-		BookingsTotal: 4, BookingsThisWeek: 2, GMVMinor: 18_000_000, GMVCurrency: "UZS",
+		Currency:   "UZS",
+		UsersTotal: 12, UsersThisWeek: 3, TeachersTotal: 11, TeachersPending: 1,
+		TeachersApproved: 9, TeachersVerified: 4, ActiveStudents: 7,
+		BookingsTotal: 4, BookingsThisWeek: 2, BookingsUpcoming: 1,
+		BookingsCompleted: 2, BookingsCancelled: 1,
+		GMVMinor: 18_000_000, CapturedMinor: 9_000_000, RefundedMinor: 1_000_000,
+		PayoutsOwedMinor: 5_000_000, PayoutsPaidMinor: 3_000_000,
+		ReviewsVisible: 45, AverageRating: 4.8, DisputesOpen: 2,
 	}}
 	r, h, full := newRouter(repo, fakeProfiles{})
 
@@ -43,8 +49,12 @@ func TestMetrics_ShapeAndPermission(t *testing.T) {
 	}
 	var m metricsDTO
 	decode(t, w, &m)
-	if m.UsersTotal != 12 || m.TeachersPending != 1 || m.GMVMinor != 18_000_000 || m.GMVCurrency != "UZS" {
+	if m.UsersTotal != 12 || m.TeachersPending != 1 || m.GMVMinor != 18_000_000 || m.Currency != "UZS" {
 		t.Fatalf("metrics mapped wrong: %+v", m)
+	}
+	if m.CapturedMinor != 9_000_000 || m.PayoutsOwedMinor != 5_000_000 ||
+		m.AverageRating != 4.8 || m.DisputesOpen != 2 || m.BookingsUpcoming != 1 {
+		t.Fatalf("expanded metrics mapped wrong: %+v", m)
 	}
 
 	// a token without metrics.view is 403

@@ -14,24 +14,60 @@ import (
 // --- metrics ---
 
 type metricsDTO struct {
-	UsersTotal       int64  `json:"users_total"`
-	TeachersTotal    int64  `json:"teachers_total"`
-	TeachersPending  int64  `json:"teachers_pending"`
-	BookingsTotal    int64  `json:"bookings_total"`
-	BookingsThisWeek int64  `json:"bookings_this_week"`
-	GMVMinor         int64  `json:"gmv_minor"`
-	GMVCurrency      string `json:"gmv_currency"`
+	Currency string `json:"currency"`
+
+	UsersTotal       int64 `json:"users_total"`
+	UsersThisWeek    int64 `json:"users_this_week"`
+	TeachersTotal    int64 `json:"teachers_total"`
+	TeachersPending  int64 `json:"teachers_pending"`
+	TeachersApproved int64 `json:"teachers_approved"`
+	TeachersVerified int64 `json:"teachers_verified"`
+	ActiveStudents   int64 `json:"active_students"`
+
+	BookingsTotal     int64 `json:"bookings_total"`
+	BookingsThisWeek  int64 `json:"bookings_this_week"`
+	BookingsUpcoming  int64 `json:"bookings_upcoming"`
+	BookingsCompleted int64 `json:"bookings_completed"`
+	BookingsCancelled int64 `json:"bookings_cancelled"`
+
+	GMVMinor         int64 `json:"gmv_minor"`
+	CapturedMinor    int64 `json:"captured_minor"`
+	RefundedMinor    int64 `json:"refunded_minor"`
+	PayoutsOwedMinor int64 `json:"payouts_owed_minor"`
+	PayoutsPaidMinor int64 `json:"payouts_paid_minor"`
+
+	ReviewsVisible int64   `json:"reviews_visible"`
+	AverageRating  float64 `json:"average_rating"`
+	DisputesOpen   int64   `json:"disputes_open"`
 }
 
 func toMetricsDTO(m Metrics) metricsDTO {
 	return metricsDTO{
+		Currency: m.Currency,
+
 		UsersTotal:       m.UsersTotal,
+		UsersThisWeek:    m.UsersThisWeek,
 		TeachersTotal:    m.TeachersTotal,
 		TeachersPending:  m.TeachersPending,
-		BookingsTotal:    m.BookingsTotal,
-		BookingsThisWeek: m.BookingsThisWeek,
+		TeachersApproved: m.TeachersApproved,
+		TeachersVerified: m.TeachersVerified,
+		ActiveStudents:   m.ActiveStudents,
+
+		BookingsTotal:     m.BookingsTotal,
+		BookingsThisWeek:  m.BookingsThisWeek,
+		BookingsUpcoming:  m.BookingsUpcoming,
+		BookingsCompleted: m.BookingsCompleted,
+		BookingsCancelled: m.BookingsCancelled,
+
 		GMVMinor:         m.GMVMinor,
-		GMVCurrency:      m.GMVCurrency,
+		CapturedMinor:    m.CapturedMinor,
+		RefundedMinor:    m.RefundedMinor,
+		PayoutsOwedMinor: m.PayoutsOwedMinor,
+		PayoutsPaidMinor: m.PayoutsPaidMinor,
+
+		ReviewsVisible: m.ReviewsVisible,
+		AverageRating:  m.AverageRating,
+		DisputesOpen:   m.DisputesOpen,
 	}
 }
 

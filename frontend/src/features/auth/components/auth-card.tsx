@@ -15,7 +15,7 @@ export function AuthCard({
         <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
           <GraduationCap className="size-5" />
         </span>
-        <span className="font-display text-xl tracking-tight">findtutor</span>
+        <span className="font-display text-xl tracking-tight">FindTutor</span>
       </Link>
 
       <div className="rounded-2xl border border-border bg-card p-6 shadow-card sm:p-8">

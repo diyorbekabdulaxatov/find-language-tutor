@@ -16,7 +16,7 @@ export function VerifiedBadge({
         withLabel && "text-xs font-medium",
         className,
       )}
-      title="Verified by findtutor"
+      title="Verified by FindTutor"
     >
       <BadgeCheck className={cn(withLabel ? "size-3.5" : "size-4")} aria-hidden />
       {withLabel && "Verified"}

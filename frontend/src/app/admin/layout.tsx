@@ -4,7 +4,7 @@ import { RequireAdmin } from "@/features/admin/require-admin";
 import { AdminNav } from "@/features/admin/admin-nav";
 
 export const metadata: Metadata = {
-  title: { default: "Admin", template: "%s · Admin · findtutor" },
+  title: { default: "Admin", template: "%s · Admin · FindTutor" },
 };
 
 export default function AdminLayout({

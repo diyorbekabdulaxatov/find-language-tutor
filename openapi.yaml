@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
-  title: findtutor API
+  title: FindTutor API
   version: 0.1.0
   description: >
-    Contract for the findtutor language-tutoring marketplace (Uzbekistan).
+    Contract for the FindTutor language-tutoring marketplace (Uzbekistan).
     Hand-written and treated as the source of truth: the Go backend renders
     responses to match it, and the Next.js frontend generates its typed client
     from it (openapi-typescript + openapi-fetch).
@@ -2691,16 +2691,54 @@ components:
     # --- Admin (phase A/B) ---
 
     AdminMetrics:
+      description: >
+        Operator dashboard counters. All `*_minor` fields are integer minor units
+        in `currency` (UZS for the MVP).
       type: object
-      required: [users_total, teachers_total, teachers_pending, bookings_total, bookings_this_week, gmv_minor, gmv_currency]
+      required:
+        - currency
+        - users_total
+        - users_this_week
+        - teachers_total
+        - teachers_pending
+        - teachers_approved
+        - teachers_verified
+        - active_students
+        - bookings_total
+        - bookings_this_week
+        - bookings_upcoming
+        - bookings_completed
+        - bookings_cancelled
+        - gmv_minor
+        - captured_minor
+        - refunded_minor
+        - payouts_owed_minor
+        - payouts_paid_minor
+        - reviews_visible
+        - average_rating
+        - disputes_open
       properties:
+        currency: { type: string, description: "UZS for the MVP." }
         users_total: { type: integer }
+        users_this_week: { type: integer, description: Signed up in the last 7 days. }
         teachers_total: { type: integer }
-        teachers_pending: { type: integer }
+        teachers_pending: { type: integer, description: Awaiting moderation. }
+        teachers_approved: { type: integer }
+        teachers_verified: { type: integer, description: Holding the verified badge. }
+        active_students: { type: integer, description: Distinct accounts that have booked at least once. }
         bookings_total: { type: integer }
         bookings_this_week: { type: integer, description: Created in the last 7 days. }
-        gmv_minor: { type: integer, format: int64, description: Sum of price over confirmed + completed bookings, minor units. }
-        gmv_currency: { type: string, description: "UZS for the MVP." }
+        bookings_upcoming: { type: integer, description: Confirmed and not yet started. }
+        bookings_completed: { type: integer }
+        bookings_cancelled: { type: integer }
+        gmv_minor: { type: integer, format: int64, description: Booking price over confirmed + completed bookings. }
+        captured_minor: { type: integer, format: int64, description: Collected from students. }
+        refunded_minor: { type: integer, format: int64, description: Returned to students. }
+        payouts_owed_minor: { type: integer, format: int64, description: Earned by teachers, not yet disbursed (held or cleared). }
+        payouts_paid_minor: { type: integer, format: int64, description: Disbursed by past payout runs. }
+        reviews_visible: { type: integer, description: Reviews currently shown on profiles (hidden ones excluded). }
+        average_rating: { type: number, description: Mean of visible review ratings, one decimal; 0 when there are none. }
+        disputes_open: { type: integer, description: Disputes in the open state. }
 
     AdminUserRow:
       type: object

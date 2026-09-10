@@ -17,8 +17,9 @@ type Querier interface {
 	AddTeacherExperience(ctx context.Context, arg AddTeacherExperienceParams) error
 	AddTeacherFocus(ctx context.Context, arg AddTeacherFocusParams) error
 	AddTeacherLanguage(ctx context.Context, arg AddTeacherLanguageParams) error
-	// gmv_minor = money that actually flowed: bookings that reached confirmed or
-	// completed. this_week = created in the last 7 days.
+	// gmv_minor = booking price that actually flowed: bookings that reached
+	// confirmed or completed. this_week = created in the last 7 days. upcoming =
+	// confirmed and not yet started. active_students = distinct people who booked.
 	AdminBookingStats(ctx context.Context) (AdminBookingStatsRow, error)
 	AdminCountBookings(ctx context.Context, arg AdminCountBookingsParams) (int64, error)
 	AdminCountDisputes(ctx context.Context, status pgtype.Text) (int64, error)
@@ -73,20 +74,33 @@ type Querier interface {
 	// The 50 newest bookings the user takes part in, as student or as teacher-owner.
 	AdminListUserBookings(ctx context.Context, studentID uuid.UUID) ([]AdminListUserBookingsRow, error)
 	AdminListUsers(ctx context.Context, arg AdminListUsersParams) ([]AdminListUsersRow, error)
+	AdminOpenDisputeCount(ctx context.Context) (int64, error)
+	// Money the platform actually moved: captured = collected from students,
+	// refunded = returned to them.
+	AdminPaymentStats(ctx context.Context) (AdminPaymentStatsRow, error)
+	// owed_minor = earned by teachers but not yet disbursed (held or cleared);
+	// paid_minor = disbursed by past payout runs. Reversed rows count towards none.
+	AdminPayoutStats(ctx context.Context) (AdminPayoutStatsRow, error)
 	// Platform-wide ledger totals: payable now, still inside the clearing window,
 	// and already disbursed. Reversed rows count towards none of them.
 	AdminPayoutTotals(ctx context.Context) (AdminPayoutTotalsRow, error)
+	// Visible reviews only (hidden ones are off the platform). average_rating is
+	// rounded to one decimal, 0 when there are none.
+	AdminReviewStats(ctx context.Context) (AdminReviewStatsRow, error)
 	AdminSetTeacherStatus(ctx context.Context, arg AdminSetTeacherStatusParams) error
 	AdminSetTeacherVerified(ctx context.Context, arg AdminSetTeacherVerifiedParams) error
-	AdminTeacherCounts(ctx context.Context) (AdminTeacherCountsRow, error)
+	AdminTeacherStats(ctx context.Context) (AdminTeacherStatsRow, error)
+	// The user's payments as the paying student, bucketed by current payment state.
+	AdminUserPaymentsSummary(ctx context.Context, studentID uuid.UUID) (AdminUserPaymentsSummaryRow, error)
+	AdminUserRoles(ctx context.Context, userID uuid.UUID) ([]AdminUserRolesRow, error)
 	// Admin module (phase A/B): read-across-tables queries for the ops dashboard and
 	// the moderation write path. This is an internal tool behind auth.RequireAdmin,
 	// so it reads other modules' tables directly rather than routing through their
 	// services.
-	AdminUserCount(ctx context.Context) (int64, error)
-	// The user's payments as the paying student, bucketed by current payment state.
-	AdminUserPaymentsSummary(ctx context.Context, studentID uuid.UUID) (AdminUserPaymentsSummaryRow, error)
-	AdminUserRoles(ctx context.Context, userID uuid.UUID) ([]AdminUserRolesRow, error)
+	// The dashboard counters (GET /v1/admin/metrics) are six small aggregate reads,
+	// one per area. Each is cheap (a single sequential scan of one table); the
+	// dashboard is a rare, operator-only call.
+	AdminUserStats(ctx context.Context) (AdminUserStatsRow, error)
 	// Slug -> id, but only for a publicly visible (approved) teacher. GET
 	// /v1/teachers/{slug}/reviews 404s for a non-approved slug, same as the profile.
 	ApprovedTeacherIDBySlug(ctx context.Context, slug string) (uuid.UUID, error)

@@ -1,6 +1,6 @@
-# findtutor — frontend
+# FindTutor — frontend
 
-Next.js (App Router) frontend for the findtutor language-tutoring marketplace.
+Next.js (App Router) frontend for the FindTutor language-tutoring marketplace.
 Market: Uzbekistan. Prices in UZS, UI in English.
 
 ## Stack

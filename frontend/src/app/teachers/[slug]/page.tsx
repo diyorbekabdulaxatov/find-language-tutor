@@ -49,7 +49,7 @@ export async function generateMetadata({
     title: `${teacher.displayName} — ${subject} teacher`,
     description: teacher.headline,
     openGraph: {
-      title: `${teacher.displayName} · ${subject} on findtutor`,
+      title: `${teacher.displayName} · ${subject} on FindTutor`,
       description: teacher.headline,
       images: [teacher.avatarUrl],
     },
