@@ -461,9 +461,9 @@ export interface paths {
         put?: never;
         /**
          * Payment provider webhook
-         * @description Receives one provider state-change event. Unauthenticated — a real provider signs the body and the handler verifies the `X-Payment-Signature` header (HMAC-SHA256) when a secret is configured.
+         * @description Receives one provider state-change event. Unauthenticated at the transport, authenticated by signature: when `PAYMENTS_WEBHOOK_SECRET` is set the handler requires an `X-Payment-Signature` header equal to `hex(hmac_sha256(secret, "<X-Payment-Timestamp>.<raw body>"))` and an `X-Payment-Timestamp` (unix seconds) within `PAYMENTS_WEBHOOK_MAX_SKEW` (default 5 minutes) of now — binding the timestamp into the MAC so a captured delivery can't be replayed. A missing header, a stale timestamp, or a mismatch is 401 and the event is not applied. With no secret configured every delivery is accepted (dev only).
          *     Idempotent by `event_id`: the id is inserted into `payment_events` under its primary key, and a duplicate is treated as already processed. A well-formed event always returns 200, with `applied` telling whether this delivery was the one that ran the effect.
-         *     Events: `payment.authorized` (payment -> authorized, booking `pending_payment` -> `confirmed`), `payment.captured` (payment -> captured, payout-ledger row `held` -> `available`), `payment.refunded` (payment -> refunded, ledger row -> `reversed`), `payment.failed` (payment -> failed).
+         *     Events: `payment.authorized` (payment -> authorized, booking `pending_payment` -> `confirmed`), `payment.captured` (payment -> captured, a `held` payout-ledger row written with its clearing deadline), `payment.refunded` (payment -> refunded, ledger row -> `reversed` unless already paid out), `payment.failed` (payment -> failed).
          *     The MVP's in-process fake provider reaches the same handler code via an internal sink rather than an HTTP call.
          */
         post: operations["paymentsWebhook"];
@@ -2838,7 +2838,12 @@ export interface operations {
     paymentsWebhook: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description hex(hmac_sha256(secret, "<X-Payment-Timestamp>.<body>")). Required when a webhook secret is configured. */
+                "X-Payment-Signature"?: string;
+                /** @description Unix seconds; must be within the configured skew of now. Required when a webhook secret is configured. */
+                "X-Payment-Timestamp"?: string;
+            };
             path?: never;
             cookie?: never;
         };

@@ -134,7 +134,11 @@ func run(logger *slog.Logger) error {
 	)
 	paymentService.SetProvider(payments.NewFakeProvider(paymentService.Emit))
 	bookingService.SetPaymentGateway(payments.NewGateway(paymentService))
-	paymentHandler := payments.NewHandler(paymentService, cfg.PaymentsWebhookSecret, logger)
+	paymentHandler := payments.NewHandler(
+		paymentService,
+		payments.NewWebhookVerifier(cfg.PaymentsProvider, cfg.PaymentsWebhookSecret, cfg.PaymentsWebhookMaxSkew),
+		logger,
+	)
 
 	// Phase 6: lesson reviews. The reviews module exposes a read port back to
 	// bookings so a BookingDTO carries can_review / review without a second call.

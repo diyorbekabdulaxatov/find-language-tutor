@@ -17,7 +17,10 @@ import (
 
 // pgUniqueViolation is SQLSTATE 23505 — raised by the payment_events primary
 // key when an event_id is replayed. It is the race-safe idempotency gate.
-const pgUniqueViolation = "23505"
+const (
+	pgUniqueViolation     = "23505"
+	pgForeignKeyViolation = "23503"
+)
 
 type repositoryPostgres struct {
 	pool *pgxpool.Pool
@@ -151,8 +154,13 @@ func (r *repositoryPostgres) ApplyEvent(ctx context.Context, e Event) (bool, err
 		Type:      string(e.Type),
 	}); err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
-			return false, nil // already processed — no-op
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case pgUniqueViolation:
+				return false, nil // already processed — no-op
+			case pgForeignKeyViolation:
+				return false, ErrPaymentNotFound // event names a payment we don't have
+			}
 		}
 		return false, fmt.Errorf("insert payment event: %w", err)
 	}

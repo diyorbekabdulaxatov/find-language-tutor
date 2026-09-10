@@ -1,10 +1,6 @@
 package payments
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -20,13 +16,19 @@ import (
 // Handler adapts HTTP to the Service: bind + validate, call the service, render
 // JSON. No business logic; the *gin.Context never leaves this file.
 type Handler struct {
-	svc           *Service
-	logger        *slog.Logger
-	webhookSecret string // optional HMAC-SHA256 secret for provider webhooks
+	svc      *Service
+	logger   *slog.Logger
+	verifier WebhookVerifier
 }
 
-func NewHandler(svc *Service, webhookSecret string, logger *slog.Logger) *Handler {
-	return &Handler{svc: svc, logger: logger, webhookSecret: webhookSecret}
+// NewHandler builds the handler. verifier authenticates the provider webhook;
+// pass NewWebhookVerifier(provider, secret, skew), or nil for "accept anything"
+// (only sensible in tests / local dev).
+func NewHandler(svc *Service, verifier WebhookVerifier, logger *slog.Logger) *Handler {
+	if verifier == nil {
+		verifier = noopVerifier{}
+	}
+	return &Handler{svc: svc, logger: logger, verifier: verifier}
 }
 
 // RegisterRoutes mounts the payment endpoints onto the given group (expected to
@@ -47,8 +49,13 @@ func (h *Handler) Webhook(c *gin.Context) {
 		return
 	}
 
-	if h.webhookSecret != "" && !validSignature(h.webhookSecret, c.GetHeader("X-Payment-Signature"), raw) {
-		web.Unauthorized(c, "Invalid webhook signature.")
+	if err := h.verifier.Verify(WebhookHeaders{
+		Signature: c.GetHeader("X-Payment-Signature"),
+		Timestamp: c.GetHeader("X-Payment-Timestamp"),
+	}, raw); err != nil {
+		h.logger.Warn("webhook verification failed",
+			slog.String("scheme", h.verifier.Name()), slog.Any("error", err))
+		web.Unauthorized(c, "Webhook verification failed.")
 		return
 	}
 
@@ -90,6 +97,8 @@ func (h *Handler) Webhook(c *gin.Context) {
 	c.JSON(http.StatusOK, webhookResponse{Received: true, Applied: applied})
 }
 
+// (webhook signature verification lives in signature.go)
+
 // Earnings handles GET /v1/payments/me — the caller's teacher earnings summary.
 func (h *Handler) Earnings(c *gin.Context) {
 	uid, ok := auth.UserID(c)
@@ -109,14 +118,4 @@ func (h *Handler) Earnings(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, toEarningsDTO(e))
-}
-
-func validSignature(secret, header string, body []byte) bool {
-	if header == "" {
-		return false
-	}
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write(body)
-	want := hex.EncodeToString(mac.Sum(nil))
-	return subtle.ConstantTimeCompare([]byte(want), []byte(header)) == 1
 }
