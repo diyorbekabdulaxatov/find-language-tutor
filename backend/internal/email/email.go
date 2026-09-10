@@ -70,10 +70,20 @@ func New(cfg Config, logger *slog.Logger) Emailer {
 type logEmailer struct{ logger *slog.Logger }
 
 func (e *logEmailer) Send(ctx context.Context, m Message) error {
+	body := strings.TrimSpace(m.TextBody)
+	if body == "" {
+		body = firstLine(m.HTMLBody)
+	}
+	// Dev convenience: the whole text body is logged (capped) so links in
+	// verification / password-reset mail are actually usable without a real
+	// email provider.
+	if len(body) > 2000 {
+		body = body[:2000] + "…"
+	}
 	e.logger.InfoContext(ctx, "email (not sent: logging emailer)",
 		slog.String("to", m.To),
 		slog.String("subject", m.Subject),
-		slog.String("body", firstLine(m.TextBody, m.HTMLBody)),
+		slog.String("body", body),
 	)
 	return nil
 }

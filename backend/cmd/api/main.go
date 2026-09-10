@@ -16,6 +16,7 @@ import (
 
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/admin"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/auth"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/authmail"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/availability"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/bookings"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
@@ -121,6 +122,11 @@ func run(logger *slog.Logger) error {
 	}
 	mailer := email.New(email.Config{ResendAPIKey: cfg.ResendAPIKey, EmailFrom: cfg.EmailFrom}, logger)
 	bookingService.SetNotifier(lessons.NewNotifier(mailer, logger))
+
+	// Account-recovery email (verify address / reset password). Optional port —
+	// without it the flows still work but send nothing.
+	authService.SetMailer(authmail.New(mailer, cfg.AppBaseURL, logger))
+	authService.SetLogger(logger)
 
 	// Payments. The MVP uses a deterministic in-process fake (Stripe does not
 	// operate in Uzbekistan); a real Payme / Click / Uzum adapter drops in

@@ -185,6 +185,16 @@ func (ns NullTeacherKind) Value() (driver.Value, error) {
 	return string(ns.TeacherKind), nil
 }
 
+type AuthToken struct {
+	ID          uuid.UUID
+	UserID      uuid.UUID
+	Purpose     string
+	TokenSha256 []byte
+	ExpiresAt   pgtype.Timestamptz
+	ConsumedAt  pgtype.Timestamptz
+	CreatedAt   pgtype.Timestamptz
+}
+
 type Booking struct {
 	ID                 uuid.UUID
 	TeacherID          uuid.UUID
@@ -371,12 +381,13 @@ type TeacherLanguage struct {
 }
 
 type User struct {
-	ID           uuid.UUID
-	Email        string
-	PasswordHash string
-	DisplayName  string
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	ID              uuid.UUID
+	Email           string
+	PasswordHash    string
+	DisplayName     string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	EmailVerifiedAt pgtype.Timestamptz
 }
 
 type UserRole struct {

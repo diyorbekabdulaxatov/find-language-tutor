@@ -113,9 +113,16 @@ type Querier interface {
 	// successful authorization webhook. Guarded so a replay cannot resurrect a
 	// cancelled booking.
 	ConfirmBookingForPayment(ctx context.Context, id uuid.UUID) error
+	// Spend a token by its hash (the redeem flows already hold the hash, not the id).
+	ConsumeAuthToken(ctx context.Context, tokenSha256 []byte) error
+	// Invalidate a user's outstanding tokens of a purpose before issuing a new one,
+	// so only the newest link works.
+	ConsumeUserAuthTokens(ctx context.Context, arg ConsumeUserAuthTokensParams) error
 	CountTeacherReviews(ctx context.Context, teacherID uuid.UUID) (int64, error)
 	CountTeachers(ctx context.Context, arg CountTeachersParams) (int64, error)
 	CountUsersWithRole(ctx context.Context, roleID uuid.UUID) (int64, error)
+	// --- account-recovery link tokens (migration 000013) ---
+	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (uuid.UUID, error)
 	CreateBooking(ctx context.Context, arg CreateBookingParams) (uuid.UUID, error)
 	// Payments module: one payment intent per booking, the webhook-event log that
 	// guards idempotency, and the simplified teacher-earnings ledger. Money is
@@ -130,7 +137,7 @@ type Querier interface {
 	// not public until an admin approves it. verified defaults to false.
 	CreateTeacher(ctx context.Context, arg CreateTeacherParams) (uuid.UUID, error)
 	// Auth module: user accounts and refresh-token sessions.
-	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	// Seed-only. bookings.teacher_id / student_id reference teachers / users with
 	// no ON DELETE CASCADE, so the seed must clear bookings before those tables.
 	DeleteAllBookings(ctx context.Context) error
@@ -189,6 +196,9 @@ type Querier interface {
 	// (only confirmed / completed lessons can be disputed).
 	GetDisputeBookingContext(ctx context.Context, id uuid.UUID) (GetDisputeBookingContextRow, error)
 	GetDisputeByID(ctx context.Context, id uuid.UUID) (GetDisputeByIDRow, error)
+	// A token that can still be redeemed: matches the hash + purpose, not consumed,
+	// not expired.
+	GetLiveAuthToken(ctx context.Context, arg GetLiveAuthTokenParams) (GetLiveAuthTokenRow, error)
 	// The booking's open dispute, if any. Backs the `open_dispute` /
 	// `can_raise_dispute` fields the participant sees on a booking.
 	GetOpenDisputeForBooking(ctx context.Context, bookingID uuid.UUID) (GetOpenDisputeForBookingRow, error)
@@ -213,8 +223,8 @@ type Querier interface {
 	GetTeacherBySlug(ctx context.Context, slug string) (Teacher, error)
 	// The teacher profile owned by an account (one per user), or no rows.
 	GetTeacherIDByOwner(ctx context.Context, userID uuid.NullUUID) (uuid.UUID, error)
-	GetUserByEmail(ctx context.Context, email string) (User, error)
-	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error)
+	GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow, error)
 	// A second OPEN dispute for the same booking raises SQLSTATE 23505 on
 	// disputes_one_open_per_booking, which the repository maps to ErrDisputeExists
 	// (race-safe, never a check-then-insert).
@@ -238,6 +248,9 @@ type Querier interface {
 	// Count of teachers per taught language across the whole catalog. Drives the
 	// language filter in the UI, so it is intentionally unfiltered.
 	LanguageFacets(ctx context.Context) ([]LanguageFacetsRow, error)
+	// The most recent still-live token of a purpose for a user — drives the "one was
+	// just sent, don't send another" cooldown. No row -> zero time.
+	LatestAuthTokenAt(ctx context.Context, arg LatestAuthTokenAtParams) (pgtype.Timestamptz, error)
 	ListAvailabilitySlots(ctx context.Context, teacherID uuid.UUID) ([]ListAvailabilitySlotsRow, error)
 	// Bookings the caller participates in. Pass the caller's user id as
 	// student_filter and/or the caller-owned teacher id as teacher_filter; use the
@@ -281,6 +294,8 @@ type Querier interface {
 	MarkPaymentCaptured(ctx context.Context, id uuid.UUID) error
 	MarkPaymentFailed(ctx context.Context, arg MarkPaymentFailedParams) error
 	MarkPaymentRefunded(ctx context.Context, id uuid.UUID) error
+	// Idempotent: keeps the first verification time if the row is already verified.
+	MarkUserEmailVerified(ctx context.Context, id uuid.UUID) error
 	// RBAC module: roles, the permissions they grant, and role assignments. A
 	// user's effective permissions are the union across their roles, resolved per
 	// request (never from the JWT).
@@ -321,6 +336,8 @@ type Querier interface {
 	SeedInsertPayoutLedgerRow(ctx context.Context, arg SeedInsertPayoutLedgerRowParams) error
 	// Seed-only: a booking-less sample review. Does NOT touch the teacher aggregate.
 	SeedInsertReview(ctx context.Context, arg SeedInsertReviewParams) error
+	// Seed-only: stamp every demo account verified so the nudge banner is quiet.
+	SeedMarkEmailVerified(ctx context.Context) error
 	// Seed-only: once the demo teachers are inserted with their hand-set
 	// rating / review_count, stamp those as the immutable baseline the review
 	// moderation recompute folds visible reviews onto (migration 000012 does the
@@ -336,6 +353,9 @@ type Querier interface {
 	SetBookingNoShowParty(ctx context.Context, arg SetBookingNoShowPartyParams) error
 	SetBookingStatus(ctx context.Context, arg SetBookingStatusParams) error
 	SetReviewHidden(ctx context.Context, arg SetReviewHiddenParams) error
+	// Password reset: replace the hash and bump updated_at. The caller also revokes
+	// every session in the same transaction.
+	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
 	// The teacher profile owned by a user (one per user), or no rows.
 	TeacherRefByOwner(ctx context.Context, userID uuid.NullUUID) (TeacherRefByOwnerRow, error)
 	// Write queries: the demo seed plus the dashboard's create/update-profile flow.
@@ -350,7 +370,7 @@ type Querier interface {
 	UpdateTeacher(ctx context.Context, arg UpdateTeacherParams) error
 	// Edit the caller's own account. Email is immutable here (changing it needs a
 	// verification flow that does not exist yet).
-	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
+	UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error)
 	UserExists(ctx context.Context, id uuid.UUID) (bool, error)
 }
 

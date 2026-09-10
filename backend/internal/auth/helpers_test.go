@@ -22,8 +22,17 @@ type fakeRepo struct {
 	usersByEmail map[string]*storedUser
 	sessions     map[uuid.UUID]*Session
 	byHash       map[string]uuid.UUID
+	authTokens   map[string]*fakeAuthToken // hash hex -> token
 
 	failCreateUser error
+}
+
+type fakeAuthToken struct {
+	userID     uuid.UUID
+	purpose    TokenPurpose
+	expiresAt  time.Time
+	consumedAt *time.Time
+	createdAt  time.Time
 }
 
 type storedUser struct {
@@ -37,6 +46,7 @@ func newFakeRepo() *fakeRepo {
 		usersByEmail: map[string]*storedUser{},
 		sessions:     map[uuid.UUID]*Session{},
 		byHash:       map[string]uuid.UUID{},
+		authTokens:   map[string]*fakeAuthToken{},
 	}
 }
 
@@ -135,6 +145,120 @@ func (r *fakeRepo) RevokeAllUserSessions(_ context.Context, userID uuid.UUID) er
 		if s.UserID == userID && s.RevokedAt == nil {
 			s.RevokedAt = &now
 		}
+	}
+	return nil
+}
+
+// --- account recovery ---
+
+func (r *fakeRepo) UserByEmail(_ context.Context, email string) (User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	su, ok := r.usersByEmail[email]
+	if !ok {
+		return User{}, ErrUserNotFound
+	}
+	return su.user, nil
+}
+
+func (r *fakeRepo) SetUserPassword(_ context.Context, userID uuid.UUID, hash string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	su, ok := r.usersByID[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	su.hash = hash
+	su.user.UpdatedAt = time.Now()
+	return nil
+}
+
+func (r *fakeRepo) MarkEmailVerified(_ context.Context, userID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	su, ok := r.usersByID[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	su.user.EmailVerified = true
+	return nil
+}
+
+func (r *fakeRepo) CreateAuthToken(_ context.Context, userID uuid.UUID, purpose TokenPurpose, tokenHash []byte, expiresAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.authTokens[hex.EncodeToString(tokenHash)] = &fakeAuthToken{
+		userID: userID, purpose: purpose, expiresAt: expiresAt, createdAt: time.Now(),
+	}
+	return nil
+}
+
+func (r *fakeRepo) LiveAuthToken(_ context.Context, tokenHash []byte, purpose TokenPurpose) (uuid.UUID, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.authTokens[hex.EncodeToString(tokenHash)]
+	if !ok || t.purpose != purpose || t.consumedAt != nil || !t.expiresAt.After(time.Now()) {
+		return uuid.Nil, ErrInvalidToken
+	}
+	return t.userID, nil
+}
+
+func (r *fakeRepo) ConsumeUserAuthTokens(_ context.Context, userID uuid.UUID, purpose TokenPurpose) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now()
+	for _, t := range r.authTokens {
+		if t.userID == userID && t.purpose == purpose && t.consumedAt == nil {
+			t.consumedAt = &now
+		}
+	}
+	return nil
+}
+
+func (r *fakeRepo) LatestAuthTokenAt(_ context.Context, userID uuid.UUID, purpose TokenPurpose) (time.Time, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var latest time.Time
+	for _, t := range r.authTokens {
+		if t.userID == userID && t.purpose == purpose && t.consumedAt == nil && t.createdAt.After(latest) {
+			latest = t.createdAt
+		}
+	}
+	return latest, nil
+}
+
+func (r *fakeRepo) ResetPassword(_ context.Context, userID uuid.UUID, tokenHash []byte, passwordHash string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	su, ok := r.usersByID[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	su.hash = passwordHash
+	su.user.UpdatedAt = time.Now()
+	now := time.Now()
+	if t, ok := r.authTokens[hex.EncodeToString(tokenHash)]; ok {
+		t.consumedAt = &now
+	}
+	for _, s := range r.sessions {
+		if s.UserID == userID && s.RevokedAt == nil {
+			s.RevokedAt = &now
+		}
+	}
+	return nil
+}
+
+func (r *fakeRepo) ConfirmEmail(_ context.Context, userID uuid.UUID, tokenHash []byte) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	su, ok := r.usersByID[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	su.user.EmailVerified = true
+	now := time.Now()
+	if t, ok := r.authTokens[hex.EncodeToString(tokenHash)]; ok {
+		t.consumedAt = &now
 	}
 	return nil
 }
