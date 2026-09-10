@@ -9,6 +9,7 @@ import {
   GraduationCap,
   ShieldAlert,
   ShieldCheck,
+  Star,
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,7 @@ const LINKS: {
   { href: "/admin/bookings", label: "Bookings", icon: CalendarClock, perm: PERMISSIONS.bookingsView },
   { href: "/admin/disputes", label: "Disputes", icon: ShieldAlert, perm: PERMISSIONS.disputesResolve },
   { href: "/admin/payouts", label: "Payouts", icon: Banknote, perm: PERMISSIONS.payoutsView },
+  { href: "/admin/reviews", label: "Reviews", icon: Star, perm: PERMISSIONS.reviewsModerate },
   { href: "/admin/users", label: "Users", icon: Users, perm: PERMISSIONS.usersView },
   { href: "/admin/roles", label: "Roles", icon: ShieldCheck, perm: PERMISSIONS.rolesManage },
 ];

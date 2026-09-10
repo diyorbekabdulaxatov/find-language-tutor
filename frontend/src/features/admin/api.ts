@@ -773,3 +773,77 @@ export async function runPayout(): Promise<PayoutBatchDetail> {
   );
   return toPayoutBatchDetail(w);
 }
+
+/* --------------------------- reviews (phase F) ------------------------- */
+
+type WireAdminReview = components["schemas"]["AdminReview"];
+
+export type ReviewVisibility = "all" | "visible" | "hidden";
+
+export interface AdminReview {
+  id: string;
+  rating: number;
+  comment: string;
+  hidden: boolean;
+  createdAt: string;
+  teacher: { slug: string; displayName: string };
+  studentName: string;
+  bookingId: string | null;
+  sample: boolean;
+}
+
+const toAdminReview = (r: WireAdminReview): AdminReview => ({
+  id: r.id,
+  rating: r.rating,
+  comment: r.comment,
+  hidden: r.hidden,
+  createdAt: r.created_at,
+  teacher: { slug: r.teacher.slug, displayName: r.teacher.display_name },
+  studentName: r.student_display_name,
+  bookingId: r.booking_id ?? null,
+  sample: r.sample,
+});
+
+export async function listAdminReviews(opts: {
+  visibility?: ReviewVisibility;
+  teacher?: string;
+  maxRating?: number;
+  page?: number;
+}): Promise<Paged<AdminReview>> {
+  const p = new URLSearchParams({ page: String(opts.page ?? 1) });
+  if (opts.visibility && opts.visibility !== "all") p.set("visibility", opts.visibility);
+  if (opts.teacher) p.set("teacher", opts.teacher);
+  if (opts.maxRating) p.set("max_rating", String(opts.maxRating));
+  const w = await call<components["schemas"]["AdminReviewList"]>(
+    `/v1/admin/reviews?${p}`,
+    {},
+    "Could not load the review queue.",
+  );
+  return { items: w.reviews.map(toAdminReview), total: w.total };
+}
+
+export async function hideReview(id: string): Promise<AdminReview> {
+  const w = await call<WireAdminReview>(
+    `/v1/admin/reviews/${encodeURIComponent(id)}/hide`,
+    { method: "POST", body: "{}" },
+    "Could not hide the review.",
+  );
+  return toAdminReview(w);
+}
+
+export async function unhideReview(id: string): Promise<AdminReview> {
+  const w = await call<WireAdminReview>(
+    `/v1/admin/reviews/${encodeURIComponent(id)}/unhide`,
+    { method: "POST", body: "{}" },
+    "Could not restore the review.",
+  );
+  return toAdminReview(w);
+}
+
+export async function removeReview(id: string): Promise<void> {
+  await call(
+    `/v1/admin/reviews/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+    "Could not remove the review.",
+  );
+}
