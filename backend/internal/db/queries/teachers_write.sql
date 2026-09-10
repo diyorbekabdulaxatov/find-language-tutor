@@ -67,6 +67,14 @@ INSERT INTO teachers (
 )
 RETURNING id;
 
+-- name: SeedSnapshotRatingBaselines :exec
+-- Seed-only: once the demo teachers are inserted with their hand-set
+-- rating / review_count, stamp those as the immutable baseline the review
+-- moderation recompute folds visible reviews onto (migration 000012 does the
+-- same for an existing database — but on a fresh migrate the teachers table is
+-- still empty, so the seed has to redo it here).
+UPDATE teachers SET rating_base = rating, review_count_base = review_count;
+
 -- name: AddTeacherLanguage :exec
 INSERT INTO teacher_languages (teacher_id, role, code, name, level, position)
 VALUES ($1, $2, $3, $4, $5, $6);

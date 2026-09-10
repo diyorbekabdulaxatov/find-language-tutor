@@ -187,6 +187,13 @@ func main() {
 		}
 	}
 
+	// Stamp the hand-set rating / review_count as the immutable baseline that
+	// review moderation folds visible reviews onto (migration 000012). The
+	// migration already does this, but it runs against an empty teachers table.
+	if err := q.SeedSnapshotRatingBaselines(ctx); err != nil {
+		log.Fatalf("snapshot rating baselines: %v", err)
+	}
+
 	// RBAC seed: the system 'superadmin' role (always the full catalog), two
 	// non-system example roles, and one admin account holding superadmin.
 	// admin@findtutor.local / "admin" — no teacher profile. Documented in README.
@@ -226,28 +233,37 @@ func main() {
 	// Sample reviews: booking-less rows (booking_id NULL) that display as a
 	// portion of each teacher's review history. These do NOT touch
 	// teachers.rating / review_count — the hand-set values stand.
-	reviewCount := 0
-	for slug, rs := range seedReviews {
-		teacherID, ok := teacherIDBySlug[slug]
-		if !ok {
-			log.Fatalf("seedReviews has slug %q with no matching teacher", slug)
-		}
-		for _, r := range rs {
-			studentID, ok := userIDByFirstName[r.StudentFirstName]
+	reviewCount, hiddenReviewCount := 0, 0
+	insertSampleReviews := func(src map[string][]seedReview, hidden bool) {
+		for slug, rs := range src {
+			teacherID, ok := teacherIDBySlug[slug]
 			if !ok {
-				log.Fatalf("seedReviews %s: no demo account for %q", slug, r.StudentFirstName)
+				log.Fatalf("sample reviews have slug %q with no matching teacher", slug)
 			}
-			if err := q.SeedInsertReview(ctx, sqlc.SeedInsertReviewParams{
-				TeacherID: teacherID,
-				StudentID: studentID,
-				Rating:    int16(r.Rating),
-				Comment:   r.Comment,
-			}); err != nil {
-				log.Fatalf("seed review %s/%s: %v", slug, r.StudentFirstName, err)
+			for _, r := range rs {
+				studentID, ok := userIDByFirstName[r.StudentFirstName]
+				if !ok {
+					log.Fatalf("sample review %s: no demo account for %q", slug, r.StudentFirstName)
+				}
+				if err := q.SeedInsertReview(ctx, sqlc.SeedInsertReviewParams{
+					TeacherID: teacherID,
+					StudentID: studentID,
+					Rating:    int16(r.Rating),
+					Comment:   r.Comment,
+					Hidden:    hidden,
+				}); err != nil {
+					log.Fatalf("seed review %s/%s: %v", slug, r.StudentFirstName, err)
+				}
+				if hidden {
+					hiddenReviewCount++
+				} else {
+					reviewCount++
+				}
 			}
-			reviewCount++
 		}
 	}
+	insertSampleReviews(seedReviews, false)
+	insertSampleReviews(seedHiddenReviews, true)
 
 	// Demo bookings + the one open dispute + the settled lessons behind the
 	// payout dashboard, so the phase-D/E operator surfaces (/v1/admin/bookings,
@@ -368,8 +384,8 @@ func main() {
 			payoutCount++
 		}
 	}
-	log.Printf("seeded %d teachers (+ %d demo accounts, password %q), 3 roles, 1 admin (admin@findtutor.local / \"admin\", superadmin), %d sample reviews, %d bookings, %d open disputes, %d settled lessons (%d already paid out)",
-		len(seedTeachers), len(seedTeachers), demoPassword, reviewCount, len(seedBookings), disputeCount,
+	log.Printf("seeded %d teachers (+ %d demo accounts, password %q), 3 roles, 1 admin (admin@findtutor.local / \"admin\", superadmin), %d sample reviews (%d hidden), %d bookings, %d open disputes, %d settled lessons (%d already paid out)",
+		len(seedTeachers), len(seedTeachers), demoPassword, reviewCount, hiddenReviewCount, len(seedBookings), disputeCount,
 		payoutCount, len(paidOut))
 }
 

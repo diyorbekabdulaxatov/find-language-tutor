@@ -81,6 +81,7 @@ func NewRouter(d Deps) *gin.Engine {
 	rbac.RegisterAdminRoutes(adminGroup, d.RBACHandler, d.RBACGuard)
 	disputes.RegisterAdminRoutes(adminGroup, d.DisputeHandler, d.RBACGuard)
 	payouts.RegisterAdminRoutes(adminGroup, d.PayoutHandler, d.RBACGuard)
+	reviews.RegisterAdminRoutes(adminGroup, d.ReviewHandler, d.RBACGuard)
 
 	return r
 }

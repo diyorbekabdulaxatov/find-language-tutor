@@ -29,6 +29,22 @@ type Repository interface {
 	// ListByTeacher returns a page of a teacher's reviews (newest first) and the
 	// total count.
 	ListByTeacher(ctx context.Context, teacherID uuid.UUID, limit, offset int) ([]Review, int, error)
+
+	// --- phase F: moderation ---
+
+	// ListForModeration returns a page of the moderation queue (newest first)
+	// and the total match count for the query's filters.
+	ListForModeration(ctx context.Context, q ModerationQuery, limit, offset int) ([]AdminReview, int, error)
+
+	// SetReviewHidden sets a review's `hidden` flag and recomputes the teacher's
+	// aggregate in one transaction, returning the updated row. ErrReviewNotFound
+	// when the id is unknown. Idempotent: hiding an already-hidden review is a
+	// no-op that still returns it.
+	SetReviewHidden(ctx context.Context, reviewID uuid.UUID, hidden bool) (AdminReview, error)
+
+	// RemoveReview permanently deletes a review and recomputes the teacher's
+	// aggregate in one transaction. ErrReviewNotFound when the id is unknown.
+	RemoveReview(ctx context.Context, reviewID uuid.UUID) error
 }
 
 // Service holds the review business rules. Handlers call it; it never sees a
@@ -116,4 +132,59 @@ func (s *Service) ListForTeacher(ctx context.Context, slug string, page, pageSiz
 // booking has not been reviewed). Backs the bookings.ReviewReader port.
 func (s *Service) ReviewForBooking(ctx context.Context, bookingID uuid.UUID) (Review, bool, error) {
 	return s.repo.ReviewByBooking(ctx, bookingID)
+}
+
+// --- phase F: moderation ---
+
+const (
+	moderationDefaultPageSize = 20
+	moderationMaxPageSize     = 100
+)
+
+// Moderate returns a page of the review moderation queue. Operator-only (the
+// handler enforces `reviews.moderate`). page defaults to 1, pageSize to 20
+// (capped at 100); an out-of-range MaxRating or unknown Visibility is a 400.
+func (s *Service) Moderate(ctx context.Context, q ModerationQuery) (AdminPage, error) {
+	switch q.Visibility {
+	case VisibilityAll, VisibilityVisible, VisibilityHidden:
+	default:
+		return AdminPage{}, invalid("`visibility` must be one of visible, hidden.")
+	}
+	if q.MaxRating < 0 || q.MaxRating > 5 {
+		return AdminPage{}, invalid("`max_rating` must be between 1 and 5.")
+	}
+
+	if q.Page < 1 {
+		q.Page = 1
+	}
+	if q.PageSize <= 0 {
+		q.PageSize = moderationDefaultPageSize
+	}
+	if q.PageSize > moderationMaxPageSize {
+		q.PageSize = moderationMaxPageSize
+	}
+
+	items, total, err := s.repo.ListForModeration(ctx, q, q.PageSize, (q.Page-1)*q.PageSize)
+	if err != nil {
+		return AdminPage{}, err
+	}
+	if items == nil {
+		items = []AdminReview{}
+	}
+	return AdminPage{Reviews: items, Total: total}, nil
+}
+
+// Hide removes a review from public display; Unhide restores it. Both recompute
+// the teacher's rating aggregate. Idempotent.
+func (s *Service) Hide(ctx context.Context, reviewID uuid.UUID) (AdminReview, error) {
+	return s.repo.SetReviewHidden(ctx, reviewID, true)
+}
+
+func (s *Service) Unhide(ctx context.Context, reviewID uuid.UUID) (AdminReview, error) {
+	return s.repo.SetReviewHidden(ctx, reviewID, false)
+}
+
+// Remove permanently deletes a review and recomputes the teacher aggregate.
+func (s *Service) Remove(ctx context.Context, reviewID uuid.UUID) error {
+	return s.repo.RemoveReview(ctx, reviewID)
 }

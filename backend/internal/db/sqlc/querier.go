@@ -23,6 +23,8 @@ type Querier interface {
 	AdminCountBookings(ctx context.Context, arg AdminCountBookingsParams) (int64, error)
 	AdminCountDisputes(ctx context.Context, status pgtype.Text) (int64, error)
 	AdminCountPayoutBatches(ctx context.Context) (int64, error)
+	// Same filters as AdminListReviews — the total match count for pagination.
+	AdminCountReviews(ctx context.Context, arg AdminCountReviewsParams) (int64, error)
 	AdminCountTeachers(ctx context.Context, arg AdminCountTeachersParams) (int64, error)
 	AdminCountUsers(ctx context.Context, q_ pgtype.Text) (int64, error)
 	// One booking with everything the operator detail view shows: the list-row
@@ -30,6 +32,7 @@ type Querier interface {
 	// override if set, else the teacher's default), and the payment detail.
 	AdminGetBooking(ctx context.Context, id uuid.UUID) (AdminGetBookingRow, error)
 	AdminGetPayoutBatch(ctx context.Context, id uuid.UUID) (AdminGetPayoutBatchRow, error)
+	AdminGetReview(ctx context.Context, id uuid.UUID) (AdminGetReviewRow, error)
 	AdminGetTeacherModeration(ctx context.Context, slug string) (AdminGetTeacherModerationRow, error)
 	AdminGetUser(ctx context.Context, id uuid.UUID) (AdminGetUserRow, error)
 	AdminGetUserTeacherProfile(ctx context.Context, userID uuid.NullUUID) (AdminGetUserTeacherProfileRow, error)
@@ -61,6 +64,11 @@ type Querier interface {
 	AdminListPayoutBatchLines(ctx context.Context, payoutBatchID uuid.NullUUID) ([]AdminListPayoutBatchLinesRow, error)
 	// Past payout runs, newest first.
 	AdminListPayoutBatches(ctx context.Context, arg AdminListPayoutBatchesParams) ([]AdminListPayoutBatchesRow, error)
+	// --- Admin: review moderation (phase F) ---
+	// A page of reviews for the moderation queue, newest first. Filters are all
+	// optional: visibility ('visible' | 'hidden'; NULL = both), a teacher slug, and
+	// a rating ceiling (to surface the low-star reviews an operator is looking for).
+	AdminListReviews(ctx context.Context, arg AdminListReviewsParams) ([]AdminListReviewsRow, error)
 	AdminListTeachers(ctx context.Context, arg AdminListTeachersParams) ([]AdminListTeachersRow, error)
 	// The 50 newest bookings the user takes part in, as student or as teacher-owner.
 	AdminListUserBookings(ctx context.Context, studentID uuid.UUID) ([]AdminListUserBookingsRow, error)
@@ -83,11 +91,6 @@ type Querier interface {
 	// /v1/teachers/{slug}/reviews 404s for a non-approved slug, same as the profile.
 	ApprovedTeacherIDBySlug(ctx context.Context, slug string) (uuid.UUID, error)
 	AssignRoleToUser(ctx context.Context, arg AssignRoleToUserParams) error
-	// Incrementally fold one new rating into the teacher's display aggregate,
-	// keeping the hand-set historical values as the baseline. All references to the
-	// current row see the pre-UPDATE values, so review_count is the old count in
-	// both expressions. Result clamped to [0, 5].
-	BumpTeacherRatingForReview(ctx context.Context, arg BumpTeacherRatingForReviewParams) error
 	// cancelled_by records WHO cancelled: 'student', 'teacher' (includes a teacher
 	// no-show) or 'admin' (the operator force-cancel override). The service picks
 	// the value; the column's CHECK constraint is the guard.
@@ -143,6 +146,7 @@ type Querier interface {
 	// first.
 	DeleteAllUsers(ctx context.Context) error
 	DeleteAvailabilitySlots(ctx context.Context, teacherID uuid.UUID) error
+	DeleteReview(ctx context.Context, id uuid.UUID) error
 	DeleteRole(ctx context.Context, id uuid.UUID) error
 	DeleteRolePermissions(ctx context.Context, roleID uuid.UUID) error
 	DeleteTeacherExperience(ctx context.Context, teacherID uuid.UUID) error
@@ -216,7 +220,7 @@ type Querier interface {
 	// A real, booking-tied review. A duplicate for the same booking_id raises
 	// SQLSTATE 23505 on reviews_booking_uniq, which the repository maps to
 	// ErrAlreadyReviewed (race-safe, never a check-then-insert).
-	InsertReview(ctx context.Context, arg InsertReviewParams) (Review, error)
+	InsertReview(ctx context.Context, arg InsertReviewParams) (InsertReviewRow, error)
 	// Count of teachers per taught language across the whole catalog. Drives the
 	// language filter in the UI, so it is intentionally unfiltered.
 	LanguageFacets(ctx context.Context) ([]LanguageFacetsRow, error)
@@ -236,7 +240,8 @@ type Querier interface {
 	// server-side slot generation and the pre-insert bookability re-check.
 	ListTeacherBookingIntervals(ctx context.Context, arg ListTeacherBookingIntervalsParams) ([]ListTeacherBookingIntervalsRow, error)
 	ListTeacherEarnings(ctx context.Context, teacherID uuid.UUID) ([]ListTeacherEarningsRow, error)
-	// A page of a teacher's reviews, newest first.
+	// A page of a teacher's PUBLIC reviews, newest first. Hidden reviews (removed
+	// from display by an operator) never appear on the profile.
 	ListTeacherReviews(ctx context.Context, arg ListTeacherReviewsParams) ([]ListTeacherReviewsRow, error)
 	// Public: the frontend's static-generation slug list. Non-approved teachers are
 	// not public, so they are excluded here too.
@@ -267,6 +272,13 @@ type Querier interface {
 	// request (never from the JWT).
 	// The caller's effective permission keys, deduped and sorted. One indexed join.
 	PermissionsForUser(ctx context.Context, userID uuid.UUID) ([]string, error)
+	// Rebuild a teacher's display aggregate (teachers.rating / review_count) from
+	// the immutable historical baseline (rating_base / review_count_base) folded
+	// with their currently VISIBLE, booking-tied reviews. Idempotent and
+	// order-independent — run it after a review is created, hidden, unhidden, or
+	// removed. Result clamped to [0, 5]; a teacher with no baseline and no visible
+	// reviews reads as 0.
+	RecomputeTeacherRating(ctx context.Context, teacherID uuid.UUID) error
 	// Guarded UPDATE: only an OPEN dispute moves. No rows back means either "no such
 	// dispute" or "already resolved" — the repository re-reads the row to tell the
 	// two apart, so a lost race renders 409 already_resolved rather than clobbering
@@ -295,6 +307,12 @@ type Querier interface {
 	SeedInsertPayoutLedgerRow(ctx context.Context, arg SeedInsertPayoutLedgerRowParams) error
 	// Seed-only: a booking-less sample review. Does NOT touch the teacher aggregate.
 	SeedInsertReview(ctx context.Context, arg SeedInsertReviewParams) error
+	// Seed-only: once the demo teachers are inserted with their hand-set
+	// rating / review_count, stamp those as the immutable baseline the review
+	// moderation recompute folds visible reviews onto (migration 000012 does the
+	// same for an existing database — but on a fresh migrate the teachers table is
+	// still empty, so the seed has to redo it here).
+	SeedSnapshotRatingBaselines(ctx context.Context) error
 	// Per-booking meeting link override. An empty string clears it (fall back to the
 	// teacher's default meeting_url).
 	SetBookingMeetingLinkOverride(ctx context.Context, arg SetBookingMeetingLinkOverrideParams) error
@@ -303,6 +321,7 @@ type Querier interface {
 	// SetBookingStatus / CancelBooking so the capture / refund path is reused.
 	SetBookingNoShowParty(ctx context.Context, arg SetBookingNoShowPartyParams) error
 	SetBookingStatus(ctx context.Context, arg SetBookingStatusParams) error
+	SetReviewHidden(ctx context.Context, arg SetReviewHiddenParams) error
 	// The teacher profile owned by a user (one per user), or no rows.
 	TeacherRefByOwner(ctx context.Context, userID uuid.NullUUID) (TeacherRefByOwnerRow, error)
 	// Write queries: the demo seed plus the dashboard's create/update-profile flow.

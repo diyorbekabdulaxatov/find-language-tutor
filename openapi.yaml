@@ -1673,6 +1673,105 @@ paths:
           description: "`nothing_to_pay` — no earning has cleared its holding period."
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
 
+  /v1/admin/reviews:
+    get:
+      tags: [admin]
+      summary: The review moderation queue
+      description: >
+        Permission: `reviews.moderate`. Every review on the platform, newest
+        first — the booking-tied reviews students leave and the seeded sample
+        reviews that pad each teacher's history (`sample: true`). Filters are
+        optional: `visibility` (visible / hidden), a teacher `slug`, and a
+        `max_rating` ceiling to surface the low-star reviews.
+      operationId: adminReviewQueue
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: visibility
+          in: query
+          schema: { type: string, enum: [visible, hidden] }
+          description: Omit for both.
+        - { name: teacher, in: query, schema: { type: string }, description: Teacher slug. }
+        - { name: max_rating, in: query, schema: { type: integer, minimum: 1, maximum: 5 } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of the moderation queue.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminReviewList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/reviews/{id}/hide:
+    post:
+      tags: [admin]
+      summary: Hide a review
+      description: >
+        Permission: `reviews.moderate`. Takes the review off the teacher's
+        public profile and recomputes their rating aggregate from the historical
+        baseline folded with the reviews that are still visible. Idempotent. No
+        request body.
+      operationId: adminHideReview
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The updated review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminReview" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`not_found` — no review with that id."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/reviews/{id}/unhide:
+    post:
+      tags: [admin]
+      summary: Restore a hidden review
+      description: >
+        Permission: `reviews.moderate`. Puts the review back on the profile and
+        folds it back into the rating aggregate. Idempotent. No request body.
+      operationId: adminUnhideReview
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The updated review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminReview" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`not_found` — no review with that id."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/reviews/{id}:
+    delete:
+      tags: [admin]
+      summary: Permanently remove a review
+      description: >
+        Permission: `reviews.moderate`. Deletes the review for good and
+        recomputes the teacher's rating aggregate. Use `hide` for anything
+        reversible.
+      operationId: adminRemoveReview
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`not_found` — no review with that id."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2444,6 +2543,41 @@ components:
         total:
           type: integer
           description: Total reviews for the teacher (not just this page).
+
+    AdminReview:
+      description: One review in the moderation queue, with the teacher it is about.
+      type: object
+      required: [id, rating, comment, hidden, created_at, teacher, student_display_name, booking_id, sample]
+      properties:
+        id: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        hidden: { type: boolean, description: True once an operator has taken it off the profile. }
+        created_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        teacher:
+          type: object
+          required: [slug, display_name]
+          properties:
+            slug: { type: string }
+            display_name: { type: string }
+        student_display_name: { type: string }
+        booking_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: The completed lesson this review is for; null for a seeded sample review.
+        sample:
+          type: boolean
+          description: >
+            True for a seeded, booking-less review — part of the teacher's
+            historical display set, never folded into the live rating aggregate.
+
+    AdminReviewList:
+      type: object
+      required: [reviews, total]
+      properties:
+        reviews: { type: array, items: { $ref: "#/components/schemas/AdminReview" } }
+        total: { type: integer, description: Total matches, not just this page. }
 
     # --- Disputes (phase D) ---
 

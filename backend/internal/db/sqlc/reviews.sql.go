@@ -12,6 +12,155 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adminCountReviews = `-- name: AdminCountReviews :one
+SELECT count(*)
+FROM reviews r
+JOIN teachers t ON t.id = r.teacher_id
+WHERE (
+        $1::text IS NULL
+        OR ($1::text = 'visible' AND NOT r.hidden)
+        OR ($1::text = 'hidden'  AND r.hidden)
+      )
+  AND ($2::text IS NULL OR t.slug = $2::text)
+  AND ($3::int IS NULL OR r.rating <= $3::int)
+`
+
+type AdminCountReviewsParams struct {
+	Visibility  pgtype.Text
+	TeacherSlug pgtype.Text
+	MaxRating   pgtype.Int4
+}
+
+// Same filters as AdminListReviews — the total match count for pagination.
+func (q *Queries) AdminCountReviews(ctx context.Context, arg AdminCountReviewsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountReviews, arg.Visibility, arg.TeacherSlug, arg.MaxRating)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const adminGetReview = `-- name: AdminGetReview :one
+SELECT r.id, r.teacher_id, r.rating, r.comment, r.created_at, r.hidden, r.booking_id,
+       t.slug         AS teacher_slug,
+       t.display_name AS teacher_display_name,
+       u.display_name AS student_display_name
+FROM reviews r
+JOIN teachers t ON t.id = r.teacher_id
+JOIN users    u ON u.id = r.student_id
+WHERE r.id = $1
+`
+
+type AdminGetReviewRow struct {
+	ID                 uuid.UUID
+	TeacherID          uuid.UUID
+	Rating             int16
+	Comment            string
+	CreatedAt          pgtype.Timestamptz
+	Hidden             bool
+	BookingID          uuid.NullUUID
+	TeacherSlug        string
+	TeacherDisplayName string
+	StudentDisplayName string
+}
+
+func (q *Queries) AdminGetReview(ctx context.Context, id uuid.UUID) (AdminGetReviewRow, error) {
+	row := q.db.QueryRow(ctx, adminGetReview, id)
+	var i AdminGetReviewRow
+	err := row.Scan(
+		&i.ID,
+		&i.TeacherID,
+		&i.Rating,
+		&i.Comment,
+		&i.CreatedAt,
+		&i.Hidden,
+		&i.BookingID,
+		&i.TeacherSlug,
+		&i.TeacherDisplayName,
+		&i.StudentDisplayName,
+	)
+	return i, err
+}
+
+const adminListReviews = `-- name: AdminListReviews :many
+
+SELECT r.id, r.rating, r.comment, r.created_at, r.hidden, r.booking_id,
+       t.slug         AS teacher_slug,
+       t.display_name AS teacher_display_name,
+       u.display_name AS student_display_name
+FROM reviews r
+JOIN teachers t ON t.id = r.teacher_id
+JOIN users    u ON u.id = r.student_id
+WHERE (
+        $1::text IS NULL
+        OR ($1::text = 'visible' AND NOT r.hidden)
+        OR ($1::text = 'hidden'  AND r.hidden)
+      )
+  AND ($2::text IS NULL OR t.slug = $2::text)
+  AND ($3::int IS NULL OR r.rating <= $3::int)
+ORDER BY r.created_at DESC, r.id DESC
+LIMIT $5::int OFFSET $4::int
+`
+
+type AdminListReviewsParams struct {
+	Visibility  pgtype.Text
+	TeacherSlug pgtype.Text
+	MaxRating   pgtype.Int4
+	PageOffset  int32
+	PageLimit   int32
+}
+
+type AdminListReviewsRow struct {
+	ID                 uuid.UUID
+	Rating             int16
+	Comment            string
+	CreatedAt          pgtype.Timestamptz
+	Hidden             bool
+	BookingID          uuid.NullUUID
+	TeacherSlug        string
+	TeacherDisplayName string
+	StudentDisplayName string
+}
+
+// --- Admin: review moderation (phase F) ---
+// A page of reviews for the moderation queue, newest first. Filters are all
+// optional: visibility ('visible' | 'hidden'; NULL = both), a teacher slug, and
+// a rating ceiling (to surface the low-star reviews an operator is looking for).
+func (q *Queries) AdminListReviews(ctx context.Context, arg AdminListReviewsParams) ([]AdminListReviewsRow, error) {
+	rows, err := q.db.Query(ctx, adminListReviews,
+		arg.Visibility,
+		arg.TeacherSlug,
+		arg.MaxRating,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminListReviewsRow{}
+	for rows.Next() {
+		var i AdminListReviewsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Rating,
+			&i.Comment,
+			&i.CreatedAt,
+			&i.Hidden,
+			&i.BookingID,
+			&i.TeacherSlug,
+			&i.TeacherDisplayName,
+			&i.StudentDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const approvedTeacherIDBySlug = `-- name: ApprovedTeacherIDBySlug :one
 SELECT id FROM teachers WHERE slug = $1 AND status = 'approved'
 `
@@ -25,32 +174,8 @@ func (q *Queries) ApprovedTeacherIDBySlug(ctx context.Context, slug string) (uui
 	return id, err
 }
 
-const bumpTeacherRatingForReview = `-- name: BumpTeacherRatingForReview :exec
-UPDATE teachers
-SET rating = LEAST(5, GREATEST(0,
-        round(((rating::numeric * review_count) + $1::int)
-              / (review_count + 1), 1)))::real,
-    review_count = review_count + 1,
-    updated_at = now()
-WHERE id = $2
-`
-
-type BumpTeacherRatingForReviewParams struct {
-	NewRating int32
-	TeacherID uuid.UUID
-}
-
-// Incrementally fold one new rating into the teacher's display aggregate,
-// keeping the hand-set historical values as the baseline. All references to the
-// current row see the pre-UPDATE values, so review_count is the old count in
-// both expressions. Result clamped to [0, 5].
-func (q *Queries) BumpTeacherRatingForReview(ctx context.Context, arg BumpTeacherRatingForReviewParams) error {
-	_, err := q.db.Exec(ctx, bumpTeacherRatingForReview, arg.NewRating, arg.TeacherID)
-	return err
-}
-
 const countTeacherReviews = `-- name: CountTeacherReviews :one
-SELECT count(*) FROM reviews WHERE teacher_id = $1
+SELECT count(*) FROM reviews WHERE teacher_id = $1 AND NOT hidden
 `
 
 func (q *Queries) CountTeacherReviews(ctx context.Context, teacherID uuid.UUID) (int64, error) {
@@ -68,6 +193,15 @@ DELETE FROM reviews
 // the seed clears it before all three.
 func (q *Queries) DeleteAllReviews(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, deleteAllReviews)
+	return err
+}
+
+const deleteReview = `-- name: DeleteReview :exec
+DELETE FROM reviews WHERE id = $1
+`
+
+func (q *Queries) DeleteReview(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteReview, id)
 	return err
 }
 
@@ -165,10 +299,20 @@ type InsertReviewParams struct {
 	Comment   string
 }
 
+type InsertReviewRow struct {
+	ID        uuid.UUID
+	TeacherID uuid.UUID
+	StudentID uuid.UUID
+	BookingID uuid.NullUUID
+	Rating    int16
+	Comment   string
+	CreatedAt pgtype.Timestamptz
+}
+
 // A real, booking-tied review. A duplicate for the same booking_id raises
 // SQLSTATE 23505 on reviews_booking_uniq, which the repository maps to
 // ErrAlreadyReviewed (race-safe, never a check-then-insert).
-func (q *Queries) InsertReview(ctx context.Context, arg InsertReviewParams) (Review, error) {
+func (q *Queries) InsertReview(ctx context.Context, arg InsertReviewParams) (InsertReviewRow, error) {
 	row := q.db.QueryRow(ctx, insertReview,
 		arg.TeacherID,
 		arg.StudentID,
@@ -176,7 +320,7 @@ func (q *Queries) InsertReview(ctx context.Context, arg InsertReviewParams) (Rev
 		arg.Rating,
 		arg.Comment,
 	)
-	var i Review
+	var i InsertReviewRow
 	err := row.Scan(
 		&i.ID,
 		&i.TeacherID,
@@ -194,7 +338,7 @@ SELECT r.id, r.rating, r.comment, r.created_at,
        u.display_name AS student_display_name
 FROM reviews r
 JOIN users u ON u.id = r.student_id
-WHERE r.teacher_id = $1
+WHERE r.teacher_id = $1 AND NOT r.hidden
 ORDER BY r.created_at DESC, r.id DESC
 LIMIT $3::int OFFSET $2::int
 `
@@ -213,7 +357,8 @@ type ListTeacherReviewsRow struct {
 	StudentDisplayName string
 }
 
-// A page of a teacher's reviews, newest first.
+// A page of a teacher's PUBLIC reviews, newest first. Hidden reviews (removed
+// from display by an operator) never appear on the profile.
 func (q *Queries) ListTeacherReviews(ctx context.Context, arg ListTeacherReviewsParams) ([]ListTeacherReviewsRow, error) {
 	rows, err := q.db.Query(ctx, listTeacherReviews, arg.TeacherID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
@@ -240,9 +385,42 @@ func (q *Queries) ListTeacherReviews(ctx context.Context, arg ListTeacherReviews
 	return items, nil
 }
 
+const recomputeTeacherRating = `-- name: RecomputeTeacherRating :exec
+WITH v AS (
+    SELECT COALESCE(sum(rating), 0)::numeric AS sum_r,
+           count(*)                          AS n
+    FROM reviews
+    WHERE teacher_id = $1
+      AND booking_id IS NOT NULL
+      AND NOT hidden
+)
+UPDATE teachers t
+SET review_count = t.review_count_base + v.n,
+    rating = CASE
+        WHEN t.review_count_base + v.n = 0 THEN 0
+        ELSE LEAST(5, GREATEST(0, round(
+            (t.rating_base::numeric * t.review_count_base + v.sum_r)
+            / (t.review_count_base + v.n), 1)))::real
+    END,
+    updated_at = now()
+FROM v
+WHERE t.id = $1
+`
+
+// Rebuild a teacher's display aggregate (teachers.rating / review_count) from
+// the immutable historical baseline (rating_base / review_count_base) folded
+// with their currently VISIBLE, booking-tied reviews. Idempotent and
+// order-independent — run it after a review is created, hidden, unhidden, or
+// removed. Result clamped to [0, 5]; a teacher with no baseline and no visible
+// reviews reads as 0.
+func (q *Queries) RecomputeTeacherRating(ctx context.Context, teacherID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, recomputeTeacherRating, teacherID)
+	return err
+}
+
 const seedInsertReview = `-- name: SeedInsertReview :exec
-INSERT INTO reviews (teacher_id, student_id, booking_id, rating, comment)
-VALUES ($1, $2, NULL, $3, $4)
+INSERT INTO reviews (teacher_id, student_id, booking_id, rating, comment, hidden)
+VALUES ($1, $2, NULL, $3, $4, $5)
 `
 
 type SeedInsertReviewParams struct {
@@ -250,6 +428,7 @@ type SeedInsertReviewParams struct {
 	StudentID uuid.UUID
 	Rating    int16
 	Comment   string
+	Hidden    bool
 }
 
 // Seed-only: a booking-less sample review. Does NOT touch the teacher aggregate.
@@ -259,6 +438,21 @@ func (q *Queries) SeedInsertReview(ctx context.Context, arg SeedInsertReviewPara
 		arg.StudentID,
 		arg.Rating,
 		arg.Comment,
+		arg.Hidden,
 	)
+	return err
+}
+
+const setReviewHidden = `-- name: SetReviewHidden :exec
+UPDATE reviews SET hidden = $1 WHERE id = $2
+`
+
+type SetReviewHiddenParams struct {
+	Hidden bool
+	ID     uuid.UUID
+}
+
+func (q *Queries) SetReviewHidden(ctx context.Context, arg SetReviewHiddenParams) error {
+	_, err := q.db.Exec(ctx, setReviewHidden, arg.Hidden, arg.ID)
 	return err
 }

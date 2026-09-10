@@ -199,6 +199,20 @@ func (q *Queries) DeleteTeacherLanguages(ctx context.Context, teacherID uuid.UUI
 	return err
 }
 
+const seedSnapshotRatingBaselines = `-- name: SeedSnapshotRatingBaselines :exec
+UPDATE teachers SET rating_base = rating, review_count_base = review_count
+`
+
+// Seed-only: once the demo teachers are inserted with their hand-set
+// rating / review_count, stamp those as the immutable baseline the review
+// moderation recompute folds visible reviews onto (migration 000012 does the
+// same for an existing database — but on a fresh migrate the teachers table is
+// still empty, so the seed has to redo it here).
+func (q *Queries) SeedSnapshotRatingBaselines(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, seedSnapshotRatingBaselines)
+	return err
+}
+
 const teacherRefByOwner = `-- name: TeacherRefByOwner :one
 SELECT id, slug, user_id FROM teachers WHERE user_id = $1
 `

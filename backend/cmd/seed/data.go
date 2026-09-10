@@ -143,6 +143,20 @@ type seedReview struct {
 	Comment          string
 }
 
+// seedHiddenReviews are booking-less sample reviews inserted already hidden (an
+// operator has taken them off the profile), so GET
+// /v1/admin/reviews?visibility=hidden is not empty on a fresh database. Whether
+// a review is hidden is which map it lives in, not a struct field, so
+// seedReviews above stays terse.
+var seedHiddenReviews = map[string][]seedReview{
+	"jasur-rakhimov": {
+		{"aziza", 1, "Never showed up to two lessons and wouldn't refund. Avoid."},
+	},
+	"mehmet-demir": {
+		{"nodira", 2, "Spent half the lesson advertising his other courses. Not what I paid for."},
+	},
+}
+
 // seedBooking is a demo lesson inserted in an explicit lifecycle state (the API
 // path always starts at pending_payment), so the operator surfaces —
 // GET /v1/admin/bookings and the dispute queue — are not empty on a fresh
