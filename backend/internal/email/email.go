@@ -1,4 +1,4 @@
-// Package email is the transactional-email backend for the findtutor platform:
+// Package email is the transactional-email backend for the FindTutor platform:
 // a small Emailer port with two implementations — a real one that POSTs to the
 // Resend HTTP API, and a logging one used in development when no API key is
 // configured — plus the booking-lifecycle templates (confirmed / cancelled /
@@ -51,7 +51,7 @@ func New(cfg Config, logger *slog.Logger) Emailer {
 	}
 	from := strings.TrimSpace(cfg.EmailFrom)
 	if from == "" {
-		from = "findtutor <noreply@findtutor.local>"
+		from = "FindTutor <noreply@findtutor.local>"
 	}
 	if strings.TrimSpace(cfg.ResendAPIKey) == "" {
 		logger.Info("email: RESEND_API_KEY not set, using logging emailer")

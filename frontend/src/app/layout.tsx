@@ -27,8 +27,8 @@ const sans = Plus_Jakarta_Sans({
 
 export const metadata: Metadata = {
   title: {
-    default: "findtutor — book 1-on-1 language lessons",
-    template: "%s · findtutor",
+    default: "FindTutor — book 1-on-1 language lessons",
+    template: "%s · FindTutor",
   },
   description:
     "Find a language teacher you click with and book paid 1-on-1 video lessons that fit your schedule.",

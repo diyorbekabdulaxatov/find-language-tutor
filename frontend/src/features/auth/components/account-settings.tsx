@@ -41,7 +41,7 @@ export function AccountSettings() {
     <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
       <h1 className="font-display text-3xl">Account settings</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Manage the details on your findtutor account.
+        Manage the details on your FindTutor account.
       </p>
 
       <form

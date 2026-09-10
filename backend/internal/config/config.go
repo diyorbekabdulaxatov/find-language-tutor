@@ -101,7 +101,7 @@ func Load() (*Config, error) {
 		PayoutsClearingDays:    getenvInt("PAYOUTS_CLEARING_DAYS", 7),
 
 		ResendAPIKey: os.Getenv("RESEND_API_KEY"),
-		EmailFrom:    getenv("EMAIL_FROM", "findtutor <noreply@findtutor.local>"),
+		EmailFrom:    getenv("EMAIL_FROM", "FindTutor <noreply@findtutor.local>"),
 	}
 
 	if cfg.DatabaseURL == "" {

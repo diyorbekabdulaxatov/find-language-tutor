@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
-  title: findtutor API
+  title: FindTutor API
   version: 0.1.0
   description: >
-    Contract for the findtutor language-tutoring marketplace (Uzbekistan).
+    Contract for the FindTutor language-tutoring marketplace (Uzbekistan).
     Hand-written and treated as the source of truth: the Go backend renders
     responses to match it, and the Next.js frontend generates its typed client
     from it (openapi-typescript + openapi-fetch).

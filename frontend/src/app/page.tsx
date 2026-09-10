@@ -168,7 +168,7 @@ export default async function HomePage() {
       <section id="teach" className="mx-auto max-w-6xl px-4 pb-16 sm:px-6">
         <div className="flex flex-col gap-5 rounded-3xl bg-primary p-8 text-primary-foreground sm:flex-row sm:items-center sm:justify-between sm:p-10">
           <div className="max-w-lg">
-            <h2 className="font-display text-2xl">Teach on findtutor</h2>
+            <h2 className="font-display text-2xl">Teach on FindTutor</h2>
             <p className="mt-2 text-primary-foreground/80">
               Set your own rates and hours. We handle scheduling, payments, and
               payouts to your card in so&rsquo;m.

@@ -23,7 +23,7 @@ const COPY: Record<
 > = {
   login: {
     cta: "Log in",
-    altText: "New to findtutor?",
+    altText: "New to FindTutor?",
     altHref: "/signup",
     altLink: "Create an account",
   },
