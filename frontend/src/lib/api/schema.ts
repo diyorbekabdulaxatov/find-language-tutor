@@ -1612,20 +1612,59 @@ export interface components {
              */
             refund: boolean;
         };
+        /** @description Operator dashboard counters. All `*_minor` fields are integer minor units in `currency` (UZS for the MVP). */
         AdminMetrics: {
+            /** @description UZS for the MVP. */
+            currency: string;
             users_total: number;
+            /** @description Signed up in the last 7 days. */
+            users_this_week: number;
             teachers_total: number;
+            /** @description Awaiting moderation. */
             teachers_pending: number;
+            teachers_approved: number;
+            /** @description Holding the verified badge. */
+            teachers_verified: number;
+            /** @description Distinct accounts that have booked at least once. */
+            active_students: number;
             bookings_total: number;
             /** @description Created in the last 7 days. */
             bookings_this_week: number;
+            /** @description Confirmed and not yet started. */
+            bookings_upcoming: number;
+            bookings_completed: number;
+            bookings_cancelled: number;
             /**
              * Format: int64
-             * @description Sum of price over confirmed + completed bookings
+             * @description Booking price over confirmed + completed bookings.
              */
             gmv_minor: number;
-            /** @description UZS for the MVP. */
-            gmv_currency: string;
+            /**
+             * Format: int64
+             * @description Collected from students.
+             */
+            captured_minor: number;
+            /**
+             * Format: int64
+             * @description Returned to students.
+             */
+            refunded_minor: number;
+            /**
+             * Format: int64
+             * @description Earned by teachers
+             */
+            payouts_owed_minor: number;
+            /**
+             * Format: int64
+             * @description Disbursed by past payout runs.
+             */
+            payouts_paid_minor: number;
+            /** @description Reviews currently shown on profiles (hidden ones excluded). */
+            reviews_visible: number;
+            /** @description Mean of visible review ratings */
+            average_rating: number;
+            /** @description Disputes in the open state. */
+            disputes_open: number;
         };
         AdminUserRow: {
             /** Format: uuid */

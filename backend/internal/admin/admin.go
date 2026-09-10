@@ -55,15 +55,38 @@ func invalid(format string, args ...any) error {
 
 // --- phase A: dashboard ---
 
-// Metrics is the answer to GET /v1/admin/metrics.
+// Metrics is the answer to GET /v1/admin/metrics — the operator dashboard
+// counters. All money is integer minor units in Currency ("UZS" for the MVP).
 type Metrics struct {
+	Currency string
+
+	// People
 	UsersTotal       int64
+	UsersThisWeek    int64 // signed up in the last 7 days
 	TeachersTotal    int64
-	TeachersPending  int64
-	BookingsTotal    int64
-	BookingsThisWeek int64
-	GMVMinor         int64  // sum of price_minor over confirmed + completed bookings
-	GMVCurrency      string // "UZS" for the MVP (only supported currency)
+	TeachersPending  int64 // awaiting moderation
+	TeachersApproved int64
+	TeachersVerified int64
+	ActiveStudents   int64 // distinct accounts that have booked at least once
+
+	// Bookings
+	BookingsTotal     int64
+	BookingsThisWeek  int64 // created in the last 7 days
+	BookingsUpcoming  int64 // confirmed and not yet started
+	BookingsCompleted int64
+	BookingsCancelled int64
+
+	// Money
+	GMVMinor         int64 // booking price over confirmed + completed bookings
+	CapturedMinor    int64 // collected from students
+	RefundedMinor    int64 // returned to students
+	PayoutsOwedMinor int64 // earned by teachers, not yet disbursed
+	PayoutsPaidMinor int64 // disbursed by past payout runs
+
+	// Reviews + moderation
+	ReviewsVisible int64
+	AverageRating  float64 // over visible reviews, one decimal; 0 when none
+	DisputesOpen   int64
 }
 
 // UserRow is one row of GET /v1/admin/users.

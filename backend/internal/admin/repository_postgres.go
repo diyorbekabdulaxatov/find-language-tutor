@@ -29,26 +29,61 @@ func nullText(s string) pgtype.Text {
 }
 
 func (r *repositoryPostgres) Metrics(ctx context.Context) (Metrics, error) {
-	users, err := r.q.AdminUserCount(ctx)
+	us, err := r.q.AdminUserStats(ctx)
 	if err != nil {
-		return Metrics{}, fmt.Errorf("user count: %w", err)
+		return Metrics{}, fmt.Errorf("user stats: %w", err)
 	}
-	tc, err := r.q.AdminTeacherCounts(ctx)
+	ts, err := r.q.AdminTeacherStats(ctx)
 	if err != nil {
-		return Metrics{}, fmt.Errorf("teacher counts: %w", err)
+		return Metrics{}, fmt.Errorf("teacher stats: %w", err)
 	}
 	bs, err := r.q.AdminBookingStats(ctx)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("booking stats: %w", err)
 	}
+	ps, err := r.q.AdminPaymentStats(ctx)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("payment stats: %w", err)
+	}
+	pos, err := r.q.AdminPayoutStats(ctx)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("payout stats: %w", err)
+	}
+	rs, err := r.q.AdminReviewStats(ctx)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("review stats: %w", err)
+	}
+	disputesOpen, err := r.q.AdminOpenDisputeCount(ctx)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("open dispute count: %w", err)
+	}
+
 	return Metrics{
-		UsersTotal:       users,
-		TeachersTotal:    tc.Total,
-		TeachersPending:  tc.Pending,
-		BookingsTotal:    bs.Total,
-		BookingsThisWeek: bs.ThisWeek,
+		Currency: string(teachers.CurrencyUZS),
+
+		UsersTotal:       us.Total,
+		UsersThisWeek:    us.ThisWeek,
+		TeachersTotal:    ts.Total,
+		TeachersPending:  ts.Pending,
+		TeachersApproved: ts.Approved,
+		TeachersVerified: ts.Verified,
+		ActiveStudents:   bs.ActiveStudents,
+
+		BookingsTotal:     bs.Total,
+		BookingsThisWeek:  bs.ThisWeek,
+		BookingsUpcoming:  bs.Upcoming,
+		BookingsCompleted: bs.Completed,
+		BookingsCancelled: bs.Cancelled,
+
 		GMVMinor:         bs.GmvMinor,
-		GMVCurrency:      string(teachers.CurrencyUZS),
+		CapturedMinor:    ps.CapturedMinor,
+		RefundedMinor:    ps.RefundedMinor,
+		PayoutsOwedMinor: pos.OwedMinor,
+		PayoutsPaidMinor: pos.PaidMinor,
+
+		ReviewsVisible: rs.VisibleTotal,
+		AverageRating:  rs.AverageRating,
+		DisputesOpen:   disputesOpen,
 	}, nil
 }
 

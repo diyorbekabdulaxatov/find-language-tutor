@@ -52,33 +52,61 @@ async function call<T>(
 /* -------------------------------- metrics -------------------------------- */
 
 export interface AdminMetrics {
+  currency: Money["currency"];
+
   usersTotal: number;
+  usersThisWeek: number;
   teachersTotal: number;
   teachersPending: number;
+  teachersApproved: number;
+  teachersVerified: number;
+  activeStudents: number;
+
   bookingsTotal: number;
   bookingsThisWeek: number;
+  bookingsUpcoming: number;
+  bookingsCompleted: number;
+  bookingsCancelled: number;
+
   gmv: Money;
+  captured: Money;
+  refunded: Money;
+  payoutsOwed: Money;
+  payoutsPaid: Money;
+
+  reviewsVisible: number;
+  averageRating: number;
+  disputesOpen: number;
 }
 
-interface WireMetrics {
-  users_total: number;
-  teachers_total: number;
-  teachers_pending: number;
-  bookings_total: number;
-  bookings_this_week: number;
-  gmv_minor: number;
-  gmv_currency: string;
-}
+type WireMetrics = components["schemas"]["AdminMetrics"];
 
 export async function getMetrics(): Promise<AdminMetrics> {
   const w = await call<WireMetrics>("/v1/admin/metrics", {}, "Could not load metrics.");
+  const cur = w.currency as Money["currency"];
+  const money = (amountMinor: number): Money => ({ amountMinor, currency: cur });
   return {
+    currency: cur,
     usersTotal: w.users_total,
+    usersThisWeek: w.users_this_week,
     teachersTotal: w.teachers_total,
     teachersPending: w.teachers_pending,
+    teachersApproved: w.teachers_approved,
+    teachersVerified: w.teachers_verified,
+    activeStudents: w.active_students,
     bookingsTotal: w.bookings_total,
     bookingsThisWeek: w.bookings_this_week,
-    gmv: { amountMinor: w.gmv_minor, currency: w.gmv_currency as Money["currency"] },
+    bookingsUpcoming: w.bookings_upcoming,
+    bookingsCompleted: w.bookings_completed,
+    bookingsCancelled: w.bookings_cancelled,
+    gmv: money(w.gmv_minor),
+    captured: money(w.captured_minor),
+    refunded: money(w.refunded_minor),
+    payoutsOwed: money(w.payouts_owed_minor),
+    payoutsPaid: money(w.payouts_paid_minor),
+    reviewsVisible: w.reviews_visible,
+    averageRating: w.average_rating,
+    disputesOpen: w.disputes_open,
   };
 }
 
