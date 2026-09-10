@@ -1,0 +1,3070 @@
+openapi: 3.1.0
+info:
+  title: findtutor API
+  version: 0.1.0
+  description: >
+    Contract for the findtutor language-tutoring marketplace (Uzbekistan).
+    Hand-written and treated as the source of truth: the Go backend renders
+    responses to match it, and the Next.js frontend generates its typed client
+    from it (openapi-typescript + openapi-fetch).
+
+    Money is always an integer amount in MINOR units (tiyin for UZS, cents for
+    USD) plus a currency code — never a float.
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: auth
+    description: >
+      Email/password accounts. Login/register/refresh return a short-lived
+      HS256 access token (JSON body) plus a long-lived opaque refresh token set
+      as the HttpOnly `ftr_session` cookie (Path=/v1/auth, SameSite=Lax).
+      Clients hold the access token in memory and send it as
+      `Authorization: Bearer`; refresh rotates the cookie and revokes the old
+      token (re-using a rotated token revokes the whole session chain).
+  - name: teachers
+    description: Teacher search and profiles
+  - name: availability
+    description: Teacher weekly recurring availability (stored in UTC)
+  - name: bookings
+    description: >
+      Concrete scheduled lessons. Slots are derived by projecting a teacher's
+      recurring weekly availability (UTC minutes) onto real UTC datetimes; every
+      create re-checks availability server-side. All datetimes are RFC3339 UTC.
+  - name: payments
+    description: >
+      Payment intents (one per booking) and the teacher earnings ledger. The
+      MVP uses a deterministic in-process fake provider behind a
+      provider-agnostic port (Stripe does not operate in Uzbekistan; a real
+      Payme / Click / Uzum adapter drops in later). Money is integer minor
+      units.
+  - name: reviews
+    description: >
+      A student's 1–5 rating + comment for a completed lesson. A review nudges
+      the teacher's display aggregate (`rating` / `review_count`) in the same
+      transaction; one review per booking.
+  - name: disputes
+    description: >
+      A participant (student or teacher-owner) contests a confirmed or completed
+      lesson; an operator holding `disputes.resolve` closes it as resolved or
+      rejected, optionally refunding the student. A booking may have at most one
+      OPEN dispute at a time, but keeps the full thread of closed ones.
+  - name: system
+
+paths:
+  /v1/auth/register:
+    post:
+      tags: [auth]
+      summary: Create an account and sign in
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "201":
+          description: >
+            Account created and signed in. Body carries the access token; the
+            `ftr_session` refresh cookie is set.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+              description: "`ftr_session=<opaque>; HttpOnly; SameSite=Lax; Path=/v1/auth`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: That email is already registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Sign in
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Signed in. Body carries the access token; the `ftr_session` refresh cookie is set.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate the refresh token
+      description: >
+        Reads the `ftr_session` cookie, issues a fresh access + refresh pair,
+        revokes the presented refresh token, and sets the new cookie. A missing,
+        expired, or already-revoked cookie returns 401 (and, on re-use of a
+        revoked token, every session for that user is revoked).
+      operationId: refresh
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: New access token in the body; new `ftr_session` cookie set.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Sign out
+      description: Revokes the current session and clears the `ftr_session` cookie. Idempotent.
+      operationId: logout
+      security:
+        - cookieAuth: []
+      responses:
+        "204":
+          description: Signed out (cookie cleared). Returned even if no session was active.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+
+  /v1/auth/me:
+    get:
+      tags: [auth]
+      summary: The signed-in user
+      description: >
+        Returns the account plus its `permissions` — the caller's effective RBAC
+        permission keys, resolved from the database on every call (never from the
+        JWT). The login / register / refresh responses carry the same `user`
+        shape.
+      operationId: getCurrentUser
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The authenticated user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthUser" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [auth]
+      summary: Edit the signed-in account
+      description: >
+        Updates the caller's own account. Only `display_name` is editable;
+        changing the email is out of scope and any `email` key in the body is
+        ignored. Omitting `display_name` is a no-op that returns the account
+        unchanged.
+      operationId: updateCurrentUser
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateMeRequest" }
+      responses:
+        "200":
+          description: The updated account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthUser" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /healthz:
+    get:
+      tags: [system]
+      summary: Liveness and dependency health
+      operationId: getHealth
+      responses:
+        "200":
+          description: All backing services reachable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: One or more backing services are unreachable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /v1/teachers:
+    get:
+      tags: [teachers]
+      summary: Search teachers
+      operationId: listTeachers
+      parameters:
+        - name: language
+          in: query
+          description: Filter to teachers who teach this language (ISO 639-1 code, e.g. `en`).
+          schema: { type: string }
+        - name: kind
+          in: query
+          schema: { $ref: "#/components/schemas/TeacherKind" }
+        - name: max_price_minor
+          in: query
+          description: Only teachers whose hourly price is at or below this amount (minor units).
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: q
+          in: query
+          description: Case-insensitive substring match across name, headline, and focus tags.
+          schema: { type: string }
+        - name: sort
+          in: query
+          schema:
+            $ref: "#/components/schemas/TeacherSort"
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: A page of matching teachers plus catalog-wide facets.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeacherListResult" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      tags: [teachers]
+      summary: Create the caller's teacher profile
+      description: >
+        Claims a teacher profile for the authenticated account. One profile per
+        account — a second attempt is 409. The new profile's owner is the caller.
+
+        The body carries only the editable fields; server-controlled aggregates
+        (`rating`, `review_count`, `lessons_completed`, `student_count`,
+        `response_time_hours`) start at 0, `accepting_students` starts true, and
+        the `slug` is generated from `display_name` (de-duplicated with a numeric
+        suffix). `languages` / `focus` / `experience` are stored as given.
+
+
+        On create, `display_name`, `headline`, `kind`, `country_code`,
+        `country_name`, `city`, `timezone`, and `price_per_hour_minor` are
+        required; a missing or blank one is a 400.
+      operationId: createTeacherProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TeacherProfileWritable" }
+      responses:
+        "201":
+          description: The created profile (same shape as GET /v1/teachers/{slug}).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeacherProfile" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: The account already has a teacher profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/teachers/me:
+    get:
+      tags: [teachers]
+      summary: The caller's own teacher profile
+      description: >
+        Returns the teacher profile owned by the authenticated account, or 404
+        if they have not created one yet. The dashboard uses this to decide
+        between the "create profile" and the edit flow, and to get the slug for
+        the availability editor.
+      operationId: getMyTeacherProfile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller's full teacher profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeacherProfile" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/teachers/{slug}:
+    get:
+      tags: [teachers]
+      summary: Get one teacher profile
+      operationId: getTeacherBySlug
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The full teacher profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeacherProfile" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [teachers]
+      summary: Edit the caller's own teacher profile
+      description: >
+        Partial update of the profile at `slug`. Requires a Bearer token whose
+        account owns the profile (`teachers.user_id`); otherwise 401 (no/invalid
+        token) or 403 (not the owner — an unclaimed profile is never editable).
+
+        Every field is optional; an omitted field is left unchanged. A present
+        `languages` / `focus` / `experience` array (even `[]`) fully replaces
+        that collection. The `slug` is immutable and server-controlled
+        aggregates cannot be set here.
+      operationId: updateTeacherProfile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TeacherProfileWritable" }
+      responses:
+        "200":
+          description: The updated profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeacherProfile" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/teachers/{slug}/availability:
+    get:
+      tags: [availability]
+      summary: Get a teacher's weekly availability
+      description: >
+        The teacher's recurring weekly slots, stored and returned in UTC.
+        Combine `timezone` with each slot to show the grid in the teacher's
+        local time; booking will do the same conversion server-side.
+      operationId: getTeacherAvailability
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The teacher's full weekly availability.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WeeklyAvailability" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [availability]
+      summary: Replace a teacher's weekly availability
+      description: >
+        Replaces the teacher's **entire** weekly set with the slots in the body
+        (send `[]` to clear it).
+
+        Requires a Bearer access token whose user owns the teacher profile
+        (`teachers.user_id`); otherwise 401 (no/invalid token) or 403 (not the
+        owner).
+
+        Validation: `weekday` in 0–6; `0 <= start_minute < end_minute <= 1440`;
+        both bounds a multiple of `granularity_minutes` (15); no two slots on the
+        same weekday may overlap (touching slots are allowed).
+      operationId: replaceTeacherAvailability
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AvailabilityReplacement" }
+      responses:
+        "200":
+          description: The stored weekly availability after replacement.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WeeklyAvailability" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/teachers/{slug}/slots:
+    get:
+      tags: [bookings]
+      summary: List a teacher's concrete bookable start times
+      description: >
+        Projects the teacher's recurring weekly availability
+        (`teacher_availability_slots`, stored as UTC minutes-from-midnight on a
+        UTC weekday) onto real UTC datetimes across `[from, to]`, then removes
+        any start that collides with an existing non-cancelled booking.
+
+        Window rules: `from` defaults to now (and is clamped forward to now),
+        `to` defaults to `from + 14 days`, and `to - from` may not exceed 21
+        days (400 otherwise). Slots are never generated in the past.
+
+        A start time is included only if `[start, start + duration]` fits
+        entirely inside one availability window. Windows the frontend split
+        across 00:00 UTC are stitched back together first, so a lesson may
+        legitimately straddle UTC midnight. Candidate starts step every 30
+        minutes from the start of each window.
+
+        `price.amount_minor = round(price_per_hour_minor * duration / 60)` in
+        integer minor units, rounded half-up.
+      operationId: listTeacherSlots
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: RFC3339 UTC. Defaults to now.
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+          description: RFC3339 UTC. Defaults to from + 14 days. Max span 21 days.
+        - name: duration
+          in: query
+          required: false
+          schema: { type: integer, enum: [30, 60, 90, 120], default: 60 }
+          description: Lesson length in minutes.
+      responses:
+        "200":
+          description: The bookable start times in the window.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeacherSlots" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/teachers/{slug}/reviews:
+    get:
+      tags: [reviews]
+      summary: List a teacher's reviews
+      description: >
+        Public. Newest first. A seeded catalog also returns a sample of
+        booking-less rows that stand in for the teacher's historical review
+        history behind the hand-set `rating` / `review_count` aggregate.
+      operationId: listTeacherReviews
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        "200":
+          description: A page of the teacher's reviews.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReviewList" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/bookings:
+    post:
+      tags: [bookings]
+      summary: Book a lesson
+      description: >
+        Creates a booking in `pending_payment` and opens a `requires_payment`
+        payment intent for its price. The server re-derives the bookable slot
+        set and rejects a `start_at` that is not a real, currently free slot; it
+        never trusts a client-supplied price.
+
+        `duration_minutes` must be one of 30/60/90/120. When `is_trial` is true
+        the duration is forced to 30 minutes and the price is the teacher's
+        `trial_price_minor` (400 if the teacher offers no trial). You cannot
+        book your own teacher profile.
+
+        The student then calls `POST /v1/bookings/{id}/pay` to authorise
+        payment, which confirms the booking.
+      operationId: createBooking
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateBookingRequest" }
+      responses:
+        "201":
+          description: The created booking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: >
+            The slot is not bookable (`slot_unavailable` — outside availability,
+            misaligned, in the past, or already taken) or was taken by a
+            concurrent request between the check and the insert (`slot_taken`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      tags: [bookings]
+      summary: List the caller's bookings
+      description: >
+        With no `role`, returns every booking the caller participates in (as
+        student or as the owner of the teacher profile). `role=student` limits
+        it to bookings the caller booked; `role=teacher` to bookings for the
+        teacher profile the caller owns (empty if they own none). Newest lesson
+        first. Optional `status` filter.
+      operationId: listBookings
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: role
+          in: query
+          required: false
+          schema: { type: string, enum: [student, teacher] }
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/BookingStatus" }
+      responses:
+        "200":
+          description: The matching bookings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingList" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/bookings/{id}:
+    get:
+      tags: [bookings]
+      summary: Get one booking
+      operationId: getBooking
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The booking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/bookings/{id}/pay:
+    post:
+      tags: [bookings]
+      summary: Pay for a booking
+      description: >
+        Authorises payment for a `pending_payment` booking and, on success,
+        moves it to `confirmed` (the payment webhook performs the transition).
+        Student-only — only the account that booked the lesson may pay.
+
+        The `method_token` is an opaque payment-method handle. The MVP ships a
+        deterministic fake provider (Stripe does not operate in Uzbekistan);
+        its tokens drive the outcome:
+        `pm_ok` authorises, `pm_decline` is refused (402 `payment_failed`),
+        `pm_capture_fail` authorises but fails the first capture at completion.
+
+        Response is the booking with its embedded `payment` (now `authorized`).
+      operationId: payBooking
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PayBookingRequest" }
+      responses:
+        "200":
+          description: The confirmed booking with its authorised payment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not the student who booked this lesson (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "402":
+          description: The payment method was declined (`payment_failed`). The booking stays `pending_payment`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The booking is already paid (`already_paid`) or is cancelled
+            (`invalid_state`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/bookings/{id}/complete:
+    post:
+      tags: [bookings]
+      summary: Complete a lesson
+      description: >
+        Moves a `confirmed` booking to `completed` and captures the payment,
+        then writes the teacher's payout-ledger entry. Teacher-owner only.
+        Allowed only once the lesson's `end_at` is in the past (409 `too_early`
+        otherwise).
+
+        Capture happens before the status flips, so a capture failure leaves
+        the booking `confirmed` and retryable (502 `capture_failed`).
+      operationId: completeBooking
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The completed booking with its captured payment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not the teacher for this lesson (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The booking is not `confirmed` (`invalid_state`) or the lesson has
+            not ended yet (`too_early`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: The provider could not capture the hold (`capture_failed`). The booking stays `confirmed`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/bookings/{id}/cancel:
+    post:
+      tags: [bookings]
+      summary: Cancel a booking
+      description: >
+        Moves `pending_payment` or `confirmed` -> `cancelled`, recording
+        `cancelled_at` and the optional `reason`. Participant-only. For the MVP
+        cancellation is allowed at any time (no window / penalties yet). Already
+        `completed` or `cancelled` -> 409.
+
+        Payment side effects: an `authorized` intent is refunded in full (the
+        hold is released); an intent that was never authorised is voided. If a
+        payout-ledger row exists it is reversed.
+      operationId: cancelBooking
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CancelBookingRequest" }
+      responses:
+        "200":
+          description: The cancelled booking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The booking is already completed or cancelled (`invalid_state`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/bookings/{id}/meeting-link:
+    put:
+      tags: [bookings]
+      summary: Set or clear a booking's meeting link
+      description: >
+        Sets the per-booking meeting-link override. Teacher-owner only. A
+        non-empty `url` must be an http(s) URL; an empty string clears the
+        override so the booking falls back to the teacher's default
+        `meeting_url`.
+
+        The link is still only revealed on the booking (`Booking.meeting_url`)
+        once the booking is `confirmed` / `completed` and to a participant.
+      operationId: setBookingMeetingLink
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MeetingLinkRequest" }
+      responses:
+        "200":
+          description: The booking with the override applied.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not the teacher for this lesson (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/bookings/{id}/no-show:
+    post:
+      tags: [bookings]
+      summary: Record a no-show
+      description: >
+        Teacher-owner only (MVP). Allowed only from `confirmed` and only once
+        `start_at` is in the past (409 `too_early` otherwise — a lesson has not
+        been missed until it has started).
+
+        `party = "student"` — the teacher attended, the student did not: the
+        booking moves to `completed`, `no_show_party = student`, the payment is
+        captured and the payout-ledger row written (identical to `complete`).
+
+        `party = "teacher"` — the teacher self-reports they could not attend:
+        the booking moves to `cancelled`, `no_show_party = teacher`, and the
+        student is refunded (identical to `cancel`).
+      operationId: recordBookingNoShow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NoShowRequest" }
+      responses:
+        "200":
+          description: The updated booking (completed or cancelled).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not the teacher for this lesson (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The booking is not `confirmed` (`invalid_state`) or the lesson has
+            not started yet (`too_early`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/bookings/{id}/review:
+    post:
+      tags: [reviews]
+      summary: Review a completed lesson
+      description: >
+        Student-only — only the `student_id` on the booking may call this (403
+        otherwise). The booking must be `completed` (409 `booking_not_completed`)
+        and may be reviewed only once (409 `already_reviewed`).
+
+        On success the review is inserted and the teacher's display aggregate is
+        nudged in the same transaction: `review_count += 1` and `rating =
+        round((rating*review_count + new_rating) / (review_count + 1), 1)`,
+        clamped to [0, 5]. `comment` is trimmed, optional, and capped at 2000
+        characters.
+      operationId: createBookingReview
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateReviewRequest" }
+      responses:
+        "201":
+          description: The created review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatedReview" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not the student on this booking (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The booking is not `completed` (`booking_not_completed`) or has
+            already been reviewed (`already_reviewed`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/bookings/{id}/disputes:
+    post:
+      tags: [disputes]
+      summary: Raise a dispute on a lesson
+      description: >
+        Participant-only — the student or the teacher-owner on the booking (403
+        otherwise). The lesson must be `confirmed` or `completed` (409
+        `dispute_not_allowed`), and a booking may have only one OPEN dispute at a
+        time (409 `dispute_exists`, enforced by a partial unique index, so a
+        concurrent double-submit is race-safe). Once a dispute is resolved or
+        rejected a new one may be raised; the whole thread is kept.
+
+        `reason` is required, trimmed, and capped at 2000 characters.
+      operationId: raiseBookingDispute
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RaiseDisputeRequest" }
+      responses:
+        "201":
+          description: The created dispute.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispute" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not a participant in this booking (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The lesson is not `confirmed` / `completed` (`dispute_not_allowed`),
+            or it already has an open dispute (`dispute_exists`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+    get:
+      tags: [disputes]
+      summary: A booking's dispute thread
+      description: >
+        Participant-only. Every dispute ever raised on the booking, open and
+        closed, newest first.
+      operationId: listBookingDisputes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The dispute thread (possibly empty).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DisputeList" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not a participant in this booking (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/payments/webhook:
+    post:
+      tags: [payments]
+      summary: Payment provider webhook
+      description: >
+        Receives one provider state-change event. Unauthenticated at the
+        transport, authenticated by signature: when `PAYMENTS_WEBHOOK_SECRET` is
+        set the handler requires an `X-Payment-Signature` header equal to
+        `hex(hmac_sha256(secret, "<X-Payment-Timestamp>.<raw body>"))` and an
+        `X-Payment-Timestamp` (unix seconds) within `PAYMENTS_WEBHOOK_MAX_SKEW`
+        (default 5 minutes) of now — binding the timestamp into the MAC so a
+        captured delivery can't be replayed. A missing header, a stale
+        timestamp, or a mismatch is 401 and the event is not applied. With no
+        secret configured every delivery is accepted (dev only).
+
+        Idempotent by `event_id`: the id is inserted into `payment_events`
+        under its primary key, and a duplicate is treated as already processed.
+        A well-formed event always returns 200, with `applied` telling whether
+        this delivery was the one that ran the effect.
+
+        Events: `payment.authorized` (payment -> authorized, booking
+        `pending_payment` -> `confirmed`), `payment.captured` (payment ->
+        captured, a `held` payout-ledger row written with its clearing
+        deadline), `payment.refunded` (payment -> refunded, ledger row ->
+        `reversed` unless already paid out), `payment.failed` (payment ->
+        failed).
+
+        The MVP's in-process fake provider reaches the same handler code via an
+        internal sink rather than an HTTP call.
+      operationId: paymentsWebhook
+      parameters:
+        - name: X-Payment-Signature
+          in: header
+          required: false
+          schema: { type: string }
+          description: hex(hmac_sha256(secret, "<X-Payment-Timestamp>.<body>")). Required when a webhook secret is configured.
+        - name: X-Payment-Timestamp
+          in: header
+          required: false
+          schema: { type: string }
+          description: Unix seconds; must be within the configured skew of now. Required when a webhook secret is configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentWebhookEvent" }
+      responses:
+        "200":
+          description: The event was accepted (newly applied or a recognised duplicate).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentWebhookAck" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: The webhook signature did not verify.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/payments/me:
+    get:
+      tags: [payments]
+      summary: The caller's teacher earnings summary
+      description: >
+        Aggregates the caller-owned teacher profile's payout-ledger. `held` is
+        money captured but not yet payable, `available` is payable now (the MVP
+        has no clearing window, so a lesson lands `available` the moment it is
+        captured), and reversed lessons are excluded from the totals.
+        404 if the caller owns no teacher profile.
+      operationId: getMyEarnings
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The earnings summary.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeacherEarnings" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ----------------------------------------------------------------------------
+  # Admin (phase A/B). Everything under /v1/admin needs a valid access token
+  # (401 otherwise) AND the specific RBAC permission for the route (403 with
+  # code `forbidden` otherwise). Permissions are resolved per request from the
+  # roles the caller holds — never from the JWT.
+  # ----------------------------------------------------------------------------
+
+  /v1/admin/metrics:
+    get:
+      tags: [admin]
+      summary: Dashboard metrics
+      description: "Permission: `metrics.view`. GMV = sum of price over confirmed + completed bookings."
+      operationId: adminMetrics
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Platform counters.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminMetrics" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/users:
+    get:
+      tags: [admin]
+      summary: User directory
+      description: "Permission: `users.view`. `q` is a case-insensitive substring on email or display_name."
+      operationId: adminListUsers
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of users.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUserList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/users/{id}:
+    get:
+      tags: [admin]
+      summary: User detail
+      description: "Permission: `users.view`. Bookings capped at the 50 newest."
+      operationId: adminGetUser
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The user with roles, teacher profile, recent bookings, and a payments summary.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminUserDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/admin/users/{id}/roles:
+    post:
+      tags: [admin]
+      summary: Assign a role to a user
+      description: "Permission: `users.manage_roles`. Idempotent."
+      operationId: adminAssignRole
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role_id]
+              properties: { role_id: { type: string, format: uuid } }
+      responses:
+        "204": { description: Assigned. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/admin/users/{id}/roles/{role_id}:
+    delete:
+      tags: [admin]
+      summary: Unassign a role from a user
+      description: "Permission: `users.manage_roles`. Idempotent."
+      operationId: adminUnassignRole
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: role_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Unassigned. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/admin/permissions:
+    get:
+      tags: [admin]
+      summary: Permission catalog
+      description: "Permission: `roles.manage`. The full set of permission keys, for a checkbox UI."
+      operationId: adminPermissionCatalog
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The catalog.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [key, description]
+                  properties:
+                    key: { type: string }
+                    description: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/roles:
+    get:
+      tags: [admin]
+      summary: List roles
+      description: "Permission: `roles.manage`."
+      operationId: adminListRoles
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Every role with its permissions and assignment count.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminRole" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [admin]
+      summary: Create a role
+      description: "Permission: `roles.manage`. Each permission must be in the catalog; the name must be unique."
+      operationId: adminCreateRole
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1 }
+                description: { type: string }
+                permissions:
+                  type: array
+                  items: { type: string }
+      responses:
+        "201":
+          description: The created role.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminRole" }
+        "400":
+          description: "`unknown_permission` — a permission key is not in the catalog."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: "`role_exists` — a role with that name already exists."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/roles/{id}:
+    patch:
+      tags: [admin]
+      summary: Edit a role
+      description: >
+        Permission: `roles.manage`. `description` is always editable. `permissions`,
+        when present, replaces the whole set — but a system role's permissions are
+        locked (403 `role_locked`).
+      operationId: adminUpdateRole
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description: { type: string }
+                permissions:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: The updated role.
+          content: { application/json: { schema: { $ref: "#/components/schemas/AdminRole" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`forbidden` (missing `roles.manage`) or `role_locked` (system role permissions)."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [admin]
+      summary: Delete a role
+      description: "Permission: `roles.manage`. 403 `role_locked` for a system role; 409 `role_in_use` if any user still holds it."
+      operationId: adminDeleteRole
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`forbidden` or `role_locked`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`role_in_use` — unassign it from all users first."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/teachers:
+    get:
+      tags: [admin]
+      summary: Teacher moderation queue
+      description: "Permission: `teachers.view`. `status` filter optional; `q` matches display_name / slug / owner email."
+      operationId: adminListTeachers
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, approved, rejected, suspended] } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of teacher profiles across all statuses.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminTeacherList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/teachers/{slug}:
+    get:
+      tags: [admin]
+      summary: Teacher detail (moderation)
+      description: "Permission: `teachers.view`. The full public profile shape plus `status`, `verified`, `moderation_note`, and `owner`."
+      operationId: adminGetTeacher
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The teacher profile with its moderation slice.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminTeacherDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/admin/teachers/{slug}/approve:
+    post:
+      tags: [admin]
+      summary: Approve a teacher
+      description: >
+        Permission: `teachers.moderate`. Sets `status = approved` and clears the
+        moderation note. Allowed from pending, rejected, or suspended (the last is
+        a reinstate). 409 `invalid_transition` from approved.
+      operationId: adminApproveTeacher
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: The updated teacher detail., content: { application/json: { schema: { $ref: "#/components/schemas/AdminTeacherDetail" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`invalid_transition`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/teachers/{slug}/reject:
+    post:
+      tags: [admin]
+      summary: Reject a pending teacher
+      description: "Permission: `teachers.moderate`. Body `{note}` required (non-empty). Allowed only from pending."
+      operationId: adminRejectTeacher
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [note], properties: { note: { type: string, minLength: 1 } } }
+      responses:
+        "200": { description: The updated teacher detail., content: { application/json: { schema: { $ref: "#/components/schemas/AdminTeacherDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`invalid_transition` — not in `pending`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/teachers/{slug}/suspend:
+    post:
+      tags: [admin]
+      summary: Suspend an approved teacher
+      description: >
+        Permission: `teachers.moderate`. Body `{note}` required. Allowed only from
+        approved. Pulls the profile from public search immediately; existing
+        bookings are untouched.
+      operationId: adminSuspendTeacher
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [note], properties: { note: { type: string, minLength: 1 } } }
+      responses:
+        "200": { description: The updated teacher detail., content: { application/json: { schema: { $ref: "#/components/schemas/AdminTeacherDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`invalid_transition` — not in `approved`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/teachers/{slug}/verify:
+    post:
+      tags: [admin]
+      summary: Set the verified badge
+      description: "Permission: `teachers.verify`. Body `{verified: bool}`. Independent of moderation status."
+      operationId: adminVerifyTeacher
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: slug, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [verified], properties: { verified: { type: boolean } } }
+      responses:
+        "200": { description: The updated teacher detail., content: { application/json: { schema: { $ref: "#/components/schemas/AdminTeacherDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/admin/bookings:
+    get:
+      tags: [admin]
+      summary: Every booking on the platform
+      description: >
+        Permission: `bookings.view`. Unlike `GET /v1/bookings` (the caller's own
+        lessons) this lists every booking, newest lesson first. `status` is an
+        optional exact filter; `q` matches the teacher's display name or slug and
+        the student's email or display name, case-insensitively.
+      operationId: adminListBookings
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/BookingStatus" } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of bookings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBookingList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/bookings/{id}:
+    get:
+      tags: [admin]
+      summary: Booking detail (operator view)
+      description: >
+        Permission: `bookings.view`. The list-row fields plus the payment detail,
+        the effective meeting link, the no-show flag, the cancellation
+        who/why/when, and the booking's full dispute thread. The meeting link is
+        shown regardless of booking status — unlike the participant-facing
+        `Booking`, which hides it before confirmation.
+      operationId: adminGetBooking
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The booking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBookingDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`booking_not_found`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/bookings/{id}/force-cancel:
+    post:
+      tags: [admin]
+      summary: Force-cancel a booking
+      description: >
+        Permission: `bookings.force_cancel`. The operator override of
+        `POST /v1/bookings/{id}/cancel`, which is participant-only: it cancels a
+        `pending_payment` or `confirmed` booking on anyone's behalf and records
+        `cancelled_by = admin` plus the required `reason`. 409 `invalid_state`
+        for a booking that is already completed or cancelled.
+
+        It runs the same cancellation path a participant cancel does — pending
+        lesson reminders are dropped and the participants are emailed — and with
+        `refund: true` the booking's payment is released (an authorized hold) or
+        refunded (a capture). With `refund: false` no payment call is made.
+      operationId: adminForceCancelBooking
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ForceCancelBookingRequest" }
+      responses:
+        "200":
+          description: The updated booking detail.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBookingDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`booking_not_found`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: "`invalid_state` — the booking is already completed or cancelled."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/disputes:
+    get:
+      tags: [admin]
+      summary: The dispute queue
+      description: >
+        Permission: `disputes.resolve`. Disputes newest first, each with the
+        booking and both parties. `status` defaults to `open`; pass `all` to
+        include closed disputes.
+      operationId: adminListDisputes
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [open, resolved, rejected, all], default: open } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of disputes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminDisputeList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/disputes/{id}/resolve:
+    post:
+      tags: [admin]
+      summary: Resolve or reject a dispute
+      description: >
+        Permission: `disputes.resolve`. Closes an OPEN dispute, recording the
+        outcome, the required `resolution` note (trimmed, at most 2000
+        characters), the operator and the timestamp. 409 `already_resolved` when
+        the dispute is no longer open — the UPDATE is guarded on the open status,
+        so a lost race is reported rather than overwriting the other operator's
+        resolution.
+
+        With `outcome: resolved` and `refund: true` the booking's payment is
+        refunded; the booking's own lifecycle is deliberately left alone (use
+        force-cancel to also cancel the lesson). `refund` is ignored for
+        `outcome: rejected`.
+      operationId: adminResolveDispute
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveDisputeRequest" }
+      responses:
+        "200":
+          description: The closed dispute.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dispute" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`dispute_not_found`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: "`already_resolved` — the dispute is no longer open."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/payouts:
+    get:
+      tags: [admin]
+      summary: The payout dashboard
+      description: >
+        Permission: `payouts.view`. What the platform owes teachers right now —
+        every payout-ledger row whose clearing window has closed and that no
+        payout batch has settled — grouped by teacher, biggest first, plus the
+        platform ledger totals and a page of past payout runs (newest first).
+
+        `held_total_minor` is money still inside its clearing window (captured
+        less than `PAYOUTS_CLEARING_DAYS` ago, 7 by default),
+        `available_total_minor` is what the next run would pay, and
+        `paid_total_minor` is what past runs already disbursed. Reversed
+        (refunded) lessons count towards none of them.
+      operationId: adminPayoutDashboard
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 }, description: Pages the batch history. }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: What is owed, the totals, and a page of past runs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPayoutDashboard" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/payouts/batches/{id}:
+    get:
+      tags: [admin]
+      summary: One payout batch
+      description: "Permission: `payouts.view`. The batch plus one line per teacher it paid."
+      operationId: adminGetPayoutBatch
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The batch and its line items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutBatchDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`batch_not_found`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/payouts/run:
+    post:
+      tags: [admin]
+      summary: Run a payout batch
+      description: >
+        Permission: `payouts.run`. Settles EVERY currently available earning: in
+        one transaction it creates a `payout_batches` row and marks each included
+        `payout_ledger` row `paid` against it. No request body — a run always
+        pays everything that has cleared.
+
+        Race-safe against two operators running at once: the transaction selects
+        the payable rows `FOR UPDATE SKIP LOCKED`, so a concurrent run gets a
+        disjoint set instead of paying the same lesson twice, and typically ends
+        up with nothing to pay.
+
+        409 `nothing_to_pay` when no earning has cleared its window — an empty
+        batch is deliberately not recorded, so the history is a log of runs that
+        actually moved money.
+
+        The MVP's payment provider is the in-process fake, which has no
+        disbursement API, so the money-leaves step is logged rather than called.
+      operationId: adminRunPayout
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: The created batch and its line items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PayoutBatchDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: "`nothing_to_pay` — no earning has cleared its holding period."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/reviews:
+    get:
+      tags: [admin]
+      summary: The review moderation queue
+      description: >
+        Permission: `reviews.moderate`. Every review on the platform, newest
+        first — the booking-tied reviews students leave and the seeded sample
+        reviews that pad each teacher's history (`sample: true`). Filters are
+        optional: `visibility` (visible / hidden), a teacher `slug`, and a
+        `max_rating` ceiling to surface the low-star reviews.
+      operationId: adminReviewQueue
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: visibility
+          in: query
+          schema: { type: string, enum: [visible, hidden] }
+          description: Omit for both.
+        - { name: teacher, in: query, schema: { type: string }, description: Teacher slug. }
+        - { name: max_rating, in: query, schema: { type: integer, minimum: 1, maximum: 5 } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of the moderation queue.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminReviewList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/reviews/{id}/hide:
+    post:
+      tags: [admin]
+      summary: Hide a review
+      description: >
+        Permission: `reviews.moderate`. Takes the review off the teacher's
+        public profile and recomputes their rating aggregate from the historical
+        baseline folded with the reviews that are still visible. Idempotent. No
+        request body.
+      operationId: adminHideReview
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The updated review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminReview" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`not_found` — no review with that id."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/reviews/{id}/unhide:
+    post:
+      tags: [admin]
+      summary: Restore a hidden review
+      description: >
+        Permission: `reviews.moderate`. Puts the review back on the profile and
+        folds it back into the rating aggregate. Idempotent. No request body.
+      operationId: adminUnhideReview
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The updated review.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminReview" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`not_found` — no review with that id."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/reviews/{id}:
+    delete:
+      tags: [admin]
+      summary: Permanently remove a review
+      description: >
+        Permission: `reviews.moderate`. Deletes the review for good and
+        recomputes the teacher's rating aggregate. Use `hide` for anything
+        reversible.
+      operationId: adminRemoveReview
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`not_found` — no review with that id."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Short-lived HS256 access token from /v1/auth/{login,register,refresh}.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: ftr_session
+      description: >
+        HttpOnly opaque refresh token, Path=/v1/auth, SameSite=Lax. Set by the
+        auth endpoints; the browser sends it automatically to /v1/auth/refresh
+        and /v1/auth/logout. Not readable or settable by client JS.
+
+  responses:
+    BadRequest:
+      description: The request was malformed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: The resource does not exist.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Authentication is missing or invalid.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The caller is not allowed to perform this action.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable, machine-readable identifier (e.g. `not_found`).
+            message:
+              type: string
+              description: Human-readable explanation, safe to surface to users.
+
+    RegisterRequest:
+      type: object
+      required: [email, password, display_name]
+      properties:
+        email: { type: string, format: email }
+        password:
+          type: string
+          minLength: 8
+          description: Minimum 8 characters.
+        display_name: { type: string, minLength: 1 }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    UpdateMeRequest:
+      type: object
+      description: >
+        Fields to change on the caller's account. All optional; an omitted field
+        is left unchanged. `email` is not editable and is ignored if sent.
+      properties:
+        display_name: { type: string, minLength: 1 }
+
+    AuthUser:
+      type: object
+      required: [id, email, display_name, permissions]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        display_name: { type: string }
+        permissions:
+          type: array
+          items: { type: string }
+          description: >
+            The caller's effective RBAC permission keys (flat, sorted, deduped
+            across all their roles). Resolved server-side per request — NOT from
+            the JWT — so a revoked role takes effect immediately. Empty for a
+            normal user. The frontend gates the /admin area on these. See
+            GET /v1/admin/permissions for the catalog.
+
+    AuthResponse:
+      type: object
+      description: >
+        The access token (hold in memory, send as `Authorization: Bearer`) plus
+        the user. The refresh token is NOT here — it is the `ftr_session` cookie.
+      required: [access_token, expires_in, user]
+      properties:
+        access_token: { type: string, description: HS256 JWT. }
+        expires_in:
+          type: integer
+          description: Access-token lifetime in seconds.
+        user: { $ref: "#/components/schemas/AuthUser" }
+
+    Health:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, down]
+
+    Currency:
+      type: string
+      enum: [UZS, USD]
+
+    Money:
+      type: object
+      required: [amount_minor, currency]
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+          description: Amount in minor units (tiyin / cents). 9000000 UZS == 90,000 so'm.
+        currency: { $ref: "#/components/schemas/Currency" }
+
+    TeacherKind:
+      type: string
+      enum: [professional, community]
+      description: >
+        `professional` — certified/qualified teacher, structured lessons.
+        `community` — conversation practice, informal tutoring.
+
+    TeacherSort:
+      type: string
+      enum: [recommended, price_asc, price_desc, rating_desc]
+      default: recommended
+
+    LanguageLevel:
+      type: string
+      enum: [native, c2, c1, b2, b1, a2, a1]
+
+    Language:
+      type: object
+      required: [code, name, level]
+      properties:
+        code: { type: string, description: ISO 639-1 }
+        name: { type: string }
+        level: { $ref: "#/components/schemas/LanguageLevel" }
+
+    Experience:
+      type: object
+      required: [title, org, period]
+      properties:
+        title: { type: string }
+        org: { type: string }
+        period:
+          type: string
+          description: Free text, e.g. "2019 – present".
+
+    TeacherSummary:
+      type: object
+      description: Card view used in search results.
+      required:
+        - id
+        - slug
+        - display_name
+        - headline
+        - kind
+        - country_code
+        - country_name
+        - city
+        - timezone
+        - teaches
+        - also_speaks
+        - price_per_hour
+        - rating
+        - review_count
+        - lessons_completed
+        - student_count
+        - focus
+        - response_time_hours
+        - accepting_students
+        - avatar_url
+        - video_thumbnail_url
+      properties:
+        id: { type: string, format: uuid }
+        slug:
+          type: string
+          description: URL-safe, stable; used in /teachers/{slug}.
+        display_name: { type: string }
+        headline:
+          type: string
+          description: One-line hook in the teacher's own words.
+        kind: { $ref: "#/components/schemas/TeacherKind" }
+        country_code: { type: string, description: ISO 3166-1 alpha-2 }
+        country_name: { type: string }
+        city: { type: string }
+        timezone:
+          type: string
+          description: IANA name, e.g. "Asia/Tashkent". Source of truth for slot conversion.
+        teaches:
+          type: array
+          items: { $ref: "#/components/schemas/Language" }
+        also_speaks:
+          type: array
+          items: { $ref: "#/components/schemas/Language" }
+        price_per_hour: { $ref: "#/components/schemas/Money" }
+        rating:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+          description: Aggregate rating to one decimal.
+        review_count: { type: integer, minimum: 0 }
+        lessons_completed: { type: integer, minimum: 0 }
+        student_count: { type: integer, minimum: 0 }
+        verified:
+          type: boolean
+          description: Whether an admin has granted this teacher the verified badge.
+        focus:
+          type: array
+          items: { type: string }
+          description: Free-text focus tags, e.g. "IELTS", "Kids & teens".
+        response_time_hours:
+          type: integer
+          minimum: 0
+          description: Median hours to reply to a booking request.
+        accepting_students: { type: boolean }
+        avatar_url: { type: string, format: uri }
+        video_thumbnail_url: { type: string, format: uri }
+
+    TeacherProfile:
+      description: Full profile — every summary field plus the long-form content.
+      allOf:
+        - $ref: "#/components/schemas/TeacherSummary"
+        - type: object
+          required:
+            - intro_video_url
+            - meeting_url
+            - about
+            - teaching_style
+            - experience
+          properties:
+            intro_video_url: { type: string, format: uri }
+            meeting_url:
+              type: string
+              description: >
+                The teacher's default video room for lessons (may be empty). Set
+                via `PATCH /v1/teachers/{slug}`; surfaced on a booking only once
+                it is confirmed (see `Booking.meeting_url`).
+            about:
+              type: string
+              description: Long-form, plain text; paragraphs separated by "\n\n".
+            teaching_style: { type: string }
+            experience:
+              type: array
+              items: { $ref: "#/components/schemas/Experience" }
+            trial_price:
+              description: Present only when the teacher offers a trial lesson.
+              $ref: "#/components/schemas/Money"
+            status:
+              type: string
+              enum: [pending, approved, rejected, suspended]
+              description: >
+                Moderation status. On the public GET /v1/teachers/{slug} this is
+                always `approved` (non-approved profiles 404). Meaningful on
+                GET /v1/teachers/me and the admin endpoints.
+            moderation_note:
+              type: string
+              description: The admin's reason on a reject / suspend, shown to the teacher. Empty otherwise.
+
+    LanguageEntry:
+      type: object
+      description: >
+        One row of the `languages` collection in a write request. `role` splits
+        into the read shape's `teaches` / `also_speaks` arrays.
+      required: [role, code, name, level]
+      properties:
+        role:
+          type: string
+          enum: [teaches, also_speaks]
+        code: { type: string, description: ISO 639-1 }
+        name: { type: string }
+        level: { $ref: "#/components/schemas/LanguageLevel" }
+
+    TeacherProfileWritable:
+      type: object
+      description: >
+        The caller-editable profile fields shared by create and update. Money
+        stays in integer minor units. Server-controlled aggregates (`rating`,
+        `review_count`, `lessons_completed`, `student_count`,
+        `response_time_hours`, `accepting_students`) and `slug` are never
+        accepted here.
+      properties:
+        display_name: { type: string, minLength: 1 }
+        headline: { type: string, minLength: 1 }
+        kind: { $ref: "#/components/schemas/TeacherKind" }
+        country_code: { type: string, minLength: 1, description: ISO 3166-1 alpha-2 }
+        country_name: { type: string, minLength: 1 }
+        city: { type: string, minLength: 1 }
+        timezone:
+          type: string
+          minLength: 1
+          description: IANA name, e.g. "Asia/Tashkent". Must resolve via the tz database.
+        price_per_hour_minor: { type: integer, format: int64, minimum: 0 }
+        trial_price_minor:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: Omit or null for "no trial lesson offered".
+        currency:
+          allOf: [{ $ref: "#/components/schemas/Currency" }]
+          description: Must be `UZS` (the only supported currency). Defaults to `UZS` on create.
+        about: { type: string }
+        teaching_style: { type: string }
+        avatar_url: { type: string }
+        intro_video_url: { type: string }
+        video_thumbnail_url: { type: string }
+        meeting_url:
+          type: string
+          description: >
+            Default video room for this teacher's lessons. Must be an http(s)
+            URL, or empty. Never revealed to students until a lesson is confirmed.
+        languages:
+          type: array
+          items: { $ref: "#/components/schemas/LanguageEntry" }
+        focus:
+          type: array
+          items: { type: string, minLength: 1 }
+        experience:
+          type: array
+          items: { $ref: "#/components/schemas/Experience" }
+
+    LanguageFacet:
+      type: object
+      required: [code, name, count]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        count:
+          type: integer
+          minimum: 0
+          description: Number of teachers in the catalog who teach this language.
+
+    TeacherListResult:
+      type: object
+      required: [teachers, total, facets]
+      properties:
+        teachers:
+          type: array
+          items: { $ref: "#/components/schemas/TeacherSummary" }
+        total:
+          type: integer
+          minimum: 0
+          description: Total matches across all pages.
+        facets:
+          type: object
+          required: [languages]
+          properties:
+            languages:
+              type: array
+              items: { $ref: "#/components/schemas/LanguageFacet" }
+
+    AvailabilitySlot:
+      type: object
+      description: >
+        One recurring availability span on a single weekday, in UTC. Times are
+        minutes from 00:00 UTC (like money's minor units — an integer, never a
+        clock string). `end_minute` is exclusive.
+      required: [weekday, start_minute, end_minute]
+      properties:
+        weekday:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: 0 = Sunday … 6 = Saturday (matches JS `Date.getDay()`).
+        start_minute:
+          type: integer
+          minimum: 0
+          maximum: 1425
+          description: Minutes from 00:00 UTC. Multiple of `granularity_minutes`.
+        end_minute:
+          type: integer
+          minimum: 15
+          maximum: 1440
+          description: Exclusive end, minutes from 00:00 UTC. Greater than `start_minute`.
+
+    WeeklyAvailability:
+      type: object
+      description: A teacher's full weekly recurring availability, in UTC.
+      required: [teacher_slug, timezone, granularity_minutes, slots]
+      properties:
+        teacher_slug: { type: string }
+        timezone:
+          type: string
+          description: >
+            The teacher's IANA timezone (e.g. "Asia/Tashkent"). Use it to render
+            the UTC slots in local time.
+        granularity_minutes:
+          type: integer
+          description: The grid every slot boundary aligns to (currently 15).
+        slots:
+          type: array
+          items: { $ref: "#/components/schemas/AvailabilitySlot" }
+          description: Ordered by weekday, then start_minute. Non-overlapping.
+
+    AvailabilityReplacement:
+      type: object
+      description: The full weekly set to store. An empty array clears availability.
+      required: [slots]
+      properties:
+        slots:
+          type: array
+          items: { $ref: "#/components/schemas/AvailabilitySlot" }
+
+    BookingStatus:
+      type: string
+      enum: [pending_payment, confirmed, completed, cancelled]
+
+    Slot:
+      type: object
+      description: One concrete bookable start time with its price.
+      required: [start_at, end_at, price]
+      properties:
+        start_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        end_at: { type: string, format: date-time, description: RFC3339 UTC — start_at + duration. }
+        price: { $ref: "#/components/schemas/Money" }
+
+    TeacherSlots:
+      type: object
+      required: [teacher_slug, timezone, from, to, duration_minutes, slots]
+      properties:
+        teacher_slug: { type: string }
+        timezone:
+          type: string
+          description: The teacher's IANA timezone, for display only — the slot math is pure UTC.
+        from: { type: string, format: date-time, description: Effective window start (RFC3339 UTC). }
+        to: { type: string, format: date-time, description: Effective window end (RFC3339 UTC). }
+        duration_minutes: { type: integer, enum: [30, 60, 90, 120] }
+        slots:
+          type: array
+          items: { $ref: "#/components/schemas/Slot" }
+          description: Ordered by start_at.
+
+    BookingTeacherSummary:
+      type: object
+      description: Light teacher summary embedded in a booking so lists avoid N+1 calls.
+      required: [slug, display_name, timezone, avatar_url]
+      properties:
+        slug: { type: string }
+        display_name: { type: string }
+        timezone: { type: string, description: IANA name. }
+        avatar_url: { type: string }
+
+    BookingStudentSummary:
+      type: object
+      required: [id, display_name]
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+
+    Booking:
+      type: object
+      required:
+        - id
+        - status
+        - start_at
+        - end_at
+        - duration_minutes
+        - is_trial
+        - price
+        - created_at
+        - cancelled_at
+        - cancelled_by
+        - no_show_party
+        - can_review
+        - review
+        - can_raise_dispute
+        - open_dispute
+        - teacher
+        - student
+        - payment
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/BookingStatus" }
+        start_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        end_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        duration_minutes: { type: integer }
+        is_trial: { type: boolean }
+        price: { $ref: "#/components/schemas/Money" }
+        created_at: { type: string, format: date-time }
+        cancelled_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set when status is `cancelled`, otherwise null.
+        cancellation_reason:
+          type: string
+          description: Present (may be empty) only once cancelled; omitted otherwise.
+        cancelled_by:
+          type: string
+          enum: ["", student, teacher, admin]
+          description: >
+            Empty until the booking is cancelled, then who cancelled it: the
+            `student`, the `teacher` (a teacher no-show counts as a teacher
+            cancellation), or an `admin` force-cancel.
+        meeting_url:
+          type: string
+          description: >
+            The effective video link (the per-booking override if set, else the
+            teacher's default `meeting_url`). Present ONLY when the caller is a
+            participant AND `status` is `confirmed` or `completed`; omitted for
+            everyone else (it never leaks to a `pending_payment` booking or a
+            non-participant).
+        no_show_party:
+          type: string
+          enum: ["", student, teacher]
+          description: >
+            Empty normally. `student` when the student missed a lesson the
+            teacher attended (booking `completed`, payment captured); `teacher`
+            when the teacher self-reported they could not attend (booking
+            `cancelled`, student refunded).
+        can_review:
+          type: boolean
+          description: >
+            True only when the caller is the student, `status` is `completed`,
+            and no review exists yet — the frontend shows the post-lesson review
+            prompt off this without a second call.
+        review:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/BookingReview" }]
+          description: >
+            The caller's review of this booking if one exists (visible to both
+            participants); null otherwise.
+        can_raise_dispute:
+          type: boolean
+          description: >
+            True only when the caller is a participant, `status` is `confirmed`
+            or `completed`, and no dispute is currently open — the frontend shows
+            the "report a problem" action off this without a second call.
+        open_dispute:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/BookingOpenDispute" }]
+          description: >
+            The booking's currently open dispute (visible to both participants);
+            null when there is none. The full thread, including closed disputes,
+            is at `GET /v1/bookings/{id}/disputes`.
+        teacher: { $ref: "#/components/schemas/BookingTeacherSummary" }
+        student: { $ref: "#/components/schemas/BookingStudentSummary" }
+        payment:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/BookingPayment" }]
+          description: >
+            The booking's payment intent. Null when there is none yet, and
+            omitted from list responses (only single-booking responses embed
+            it).
+
+    BookingPayment:
+      type: object
+      description: The payment intent embedded in a booking.
+      required: [status, amount_minor, currency]
+      properties:
+        status:
+          type: string
+          enum: [requires_payment, authorized, captured, refunded, failed]
+        amount_minor: { type: integer, format: int64, description: Integer minor units. }
+        currency: { type: string }
+
+    PayBookingRequest:
+      type: object
+      required: [method_token]
+      properties:
+        method_token:
+          type: string
+          description: >
+            Opaque payment-method handle. Fake-provider tokens: `pm_ok`,
+            `pm_decline`, `pm_capture_fail`.
+
+    PaymentWebhookEvent:
+      type: object
+      required: [event_id, type, payment_id]
+      properties:
+        event_id:
+          type: string
+          description: Stable per state change; replaying it is a no-op.
+        type:
+          type: string
+          enum: [payment.authorized, payment.captured, payment.refunded, payment.failed]
+        payment_id: { type: string, format: uuid }
+        provider_ref: { type: string, description: The provider's reference for the intent/charge. }
+        amount_minor: { type: integer, format: int64 }
+        currency: { type: string }
+        message: { type: string, description: Human-readable detail, used as last_error on payment.failed. }
+
+    PaymentWebhookAck:
+      type: object
+      required: [received, applied]
+      properties:
+        received: { type: boolean }
+        applied:
+          type: boolean
+          description: True when this delivery ran the effect; false for a recognised duplicate.
+
+    TeacherEarnings:
+      type: object
+      required: [total_earned_minor, held_minor, available_minor, paid_minor, currency, lessons]
+      properties:
+        total_earned_minor:
+          type: integer
+          format: int64
+          description: held + available + paid (integer minor units); excludes reversed lessons.
+        held_minor:
+          type: integer
+          format: int64
+          description: Captured but still inside the payout clearing window.
+        available_minor:
+          type: integer
+          format: int64
+          description: Cleared the window, awaiting the next payout run.
+        paid_minor:
+          type: integer
+          format: int64
+          description: Already disbursed by a payout batch.
+        currency: { type: string }
+        lessons:
+          type: array
+          items: { $ref: "#/components/schemas/EarningLesson" }
+
+    EarningLesson:
+      type: object
+      required: [booking_id, student_display_name, start_at, amount_minor, state, available_at]
+      properties:
+        booking_id: { type: string, format: uuid }
+        student_display_name: { type: string }
+        start_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        amount_minor: { type: integer, format: int64 }
+        state:
+          type: string
+          description: >
+            Effective state, resolved against the clearing window at read time:
+            a captured lesson is `held` until its `available_at` passes, then
+            `available` until a payout run settles it as `paid`. `reversed` is a
+            refunded lesson.
+          enum: [held, available, paid, reversed]
+        available_at:
+          type: string
+          format: date-time
+          description: >
+            RFC3339 UTC. When the clearing window closes and the earning becomes
+            payable. In the past for every state other than `held`.
+
+    BookingList:
+      type: object
+      required: [bookings]
+      properties:
+        bookings:
+          type: array
+          items: { $ref: "#/components/schemas/Booking" }
+
+    CreateBookingRequest:
+      type: object
+      required: [teacher_slug, start_at, duration_minutes]
+      properties:
+        teacher_slug: { type: string }
+        start_at:
+          type: string
+          format: date-time
+          description: RFC3339 UTC. Must be in the future and a real bookable slot.
+        duration_minutes:
+          type: integer
+          enum: [30, 60, 90, 120]
+          description: Ignored when is_trial is true (forced to 30).
+        is_trial:
+          type: boolean
+          default: false
+          description: A trial lesson — 30 minutes, priced at the teacher's trial_price.
+
+    CancelBookingRequest:
+      type: object
+      description: Optional body. Omit entirely for a reason-less cancellation.
+      properties:
+        reason: { type: string }
+
+    MeetingLinkRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          description: >
+            An http(s) URL for the lesson's video room, or an empty string to
+            clear the per-booking override.
+
+    NoShowRequest:
+      type: object
+      required: [party]
+      properties:
+        party:
+          type: string
+          enum: [student, teacher]
+          description: Who missed the lesson.
+
+    BookingReview:
+      type: object
+      description: The review attached to a booking, embedded in booking responses.
+      required: [rating, comment, created_at]
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        created_at: { type: string, format: date-time, description: RFC3339 UTC. }
+
+    CreateReviewRequest:
+      type: object
+      required: [rating]
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          description: Optional, trimmed, at most 2000 characters.
+
+    CreatedReview:
+      type: object
+      required: [id, rating, comment, created_at, student, teacher_slug]
+      properties:
+        id: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        created_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        student:
+          type: object
+          required: [display_name]
+          properties:
+            display_name: { type: string }
+        teacher_slug: { type: string }
+
+    ReviewListItem:
+      type: object
+      required: [id, rating, comment, created_at, student_display_name]
+      properties:
+        id: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        created_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        student_display_name: { type: string }
+
+    ReviewList:
+      type: object
+      required: [reviews, total]
+      properties:
+        reviews:
+          type: array
+          items: { $ref: "#/components/schemas/ReviewListItem" }
+        total:
+          type: integer
+          description: Total reviews for the teacher (not just this page).
+
+    AdminReview:
+      description: One review in the moderation queue, with the teacher it is about.
+      type: object
+      required: [id, rating, comment, hidden, created_at, teacher, student_display_name, booking_id, sample]
+      properties:
+        id: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        hidden: { type: boolean, description: True once an operator has taken it off the profile. }
+        created_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        teacher:
+          type: object
+          required: [slug, display_name]
+          properties:
+            slug: { type: string }
+            display_name: { type: string }
+        student_display_name: { type: string }
+        booking_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: The completed lesson this review is for; null for a seeded sample review.
+        sample:
+          type: boolean
+          description: >
+            True for a seeded, booking-less review — part of the teacher's
+            historical display set, never folded into the live rating aggregate.
+
+    AdminReviewList:
+      type: object
+      required: [reviews, total]
+      properties:
+        reviews: { type: array, items: { $ref: "#/components/schemas/AdminReview" } }
+        total: { type: integer, description: Total matches, not just this page. }
+
+    # --- Disputes (phase D) ---
+
+    DisputeStatus:
+      type: string
+      enum: [open, resolved, rejected]
+      description: "`open` is the only non-terminal state."
+
+    DisputeUser:
+      type: object
+      description: The account that raised or resolved a dispute.
+      required: [id, display_name]
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+
+    BookingOpenDispute:
+      type: object
+      description: The open dispute embedded in a participant's booking response.
+      required: [id, status, reason, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/DisputeStatus" }
+        reason: { type: string }
+        created_at: { type: string, format: date-time, description: RFC3339 UTC. }
+
+    Dispute:
+      type: object
+      required: [id, booking_id, status, reason, resolution, raised_by, resolved_by, created_at, resolved_at]
+      properties:
+        id: { type: string, format: uuid }
+        booking_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/DisputeStatus" }
+        reason:
+          type: string
+          description: The participant's account of the problem, at most 2000 characters.
+        resolution:
+          type: string
+          description: The operator's closing note. Empty while the dispute is open.
+        raised_by: { $ref: "#/components/schemas/DisputeUser" }
+        resolved_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/DisputeUser" }]
+          description: The operator who closed it; null while open.
+        created_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: RFC3339 UTC; null while open.
+
+    DisputeList:
+      type: object
+      required: [disputes]
+      properties:
+        disputes:
+          type: array
+          items: { $ref: "#/components/schemas/Dispute" }
+          description: Newest first.
+
+    RaiseDisputeRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Trimmed; must be non-empty.
+
+    ResolveDisputeRequest:
+      type: object
+      required: [outcome, resolution]
+      properties:
+        outcome:
+          type: string
+          enum: [resolved, rejected]
+          description: >
+            `resolved` sides with the person who raised it, `rejected` closes it
+            without action.
+        resolution:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: The operator's closing note. Trimmed; must be non-empty.
+        refund:
+          type: boolean
+          default: false
+          description: >
+            Refund the booking's payment. Only honoured with
+            `outcome: resolved`; the booking's own status is not changed.
+
+    # --- Admin (phase A/B) ---
+
+    AdminMetrics:
+      type: object
+      required: [users_total, teachers_total, teachers_pending, bookings_total, bookings_this_week, gmv_minor, gmv_currency]
+      properties:
+        users_total: { type: integer }
+        teachers_total: { type: integer }
+        teachers_pending: { type: integer }
+        bookings_total: { type: integer }
+        bookings_this_week: { type: integer, description: Created in the last 7 days. }
+        gmv_minor: { type: integer, format: int64, description: Sum of price over confirmed + completed bookings, minor units. }
+        gmv_currency: { type: string, description: "UZS for the MVP." }
+
+    AdminUserRow:
+      type: object
+      required: [id, email, display_name, created_at, is_teacher, booking_count]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        display_name: { type: string }
+        created_at: { type: string, format: date-time }
+        is_teacher: { type: boolean, description: Owns a teachers row. }
+        booking_count: { type: integer }
+
+    AdminUserList:
+      type: object
+      required: [users, total]
+      properties:
+        users: { type: array, items: { $ref: "#/components/schemas/AdminUserRow" } }
+        total: { type: integer }
+
+    AdminRoleRef:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+
+    AdminUserDetail:
+      type: object
+      required: [user, roles, teacher_profile, bookings, payments_summary]
+      properties:
+        user:
+          type: object
+          required: [id, email, display_name, created_at]
+          properties:
+            id: { type: string, format: uuid }
+            email: { type: string, format: email }
+            display_name: { type: string }
+            created_at: { type: string, format: date-time }
+        roles:
+          type: array
+          items: { $ref: "#/components/schemas/AdminRoleRef" }
+        teacher_profile:
+          nullable: true
+          type: object
+          required: [slug, status, verified]
+          properties:
+            slug: { type: string }
+            status: { type: string, enum: [pending, approved, rejected, suspended] }
+            verified: { type: boolean }
+        bookings:
+          type: array
+          description: The 50 newest bookings the user takes part in.
+          items:
+            type: object
+            required: [id, status, start_at, role_in_booking, other_party_name, price]
+            properties:
+              id: { type: string, format: uuid }
+              status: { type: string }
+              start_at: { type: string, format: date-time }
+              role_in_booking: { type: string, enum: [student, teacher] }
+              other_party_name: { type: string }
+              price: { $ref: "#/components/schemas/Money" }
+        payments_summary:
+          type: object
+          required: [authorized_minor, captured_minor, refunded_minor, currency]
+          description: The user's payments as the paying student, bucketed by current payment state.
+          properties:
+            authorized_minor: { type: integer, format: int64 }
+            captured_minor: { type: integer, format: int64 }
+            refunded_minor: { type: integer, format: int64 }
+            currency: { type: string }
+
+    AdminRole:
+      type: object
+      required: [id, name, description, is_system, permissions, user_count]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        is_system:
+          type: boolean
+          description: System roles (e.g. superadmin) cannot be re-permissioned or deleted; only their description is editable.
+        permissions: { type: array, items: { type: string } }
+        user_count: { type: integer }
+
+    AdminTeacherRow:
+      type: object
+      required: [slug, display_name, status, verified, headline, country_name, created_at, owner]
+      properties:
+        slug: { type: string }
+        display_name: { type: string }
+        status: { type: string, enum: [pending, approved, rejected, suspended] }
+        verified: { type: boolean }
+        headline: { type: string }
+        country_name: { type: string }
+        created_at: { type: string, format: date-time }
+        owner:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            email: { type: string, format: email }
+
+    AdminTeacherList:
+      type: object
+      required: [teachers, total]
+      properties:
+        teachers: { type: array, items: { $ref: "#/components/schemas/AdminTeacherRow" } }
+        total: { type: integer }
+
+    AdminTeacherDetail:
+      description: The full public TeacherProfile shape (with status / verified / moderation_note) plus the owner account.
+      allOf:
+        - $ref: "#/components/schemas/TeacherProfile"
+        - type: object
+          required: [owner]
+          properties:
+            owner:
+              type: object
+              required: [id, email, display_name]
+              properties:
+                id: { type: string, format: uuid }
+                email: { type: string, format: email }
+                display_name: { type: string }
+
+    # --- Admin bookings + disputes (phase D) ---
+
+    AdminBookingTeacher:
+      type: object
+      required: [slug, display_name]
+      properties:
+        slug: { type: string }
+        display_name: { type: string }
+
+    AdminBookingStudent:
+      type: object
+      required: [id, email, display_name]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        display_name: { type: string }
+
+    AdminBookingRow:
+      type: object
+      required: [id, status, start_at, end_at, teacher, student, price, payment_status, created_at, has_open_dispute]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/BookingStatus" }
+        start_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        end_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        teacher: { $ref: "#/components/schemas/AdminBookingTeacher" }
+        student: { $ref: "#/components/schemas/AdminBookingStudent" }
+        price: { $ref: "#/components/schemas/Money" }
+        payment_status:
+          type: string
+          nullable: true
+          enum: [requires_payment, authorized, captured, refunded, failed, null]
+          description: Null when the booking has no payment intent yet.
+        created_at: { type: string, format: date-time }
+        has_open_dispute:
+          type: boolean
+          description: True while the booking has a dispute in the `open` state.
+
+    AdminBookingList:
+      type: object
+      required: [bookings, total]
+      properties:
+        bookings: { type: array, items: { $ref: "#/components/schemas/AdminBookingRow" } }
+        total: { type: integer, description: Total matches, not just this page. }
+
+    AdminBookingDispute:
+      type: object
+      description: One entry of a booking's dispute thread, as the operator sees it.
+      required: [id, status, reason, resolution, raised_by, resolved_by, created_at, resolved_at]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/DisputeStatus" }
+        reason: { type: string }
+        resolution: { type: string }
+        raised_by: { $ref: "#/components/schemas/DisputeUser" }
+        resolved_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/DisputeUser" }]
+        created_at: { type: string, format: date-time }
+        resolved_at: { type: string, format: date-time, nullable: true }
+
+    AdminBookingDetail:
+      description: The list row plus the lifecycle extras, the payment, and the dispute thread.
+      allOf:
+        - $ref: "#/components/schemas/AdminBookingRow"
+        - type: object
+          required:
+            - duration_minutes
+            - is_trial
+            - payment
+            - meeting_url
+            - no_show_party
+            - cancelled_at
+            - cancelled_by
+            - cancellation_reason
+            - disputes
+          properties:
+            duration_minutes: { type: integer }
+            is_trial: { type: boolean }
+            payment:
+              nullable: true
+              allOf: [{ $ref: "#/components/schemas/BookingPayment" }]
+              description: Null when the booking has no payment intent yet.
+            meeting_url:
+              type: string
+              description: >
+                The effective link (per-booking override, else the teacher's
+                default). Empty when neither is set. Shown to operators
+                regardless of booking status.
+            no_show_party: { type: string, enum: ["", student, teacher] }
+            cancelled_at: { type: string, format: date-time, nullable: true }
+            cancelled_by: { type: string, enum: ["", student, teacher, admin] }
+            cancellation_reason: { type: string }
+            disputes:
+              type: array
+              items: { $ref: "#/components/schemas/AdminBookingDispute" }
+              description: The booking's full dispute thread, newest first.
+
+    ForceCancelBookingRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          description: >
+            Why the operator cancelled. Required, trimmed, and stored on the
+            booking as `cancellation_reason`.
+        refund:
+          type: boolean
+          default: false
+          description: >
+            Release / refund the booking's payment. False makes no payment call
+            at all.
+
+    AdminDisputeRow:
+      description: A queued dispute plus the booking and parties it is about.
+      allOf:
+        - $ref: "#/components/schemas/Dispute"
+        - type: object
+          required: [booking]
+          properties:
+            booking:
+              type: object
+              required: [id, status, start_at, price, teacher, student]
+              properties:
+                id: { type: string, format: uuid }
+                status: { $ref: "#/components/schemas/BookingStatus" }
+                start_at: { type: string, format: date-time }
+                price: { $ref: "#/components/schemas/Money" }
+                teacher: { $ref: "#/components/schemas/AdminBookingTeacher" }
+                student: { $ref: "#/components/schemas/AdminBookingStudent" }
+
+    AdminDisputeList:
+      type: object
+      required: [disputes, total]
+      properties:
+        disputes: { type: array, items: { $ref: "#/components/schemas/AdminDisputeRow" } }
+        total: { type: integer, description: Total matches, not just this page. }
+
+    # --- Admin payouts (phase E) ---
+
+    PayoutTeacherRef:
+      type: object
+      required: [slug, display_name]
+      properties:
+        slug: { type: string }
+        display_name: { type: string }
+
+    PayoutOperatorRef:
+      description: The account that ran a payout batch.
+      type: object
+      required: [id, display_name]
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+
+    OwedPayoutRow:
+      description: One teacher's currently payable balance — cleared, unpaid ledger rows.
+      type: object
+      required: [teacher, available_minor, currency, oldest_available_at]
+      properties:
+        teacher: { $ref: "#/components/schemas/PayoutTeacherRef" }
+        available_minor: { type: integer, format: int64 }
+        currency: { type: string }
+        oldest_available_at:
+          type: string
+          format: date-time
+          description: RFC3339 UTC. The clearing date of the oldest unpaid earning in this balance.
+
+    PayoutTotals:
+      type: object
+      required: [available_total_minor, held_total_minor, paid_total_minor, currency]
+      properties:
+        available_total_minor:
+          type: integer
+          format: int64
+          description: Payable now — what the next run would settle.
+        held_total_minor:
+          type: integer
+          format: int64
+          description: Still inside the clearing window.
+        paid_total_minor:
+          type: integer
+          format: int64
+          description: Already disbursed by past batches.
+        currency: { type: string }
+
+    PayoutBatch:
+      description: One payout run.
+      type: object
+      required: [id, created_by, status, total_minor, currency, teacher_count, line_count, created_at, completed_at]
+      properties:
+        id: { type: string, format: uuid }
+        created_by: { $ref: "#/components/schemas/PayoutOperatorRef" }
+        status:
+          type: string
+          description: >
+            `completed` for the in-process fake provider, which settles
+            synchronously. `processing` / `failed` are for the real disbursement
+            API that replaces it.
+          enum: [processing, completed, failed]
+        total_minor: { type: integer, format: int64 }
+        currency: { type: string }
+        teacher_count: { type: integer, description: Distinct teachers paid by the batch. }
+        line_count: { type: integer, description: Ledger rows (lessons) the batch covered. }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+
+    PayoutBatchLine:
+      description: One teacher's share of a payout batch.
+      type: object
+      required: [teacher, amount_minor, currency, lesson_count]
+      properties:
+        teacher: { $ref: "#/components/schemas/PayoutTeacherRef" }
+        amount_minor: { type: integer, format: int64 }
+        currency: { type: string }
+        lesson_count: { type: integer }
+
+    PayoutBatchDetail:
+      description: A payout batch plus one line per teacher it paid.
+      allOf:
+        - $ref: "#/components/schemas/PayoutBatch"
+        - type: object
+          required: [lines]
+          properties:
+            lines: { type: array, items: { $ref: "#/components/schemas/PayoutBatchLine" } }
+
+    AdminPayoutDashboard:
+      type: object
+      required: [owed, totals, batches, batches_total]
+      properties:
+        owed:
+          type: array
+          description: What the platform owes right now, one row per teacher, biggest first.
+          items: { $ref: "#/components/schemas/OwedPayoutRow" }
+        totals: { $ref: "#/components/schemas/PayoutTotals" }
+        batches:
+          type: array
+          description: A page of past payout runs, newest first.
+          items: { $ref: "#/components/schemas/PayoutBatch" }
+        batches_total: { type: integer, description: Total past runs, not just this page. }
+

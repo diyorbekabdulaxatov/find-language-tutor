@@ -1,0 +1,151 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens — "bold modern marketplace", green-forward.
+ *
+ * Colour does the work: a fresh, light emerald green for primary actions, links,
+ * and surfaces; a warm coral for trial CTAs and energy; a brighter mint for
+ * "online / verified" signals; amber for stars. White cards on a faintly green
+ * ground, generous radii, soft layered shadows.
+ *
+ *  1. Raw values on :root / .dark.
+ *  2. `@theme inline` maps them to Tailwind names (bg-background, text-coral,
+ *     shadow-card, font-display, …).
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-link: var(--primary);
+  --color-coral: var(--coral);
+  --color-coral-foreground: var(--coral-foreground);
+  --color-mint: var(--mint);
+  --color-mint-foreground: var(--mint-foreground);
+  --color-star: var(--star);
+  --color-brand-tint: var(--brand-tint);
+
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+  --font-heading: var(--font-display);
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 16px);
+
+  --shadow-soft: 0 1px 2px rgba(23, 23, 51, 0.04), 0 4px 12px -2px rgba(23, 23, 51, 0.07);
+  --shadow-card: 0 1px 2px rgba(23, 23, 51, 0.04), 0 12px 32px -12px rgba(23, 23, 51, 0.14);
+  --shadow-lift: 0 2px 6px rgba(23, 23, 51, 0.06), 0 24px 48px -14px rgba(23, 23, 51, 0.22);
+}
+
+:root {
+  --background: #f5f8f6;
+  --foreground: #16211c;
+
+  --card: #ffffff;
+  --card-foreground: #16211c;
+  --popover: #ffffff;
+  --popover-foreground: #16211c;
+
+  --primary: #18b184;
+  --primary-foreground: #ffffff;
+
+  --secondary: #e7f1ec;
+  --secondary-foreground: #1c3a2e;
+  --muted: #eef3f0;
+  --muted-foreground: #5f7169;
+  --accent: #dff2e9;
+  --accent-foreground: #0a6b4b;
+
+  --destructive: #dc2b3d;
+
+  --border: #e0e9e4;
+  --input: #d8e5df;
+  --ring: #18b184;
+
+  --coral: #ff6b57;
+  --coral-foreground: #ffffff;
+  --mint: #24c088;
+  --mint-foreground: #06231a;
+  --star: #f5a524;
+  --brand-tint: #dff2e9;
+
+  --radius: 0.875rem;
+}
+
+.dark {
+  --background: #16231e;
+  --foreground: #eef4f0;
+
+  --card: #21302a;
+  --card-foreground: #eef4f0;
+  --popover: #21302a;
+  --popover-foreground: #eef4f0;
+
+  --primary: #4bd8a4;
+  --primary-foreground: #04241a;
+
+  --secondary: #2c3d35;
+  --secondary-foreground: #eef4f0;
+  --muted: #273730;
+  --muted-foreground: #a9bcb2;
+  --accent: #2b4839;
+  --accent-foreground: #9cedcb;
+
+  --destructive: #f2586a;
+
+  --border: #3a4c43;
+  --input: #43564c;
+  --ring: #4bd8a4;
+
+  --coral: #ff8977;
+  --coral-foreground: #2a0f0a;
+  --mint: #46e0a8;
+  --mint-foreground: #04241a;
+  --star: #f7b23b;
+  --brand-tint: #1c3a2c;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .font-display {
+    font-optical-sizing: auto;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 28%, transparent);
+  }
+}

@@ -1,0 +1,76 @@
+package rbac
+
+// Permission is a single capability key. The catalog below is the source of
+// truth: role_permissions rows are validated against it on write, the
+// GET /v1/admin/permissions endpoint serves it, and the `superadmin` system
+// role always holds exactly AllPermissions (recomputed on seed).
+type Permission string
+
+const (
+	// Phase A/B — wired to endpoints.
+	PermMetricsView      Permission = "metrics.view"       // GET /v1/admin/metrics
+	PermUsersView        Permission = "users.view"         // GET /v1/admin/users[/{id}]
+	PermUsersManageRoles Permission = "users.manage_roles" // assign / unassign a user's roles
+	PermTeachersView     Permission = "teachers.view"      // GET /v1/admin/teachers[/{slug}]
+	PermTeachersModerate Permission = "teachers.moderate"  // approve / reject / suspend
+	PermTeachersVerify   Permission = "teachers.verify"    // toggle the verified badge
+	PermRolesManage      Permission = "roles.manage"       // role CRUD + the permission catalog
+
+	// Phase D — wired to endpoints.
+	PermBookingsView        Permission = "bookings.view"         // GET /v1/admin/bookings[/{id}]
+	PermBookingsForceCancel Permission = "bookings.force_cancel" // POST /v1/admin/bookings/{id}/force-cancel
+	PermDisputesResolve     Permission = "disputes.resolve"      // GET /v1/admin/disputes, POST .../{id}/resolve
+
+	// Phase E — wired to endpoints.
+	PermPayoutsView Permission = "payouts.view" // GET /v1/admin/payouts[/batches/{id}]
+	PermPayoutsRun  Permission = "payouts.run"  // POST /v1/admin/payouts/run
+
+	// Phase F — defined now, no endpoint yet.
+	PermReviewsModerate Permission = "reviews.moderate"
+)
+
+// PermissionInfo is one catalog entry for the GET /v1/admin/permissions UI.
+type PermissionInfo struct {
+	Key         Permission
+	Description string
+}
+
+// Catalog is the full, ordered permission catalog.
+var Catalog = []PermissionInfo{
+	{PermMetricsView, "View the admin dashboard metrics."},
+	{PermUsersView, "View the user directory and user detail pages."},
+	{PermUsersManageRoles, "Assign and unassign roles on a user."},
+	{PermTeachersView, "View teacher profiles in the admin moderation queue."},
+	{PermTeachersModerate, "Approve, reject, and suspend teacher profiles."},
+	{PermTeachersVerify, "Grant or remove a teacher's verified badge."},
+	{PermRolesManage, "Create, edit, and delete roles and their permissions."},
+	{PermBookingsView, "View any booking on the platform."},
+	{PermBookingsForceCancel, "Force-cancel a booking, with an optional refund."},
+	{PermDisputesResolve, "View the dispute queue and resolve or reject disputes."},
+	{PermPayoutsView, "View the teacher payout ledger and past payout batches."},
+	{PermPayoutsRun, "Run a payout batch, paying out every cleared teacher earning."},
+	{PermReviewsModerate, "Hide or remove reviews (not yet wired to an endpoint)."},
+}
+
+// AllPermissions is every permission key in catalog order.
+var AllPermissions = func() []Permission {
+	out := make([]Permission, len(Catalog))
+	for i, p := range Catalog {
+		out[i] = p.Key
+	}
+	return out
+}()
+
+var catalogSet = func() map[Permission]struct{} {
+	m := make(map[Permission]struct{}, len(Catalog))
+	for _, p := range Catalog {
+		m[p.Key] = struct{}{}
+	}
+	return m
+}()
+
+// ValidPermission reports whether key is in the catalog.
+func ValidPermission(key string) bool {
+	_, ok := catalogSet[Permission(key)]
+	return ok
+}
