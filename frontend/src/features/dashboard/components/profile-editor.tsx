@@ -65,11 +65,17 @@ export function ProfileEditor({
       setValues(profileToForm(saved));
       setStatus("saved");
       onSaved(saved);
-      // Show the live public profile so the teacher sees the result.
-      // refresh() re-renders the destination's server components with fresh
-      // data instead of a cached copy.
-      router.push(`/teachers/${saved.slug}`);
-      router.refresh();
+      // Only an approved profile has a public page — send the teacher there to
+      // see the live result (refresh() re-renders its server components with
+      // fresh data). A pending / rejected / suspended profile 404s on the
+      // public route, so stay on the dashboard, where onSaved() has just
+      // surfaced the moderation banner.
+      if (saved.status === "approved") {
+        router.push(`/teachers/${saved.slug}`);
+        router.refresh();
+      } else {
+        router.refresh();
+      }
     } catch (err) {
       setStatus("idle");
       setError(
