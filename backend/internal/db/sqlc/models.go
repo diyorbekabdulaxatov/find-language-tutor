@@ -227,6 +227,17 @@ type Dispute struct {
 	ResolvedAt pgtype.Timestamptz
 }
 
+type FileAsset struct {
+	ID          uuid.UUID
+	OwnerID     uuid.UUID
+	Provider    string
+	ObjectKey   string
+	Filename    string
+	ContentType string
+	Bytes       int64
+	CreatedAt   pgtype.Timestamptz
+}
+
 type Payment struct {
 	ID           uuid.UUID
 	BookingID    uuid.UUID
@@ -274,6 +285,19 @@ type PayoutLedger struct {
 	AvailableAt   pgtype.Timestamptz
 	PaidAt        pgtype.Timestamptz
 	PayoutBatchID uuid.NullUUID
+}
+
+type Resource struct {
+	ID           uuid.UUID
+	TeacherID    uuid.UUID
+	Type         string
+	Title        string
+	Instructions string
+	Content      []byte
+	Status       string
+	ArchivedAt   pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
 }
 
 type Review struct {

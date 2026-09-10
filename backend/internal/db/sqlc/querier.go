@@ -118,18 +118,23 @@ type Querier interface {
 	// Invalidate a user's outstanding tokens of a purpose before issuing a new one,
 	// so only the newest link works.
 	ConsumeUserAuthTokens(ctx context.Context, arg ConsumeUserAuthTokensParams) error
+	CountTeacherResources(ctx context.Context, arg CountTeacherResourcesParams) (int64, error)
 	CountTeacherReviews(ctx context.Context, teacherID uuid.UUID) (int64, error)
 	CountTeachers(ctx context.Context, arg CountTeachersParams) (int64, error)
 	CountUsersWithRole(ctx context.Context, roleID uuid.UUID) (int64, error)
 	// --- account-recovery link tokens (migration 000013) ---
 	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (uuid.UUID, error)
 	CreateBooking(ctx context.Context, arg CreateBookingParams) (uuid.UUID, error)
+	// File assets (phase A1): the app's handle to a blob in the store.
+	CreateFileAsset(ctx context.Context, arg CreateFileAssetParams) (FileAsset, error)
 	// Payments module: one payment intent per booking, the webhook-event log that
 	// guards idempotency, and the simplified teacher-earnings ledger. Money is
 	// integer minor units everywhere.
 	// Eagerly created right after a booking is inserted. Idempotent: a second call
 	// for the same booking is a no-op and still returns the existing row.
 	CreatePayment(ctx context.Context, arg CreatePaymentParams) (Payment, error)
+	// Learning resources library (phase A1).
+	CreateResource(ctx context.Context, arg CreateResourceParams) (Resource, error)
 	CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	// Both the demo seed and POST /v1/teachers insert through here. The seed passes
@@ -145,6 +150,9 @@ type Querier interface {
 	// reference users with no cascade, so the seed clears disputes explicitly
 	// before bookings and users.
 	DeleteAllDisputes(ctx context.Context) error
+	// Seed-only. file_assets.owner_id -> users cascades, but resources may still
+	// reference an asset id in JSONB (no FK), so the seed clears this before users.
+	DeleteAllFileAssets(ctx context.Context) error
 	DeleteAllPaymentEvents(ctx context.Context) error
 	// Seed-only. payments.booking_id references bookings with no ON DELETE CASCADE,
 	// so the seed must clear payment rows (and the event log / ledger that
@@ -155,6 +163,8 @@ type Querier interface {
 	// before users (created_by).
 	DeleteAllPayoutBatches(ctx context.Context) error
 	DeleteAllPayoutLedger(ctx context.Context) error
+	// Seed-only. resources.teacher_id -> teachers cascades; kept explicit + ordered.
+	DeleteAllResources(ctx context.Context) error
 	// Seed-only. reviews references teachers / users / bookings with no cascade, so
 	// the seed clears it before all three.
 	DeleteAllReviews(ctx context.Context) error
@@ -167,6 +177,7 @@ type Querier interface {
 	// first.
 	DeleteAllUsers(ctx context.Context) error
 	DeleteAvailabilitySlots(ctx context.Context, teacherID uuid.UUID) error
+	DeleteResource(ctx context.Context, id uuid.UUID) error
 	DeleteReview(ctx context.Context, id uuid.UUID) error
 	DeleteRole(ctx context.Context, id uuid.UUID) error
 	DeleteRolePermissions(ctx context.Context, roleID uuid.UUID) error
@@ -199,6 +210,7 @@ type Querier interface {
 	// (only confirmed / completed lessons can be disputed).
 	GetDisputeBookingContext(ctx context.Context, id uuid.UUID) (GetDisputeBookingContextRow, error)
 	GetDisputeByID(ctx context.Context, id uuid.UUID) (GetDisputeByIDRow, error)
+	GetFileAsset(ctx context.Context, id uuid.UUID) (FileAsset, error)
 	// A token that can still be redeemed: matches the hash + purpose, not consumed,
 	// not expired.
 	GetLiveAuthToken(ctx context.Context, arg GetLiveAuthTokenParams) (GetLiveAuthTokenRow, error)
@@ -207,6 +219,7 @@ type Querier interface {
 	GetOpenDisputeForBooking(ctx context.Context, bookingID uuid.UUID) (GetOpenDisputeForBookingRow, error)
 	GetPaymentByBooking(ctx context.Context, bookingID uuid.UUID) (Payment, error)
 	GetPaymentByID(ctx context.Context, id uuid.UUID) (Payment, error)
+	GetResource(ctx context.Context, id uuid.UUID) (Resource, error)
 	// Reviews module (Phase 6): a student's rating + comment for a completed lesson.
 	// A real review carries booking_id; the demo seed inserts booking-less samples.
 	// Everything the POST /v1/bookings/{id}/review flow needs to authorize the
@@ -270,6 +283,9 @@ type Querier interface {
 	// server-side slot generation and the pre-insert bookability re-check.
 	ListTeacherBookingIntervals(ctx context.Context, arg ListTeacherBookingIntervalsParams) ([]ListTeacherBookingIntervalsRow, error)
 	ListTeacherEarnings(ctx context.Context, teacherID uuid.UUID) ([]ListTeacherEarningsRow, error)
+	// The library list. Filters are optional: type, status ('draft'|'published'),
+	// and whether to include archived rows.
+	ListTeacherResources(ctx context.Context, arg ListTeacherResourcesParams) ([]Resource, error)
 	// A page of a teacher's PUBLIC reviews, newest first. Hidden reviews (removed
 	// from display by an operator) never appear on the profile.
 	ListTeacherReviews(ctx context.Context, arg ListTeacherReviewsParams) ([]ListTeacherReviewsRow, error)
@@ -355,6 +371,8 @@ type Querier interface {
 	// SetBookingStatus / CancelBooking so the capture / refund path is reused.
 	SetBookingNoShowParty(ctx context.Context, arg SetBookingNoShowPartyParams) error
 	SetBookingStatus(ctx context.Context, arg SetBookingStatusParams) error
+	SetResourceArchived(ctx context.Context, arg SetResourceArchivedParams) (Resource, error)
+	SetResourceStatus(ctx context.Context, arg SetResourceStatusParams) (Resource, error)
 	SetReviewHidden(ctx context.Context, arg SetReviewHiddenParams) error
 	// Password reset: replace the hash and bump updated_at. The caller also revokes
 	// every session in the same transaction.
@@ -366,6 +384,9 @@ type Querier interface {
 	TeacherRefBySlug(ctx context.Context, slug string) (TeacherRefBySlugRow, error)
 	TeacherSlugExists(ctx context.Context, slug string) (bool, error)
 	UnassignRoleFromUser(ctx context.Context, arg UnassignRoleFromUserParams) error
+	// Partial edit: title / instructions / content are replaced wholesale when
+	// provided (the service passes the current value for fields it isn't changing).
+	UpdateResource(ctx context.Context, arg UpdateResourceParams) (Resource, error)
 	UpdateRoleDescription(ctx context.Context, arg UpdateRoleDescriptionParams) error
 	// Edit the caller-editable profile fields. Server-controlled aggregates (rating,
 	// review_count, lessons_completed, student_count, response_time_hours,

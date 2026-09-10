@@ -573,6 +573,157 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a file
+         * @description Multipart form, field `file`. PDF / image / audio only, under 25 MB. Returns a file id + the `url` to fetch the bytes back (`GET /v1/files/{id}`).
+         */
+        post: operations["uploadFile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/files/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download a file
+         * @description Streams the bytes (or 302-redirects to a signed URL on R2). Phase A1: the file owner only; phase A2 widens this to a student the resource has been assigned to.
+         */
+        get: operations["getFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's resource library */
+        get: operations["listResources"];
+        put?: never;
+        /** Create a resource */
+        post: operations["createResource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/resources/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One of the caller's resources */
+        get: operations["getResource"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a resource
+         * @description Only if it has never been attached to a lesson or course; otherwise 409 — archive it instead.
+         */
+        delete: operations["deleteResource"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit a resource
+         * @description Title / instructions / content are replaced. Type is immutable; content is re-validated against it.
+         */
+        patch: operations["updateResource"];
+        trace?: never;
+    };
+    "/v1/resources/{id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish a resource */
+        post: operations["publishResource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/resources/{id}/unpublish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Return a resource to draft */
+        post: operations["unpublishResource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/resources/{id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive a resource */
+        post: operations["archiveResource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/resources/{id}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore an archived resource */
+        post: operations["unarchiveResource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/metrics": {
         parameters: {
             query?: never;
@@ -1619,6 +1770,94 @@ export interface components {
             booking_id: string | null;
             /** @description True for a seeded, booking-less review — part of the teacher's historical display set, never folded into the live rating aggregate. */
             sample: boolean;
+        };
+        FileAsset: {
+            /** Format: uuid */
+            id: string;
+            filename: string;
+            content_type: string;
+            /** Format: int64 */
+            bytes: number;
+            /** @description GET path for the bytes: /v1/files/{id}. */
+            url: string;
+        };
+        /** @enum {string} */
+        ResourceType: "material" | "article" | "quiz" | "listening" | "reading" | "writing";
+        ResourceChoice: {
+            id: string;
+            text: string;
+        };
+        ResourceQuestion: {
+            id: string;
+            prompt: string;
+            /** @enum {string} */
+            kind: "single" | "multi" | "text";
+            choices?: components["schemas"]["ResourceChoice"][];
+            /** @description Choice ids (single/multi) or accepted answer strings (text). Present in the authoring view; stripped from the student view (phase A2). */
+            correct: string[];
+            points: number;
+        };
+        /** @description The type-specific payload; only the fields relevant to the resource's `type` are populated. */
+        ResourceContent: {
+            /**
+             * Format: uuid
+             * @description material
+             */
+            file_asset_id?: string;
+            /** @description material — external link */
+            url?: string;
+            /** @description material */
+            description?: string;
+            /** @description article — markdown */
+            body?: string;
+            /** @description reading */
+            passage?: string;
+            /**
+             * Format: uuid
+             * @description listening
+             */
+            audio_asset_id?: string;
+            /** @description quiz / listening / reading */
+            questions?: components["schemas"]["ResourceQuestion"][];
+            /** @description writing */
+            prompt?: string;
+            /** @description writing */
+            min_words?: number;
+            /** @description writing */
+            rubric?: string;
+        };
+        Resource: {
+            /** Format: uuid */
+            id: string;
+            type: components["schemas"]["ResourceType"];
+            title: string;
+            instructions: string;
+            /** @enum {string} */
+            status: "draft" | "published";
+            archived: boolean;
+            content: components["schemas"]["ResourceContent"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ResourceList: {
+            resources: components["schemas"]["Resource"][];
+            /** @description Total matches */
+            total: number;
+        };
+        CreateResourceRequest: {
+            type: components["schemas"]["ResourceType"];
+            title: string;
+            instructions?: string;
+            /** @description Publish immediately instead of saving a draft. */
+            publish?: boolean;
+            content: components["schemas"]["ResourceContent"];
+        };
+        UpdateResourceRequest: {
+            title: string;
+            instructions?: string;
+            content: components["schemas"]["ResourceContent"];
         };
         AdminReviewList: {
             reviews: components["schemas"]["AdminReview"][];
@@ -3136,6 +3375,343 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    uploadFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The stored file. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileAsset"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description `file_too_large`. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `unsupported_type`. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file bytes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Redirect to a short-lived signed URL. */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listResources: {
+        parameters: {
+            query?: {
+                type?: components["schemas"]["ResourceType"];
+                status?: "draft" | "published";
+                /** @description Include archived resources. */
+                archived?: "true";
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the library. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description `no_teacher_profile` — the caller has no teacher profile. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createResource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateResourceRequest"];
+            };
+        };
+        responses: {
+            /** @description The created resource. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Resource"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description `no_teacher_profile`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getResource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The resource. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Resource"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteResource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description `resource_in_use`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateResource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateResourceRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated resource. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Resource"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    publishResource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Resource"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    unpublishResource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Resource"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    archiveResource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The archived resource. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Resource"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    unarchiveResource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The restored resource. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Resource"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };
