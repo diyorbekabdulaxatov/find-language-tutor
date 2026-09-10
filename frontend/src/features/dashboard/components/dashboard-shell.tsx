@@ -7,12 +7,14 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/features/auth/auth-context";
 import { getMyProfile } from "@/features/dashboard/api";
 import { ProfileEditor } from "@/features/dashboard/components/profile-editor";
 import { AvailabilityEditor } from "@/features/availability/components/availability-editor";
 import { EarningsPanel } from "@/features/dashboard/components/earnings-panel";
 import type { TeacherProfile } from "@/types/teacher";
+import { Button } from "@/components/ui/button";
 import {
   Tabs,
   TabsContent,
@@ -64,7 +66,15 @@ export function DashboardShell() {
 
       {state === "ready" && profile && <ModerationBanner profile={profile} />}
 
-      {state === "ready" && (
+      {/* A brand-new profile is `pending` and can't be used yet — show only the
+          review notice above and a way back, not the whole editor. */}
+      {state === "ready" && profile?.status === "pending" && (
+        <Button asChild variant="outline">
+          <Link href="/">Back to home</Link>
+        </Button>
+      )}
+
+      {state === "ready" && profile?.status !== "pending" && (
         <Tabs defaultValue="profile">
           <TabsList>
             <TabsTrigger value="profile">Profile</TabsTrigger>
