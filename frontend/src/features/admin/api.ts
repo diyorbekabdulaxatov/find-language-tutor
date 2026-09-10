@@ -653,3 +653,123 @@ export async function resolveDispute(
     "Could not resolve the dispute.",
   );
 }
+
+/* --------------------------- payouts (phase E) ------------------------- */
+
+type WirePayoutDashboard = components["schemas"]["AdminPayoutDashboard"];
+type WirePayoutBatch = components["schemas"]["PayoutBatch"];
+type WirePayoutBatchDetail = components["schemas"]["PayoutBatchDetail"];
+
+export type PayoutBatchStatus = WirePayoutBatch["status"];
+
+export interface OwedPayoutRow {
+  teacher: { slug: string; displayName: string };
+  available: Money;
+  oldestAvailableAt: string;
+}
+
+export interface PayoutTotals {
+  available: Money;
+  held: Money;
+  paid: Money;
+}
+
+export interface PayoutBatch {
+  id: string;
+  createdBy: { id: string; displayName: string };
+  status: PayoutBatchStatus;
+  total: Money;
+  teacherCount: number;
+  lineCount: number;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface PayoutBatchLine {
+  teacher: { slug: string; displayName: string };
+  amount: Money;
+  lessonCount: number;
+}
+
+export interface PayoutBatchDetail extends PayoutBatch {
+  lines: PayoutBatchLine[];
+}
+
+export interface PayoutDashboard {
+  owed: OwedPayoutRow[];
+  totals: PayoutTotals;
+  batches: PayoutBatch[];
+  batchesTotal: number;
+}
+
+const cur = (c: string) => c as Money["currency"];
+
+const toPayoutBatch = (b: WirePayoutBatch): PayoutBatch => ({
+  id: b.id,
+  createdBy: { id: b.created_by.id, displayName: b.created_by.display_name },
+  status: b.status,
+  total: { amountMinor: b.total_minor, currency: cur(b.currency) },
+  teacherCount: b.teacher_count,
+  lineCount: b.line_count,
+  createdAt: b.created_at,
+  completedAt: b.completed_at ?? null,
+});
+
+const toPayoutBatchDetail = (b: WirePayoutBatchDetail): PayoutBatchDetail => ({
+  ...toPayoutBatch(b),
+  lines: b.lines.map((l) => ({
+    teacher: { slug: l.teacher.slug, displayName: l.teacher.display_name },
+    amount: { amountMinor: l.amount_minor, currency: cur(l.currency) },
+    lessonCount: l.lesson_count,
+  })),
+});
+
+export async function getPayoutDashboard(page = 1): Promise<PayoutDashboard> {
+  const w = await call<WirePayoutDashboard>(
+    `/v1/admin/payouts?page=${page}`,
+    {},
+    "Could not load the payout dashboard.",
+  );
+  return {
+    owed: w.owed.map((o) => ({
+      teacher: { slug: o.teacher.slug, displayName: o.teacher.display_name },
+      available: { amountMinor: o.available_minor, currency: cur(o.currency) },
+      oldestAvailableAt: o.oldest_available_at,
+    })),
+    totals: {
+      available: {
+        amountMinor: w.totals.available_total_minor,
+        currency: cur(w.totals.currency),
+      },
+      held: {
+        amountMinor: w.totals.held_total_minor,
+        currency: cur(w.totals.currency),
+      },
+      paid: {
+        amountMinor: w.totals.paid_total_minor,
+        currency: cur(w.totals.currency),
+      },
+    },
+    batches: w.batches.map(toPayoutBatch),
+    batchesTotal: w.batches_total,
+  };
+}
+
+export async function getPayoutBatch(id: string): Promise<PayoutBatchDetail> {
+  const w = await call<WirePayoutBatchDetail>(
+    `/v1/admin/payouts/batches/${encodeURIComponent(id)}`,
+    {},
+    "Could not load that payout batch.",
+  );
+  return toPayoutBatchDetail(w);
+}
+
+/** Settle every cleared earning. 409 `nothing_to_pay` when there is nothing. */
+export async function runPayout(): Promise<PayoutBatchDetail> {
+  const w = await call<WirePayoutBatchDetail>(
+    "/v1/admin/payouts/run",
+    { method: "POST", body: "{}" },
+    "Could not run the payout.",
+  );
+  return toPayoutBatchDetail(w);
+}

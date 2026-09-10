@@ -108,12 +108,15 @@ export interface EarningsSummary {
   totalEarned: Money;
   held: Money;
   available: Money;
+  paid: Money;
   lessons: {
     bookingId: string;
     studentDisplayName: string;
     startAt: string;
     amount: Money;
-    state: "held" | "available" | "reversed";
+    state: "held" | "available" | "paid" | "reversed";
+    /** When a `held` lesson's clearing window closes; past for every other state. */
+    availableAt: string;
   }[];
 }
 
@@ -314,12 +317,14 @@ export async function getEarnings(): Promise<EarningsSummary> {
     totalEarned: { amountMinor: data.total_earned_minor, currency: cur },
     held: { amountMinor: data.held_minor, currency: cur },
     available: { amountMinor: data.available_minor, currency: cur },
+    paid: { amountMinor: data.paid_minor, currency: cur },
     lessons: data.lessons.map((l) => ({
       bookingId: l.booking_id,
       studentDisplayName: l.student_display_name,
       startAt: l.start_at,
       amount: { amountMinor: l.amount_minor, currency: cur },
       state: l.state,
+      availableAt: l.available_at,
     })),
   };
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  Banknote,
   CalendarClock,
   GraduationCap,
   ShieldAlert,
@@ -25,6 +26,7 @@ const LINKS: {
   { href: "/admin/teachers", label: "Teachers", icon: GraduationCap, perm: PERMISSIONS.teachersView },
   { href: "/admin/bookings", label: "Bookings", icon: CalendarClock, perm: PERMISSIONS.bookingsView },
   { href: "/admin/disputes", label: "Disputes", icon: ShieldAlert, perm: PERMISSIONS.disputesResolve },
+  { href: "/admin/payouts", label: "Payouts", icon: Banknote, perm: PERMISSIONS.payoutsView },
   { href: "/admin/users", label: "Users", icon: Users, perm: PERMISSIONS.usersView },
   { href: "/admin/roles", label: "Roles", icon: ShieldCheck, perm: PERMISSIONS.rolesManage },
 ];

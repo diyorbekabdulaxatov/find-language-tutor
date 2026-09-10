@@ -883,6 +883,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/payouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The payout dashboard
+         * @description Permission: `payouts.view`. What the platform owes teachers right now — every payout-ledger row whose clearing window has closed and that no payout batch has settled — grouped by teacher, biggest first, plus the platform ledger totals and a page of past payout runs (newest first).
+         *     `held_total_minor` is money still inside its clearing window (captured less than `PAYOUTS_CLEARING_DAYS` ago, 7 by default), `available_total_minor` is what the next run would pay, and `paid_total_minor` is what past runs already disbursed. Reversed (refunded) lessons count towards none of them.
+         */
+        get: operations["adminPayoutDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/payouts/batches/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One payout batch
+         * @description Permission: `payouts.view`. The batch plus one line per teacher it paid.
+         */
+        get: operations["adminGetPayoutBatch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/payouts/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run a payout batch
+         * @description Permission: `payouts.run`. Settles EVERY currently available earning: in one transaction it creates a `payout_batches` row and marks each included `payout_ledger` row `paid` against it. No request body — a run always pays everything that has cleared.
+         *     Race-safe against two operators running at once: the transaction selects the payable rows `FOR UPDATE SKIP LOCKED`, so a concurrent run gets a disjoint set instead of paying the same lesson twice, and typically ends up with nothing to pay.
+         *     409 `nothing_to_pay` when no earning has cleared its window — an empty batch is deliberately not recorded, so the history is a log of runs that actually moved money.
+         *     The MVP's payment provider is the in-process fake, which has no disbursement API, so the money-leaves step is logged rather than called.
+         */
+        post: operations["adminRunPayout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1242,13 +1306,24 @@ export interface components {
         TeacherEarnings: {
             /**
              * Format: int64
-             * @description held + available (integer minor units); excludes reversed lessons.
+             * @description held + available + paid (integer minor units); excludes reversed lessons.
              */
             total_earned_minor: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Captured but still inside the payout clearing window.
+             */
             held_minor: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Cleared the window, awaiting the next payout run.
+             */
             available_minor: number;
+            /**
+             * Format: int64
+             * @description Already disbursed by a payout batch.
+             */
+            paid_minor: number;
             currency: string;
             lessons: components["schemas"]["EarningLesson"][];
         };
@@ -1263,8 +1338,16 @@ export interface components {
             start_at: string;
             /** Format: int64 */
             amount_minor: number;
-            /** @enum {string} */
-            state: "held" | "available" | "reversed";
+            /**
+             * @description Effective state, resolved against the clearing window at read time: a captured lesson is `held` until its `available_at` passes, then `available` until a payout run settles it as `paid`. `reversed` is a refunded lesson.
+             * @enum {string}
+             */
+            state: "held" | "available" | "paid" | "reversed";
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC. When the clearing window closes and the earning becomes payable. In the past for every state other than `held`.
+             */
+            available_at: string;
         };
         BookingList: {
             bookings: components["schemas"]["Booking"][];
@@ -1636,6 +1719,89 @@ export interface components {
             disputes: components["schemas"]["AdminDisputeRow"][];
             /** @description Total matches */
             total: number;
+        };
+        PayoutTeacherRef: {
+            slug: string;
+            display_name: string;
+        };
+        /** @description The account that ran a payout batch. */
+        PayoutOperatorRef: {
+            /** Format: uuid */
+            id: string;
+            display_name: string;
+        };
+        /** @description One teacher's currently payable balance — cleared, unpaid ledger rows. */
+        OwedPayoutRow: {
+            teacher: components["schemas"]["PayoutTeacherRef"];
+            /** Format: int64 */
+            available_minor: number;
+            currency: string;
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC. The clearing date of the oldest unpaid earning in this balance.
+             */
+            oldest_available_at: string;
+        };
+        PayoutTotals: {
+            /**
+             * Format: int64
+             * @description Payable now — what the next run would settle.
+             */
+            available_total_minor: number;
+            /**
+             * Format: int64
+             * @description Still inside the clearing window.
+             */
+            held_total_minor: number;
+            /**
+             * Format: int64
+             * @description Already disbursed by past batches.
+             */
+            paid_total_minor: number;
+            currency: string;
+        };
+        /** @description One payout run. */
+        PayoutBatch: {
+            /** Format: uuid */
+            id: string;
+            created_by: components["schemas"]["PayoutOperatorRef"];
+            /**
+             * @description `completed` for the in-process fake provider, which settles synchronously. `processing` / `failed` are for the real disbursement API that replaces it.
+             * @enum {string}
+             */
+            status: "processing" | "completed" | "failed";
+            /** Format: int64 */
+            total_minor: number;
+            currency: string;
+            /** @description Distinct teachers paid by the batch. */
+            teacher_count: number;
+            /** @description Ledger rows (lessons) the batch covered. */
+            line_count: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            completed_at: string | null;
+        };
+        /** @description One teacher's share of a payout batch. */
+        PayoutBatchLine: {
+            teacher: components["schemas"]["PayoutTeacherRef"];
+            /** Format: int64 */
+            amount_minor: number;
+            currency: string;
+            lesson_count: number;
+        };
+        /** @description A payout batch plus one line per teacher it paid. */
+        PayoutBatchDetail: components["schemas"]["PayoutBatch"] & {
+            lines: components["schemas"]["PayoutBatchLine"][];
+        };
+        AdminPayoutDashboard: {
+            /** @description What the platform owes right now, one row per teacher, biggest first. */
+            owed: components["schemas"]["OwedPayoutRow"][];
+            totals: components["schemas"]["PayoutTotals"];
+            /** @description A page of past payout runs, newest first. */
+            batches: components["schemas"]["PayoutBatch"][];
+            /** @description Total past runs */
+            batches_total: number;
         };
     };
     responses: {
@@ -3291,6 +3457,98 @@ export interface operations {
                 };
             };
             /** @description `already_resolved` — the dispute is no longer open. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminPayoutDashboard: {
+        parameters: {
+            query?: {
+                /** @description Pages the batch history. */
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What is owed, the totals, and a page of past runs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPayoutDashboard"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminGetPayoutBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The batch and its line items. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutBatchDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description `batch_not_found`. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminRunPayout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The created batch and its line items. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutBatchDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description `nothing_to_pay` — no earning has cleared its holding period. */
             409: {
                 headers: {
                     [name: string]: unknown;

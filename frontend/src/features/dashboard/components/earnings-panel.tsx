@@ -20,8 +20,16 @@ const STATE_LABEL: Record<
 > = {
   held: { label: "Held", className: "bg-star/15 text-star" },
   available: { label: "Available", className: "bg-primary/15 text-primary" },
+  paid: { label: "Paid out", className: "bg-mint/15 text-mint" },
   reversed: { label: "Refunded", className: "bg-destructive/10 text-destructive" },
 };
+
+function formatClearingDate(iso: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+  }).format(new Date(iso));
+}
 
 export function EarningsPanel() {
   const [data, setData] = useState<EarningsSummary | null>(null);
@@ -73,10 +81,11 @@ export function EarningsPanel() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <Stat label="Total earned" value={formatMoney(data.totalEarned)} />
-        <Stat label="Held" value={formatMoney(data.held)} hint="Clears after the lesson" />
-        <Stat label="Available" value={formatMoney(data.available)} accent />
+        <Stat label="Held" value={formatMoney(data.held)} hint="Inside the clearing window" />
+        <Stat label="Available" value={formatMoney(data.available)} accent hint="Waiting on the next payout" />
+        <Stat label="Paid out" value={formatMoney(data.paid)} />
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-border">
@@ -113,6 +122,11 @@ export function EarningsPanel() {
                   >
                     {STATE_LABEL[l.state].label}
                   </span>
+                  {l.state === "held" && (
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      clears {formatClearingDate(l.availableAt)}
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
