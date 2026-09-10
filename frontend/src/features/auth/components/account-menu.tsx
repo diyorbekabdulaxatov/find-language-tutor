@@ -10,6 +10,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  BookOpen,
   CalendarDays,
   LayoutDashboard,
   LogOut,
@@ -98,6 +99,12 @@ export function AccountMenu() {
           <Link href="/dashboard">
             <LayoutDashboard />
             Teacher dashboard
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/resources">
+            <BookOpen />
+            Teaching resources
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
