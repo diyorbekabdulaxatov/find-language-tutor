@@ -205,9 +205,31 @@ export async function uploadFile(file: File): Promise<UploadedFile> {
   };
 }
 
-/** The download URL for a stored file id (goes through the auth'd endpoint). */
+/**
+ * The download URL for a stored file id — NOT directly usable as an `<a href>`
+ * or `<audio src>`: GET /v1/files/{id} requires a bearer token via
+ * `requireAuth`, which only `authedFetch` attaches. A plain browser
+ * navigation or media-element fetch sends no Authorization header and gets a
+ * 401. Kept for callers that only need the path (e.g. logging); for actually
+ * displaying/downloading a file, use `fetchFileObjectUrl` instead.
+ */
 export function fileUrl(id: string): string {
   return `${baseUrl}/v1/files/${id}`;
+}
+
+/**
+ * Fetches a stored file's bytes through the authenticated endpoint and
+ * returns a browser object URL usable as an `<a href>` / `<audio src>`. The
+ * caller owns the URL's lifecycle — `URL.revokeObjectURL` it when done.
+ */
+export async function fetchFileObjectUrl(id: string): Promise<string> {
+  const res = await authedFetch(fileUrl(id));
+  if (!res.ok) {
+    const body = await res.json().catch(() => undefined);
+    throw toErr(body, res.status, "Could not load that file.");
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
 }
 
 /* ------------------- Phase A2/A3 — lesson resources -------------------- */

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Download, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { fileUrl } from "@/features/resources/api";
+import { fetchFileObjectUrl } from "@/features/resources/api";
 import { hasSubmissionFlow, type AttachedResource, type Submission } from "@/features/resources/types";
 import {
   SubmissionError,
@@ -197,18 +197,61 @@ export function ResourcePlayer({
   );
 }
 
+/**
+ * Loads a stored file's bytes through the authenticated endpoint into an
+ * object URL, since GET /v1/files/{id} needs a bearer token no plain
+ * `<a href>` / `<audio src>` can attach. Revokes the URL on unmount / id change.
+ */
+function useFileObjectUrl(fileAssetId: string | undefined) {
+  const [url, setUrl] = useState<string | null>(null);
+  // Lazy initializer, not an effect — "no id yet" is derivable at first
+  // render, so it never needs a synchronous setState inside the effect body.
+  const [state, setState] = useState<"idle" | "loading" | "ready" | "error">(() =>
+    fileAssetId ? "loading" : "idle",
+  );
+
+  useEffect(() => {
+    if (!fileAssetId) return;
+    let alive = true;
+    let objectUrl: string | null = null;
+    fetchFileObjectUrl(fileAssetId)
+      .then((u) => {
+        if (!alive) {
+          URL.revokeObjectURL(u);
+          return;
+        }
+        objectUrl = u;
+        setUrl(u);
+        setState("ready");
+      })
+      .catch(() => {
+        if (alive) setState("error");
+      });
+    return () => {
+      alive = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [fileAssetId]);
+
+  return { url, state };
+}
+
 function MaterialView({ attachment }: { attachment: AttachedResource }) {
   const { content } = attachment;
+  const { url: fileObjectUrl, state: fileState } = useFileObjectUrl(content.fileAssetId);
   return (
     <div className="flex flex-col gap-3">
       {content.description && (
         <p className="whitespace-pre-wrap text-sm">{content.description}</p>
       )}
-      {content.fileAssetId && (
-        <Button asChild variant="outline" className="self-start">
-          <a href={fileUrl(content.fileAssetId)} target="_blank" rel="noreferrer">
+      {content.fileAssetId && fileState === "error" && (
+        <p className="text-sm text-destructive">Could not load the attached file.</p>
+      )}
+      {content.fileAssetId && fileState !== "error" && (
+        <Button asChild variant="outline" className="self-start" disabled={!fileObjectUrl}>
+          <a href={fileObjectUrl ?? undefined} download target="_blank" rel="noreferrer">
             <Download className="size-4" />
-            Download file
+            {fileObjectUrl ? "Download file" : "Loading file…"}
           </a>
         </Button>
       )}
@@ -224,6 +267,21 @@ function MaterialView({ attachment }: { attachment: AttachedResource }) {
         <p className="text-sm text-muted-foreground">Nothing attached to this material yet.</p>
       )}
     </div>
+  );
+}
+
+function AudioPlayer({ fileAssetId }: { fileAssetId: string }) {
+  const { url, state } = useFileObjectUrl(fileAssetId);
+  if (state === "error") {
+    return <p className="text-sm text-destructive">Could not load the audio.</p>;
+  }
+  if (!url) {
+    return <div className="h-10 animate-pulse rounded-lg bg-muted" />;
+  }
+  return (
+    <audio controls className="w-full" src={url}>
+      <track kind="captions" />
+    </audio>
   );
 }
 
@@ -250,9 +308,7 @@ function QuizForm({
   return (
     <div className="flex flex-col gap-4">
       {attachment.type === "listening" && content.audioAssetId && (
-        <audio controls className="w-full" src={fileUrl(content.audioAssetId)}>
-          <track kind="captions" />
-        </audio>
+        <AudioPlayer fileAssetId={content.audioAssetId} />
       )}
       {attachment.type === "reading" && content.passage && (
         <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm whitespace-pre-wrap">
