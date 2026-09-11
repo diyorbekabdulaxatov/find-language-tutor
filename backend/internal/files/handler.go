@@ -49,8 +49,9 @@ func (h *Handler) Upload(c *gin.Context) {
 		return
 	}
 
-	// Cap what gin buffers/parses.
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, MaxUploadBytes+(1<<20))
+	// Cap what gin buffers/parses at the wider of the two limits (video); the
+	// service enforces the tighter per-type cap once it knows the content type.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, MaxVideoUploadBytes+(1<<20))
 
 	fh, err := c.FormFile("file")
 	if err != nil {
@@ -120,7 +121,7 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 			"That file type isn't allowed. Use a PDF, image, or audio file.")
 	case errors.Is(err, ErrTooLarge):
 		web.WriteError(c, http.StatusRequestEntityTooLarge, "file_too_large",
-			fmt.Sprintf("Files must be under %d MB.", MaxUploadBytes>>20))
+			fmt.Sprintf("Files must be under %d MB (%d MB for video).", MaxUploadBytes>>20, MaxVideoUploadBytes>>20))
 	case errors.Is(err, ErrEmptyUpload):
 		web.BadRequest(c, "The file is empty.")
 	case errors.Is(err, ErrAssetNotFound):

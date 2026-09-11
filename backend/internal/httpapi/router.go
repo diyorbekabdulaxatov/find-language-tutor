@@ -12,6 +12,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/availability"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/bookings"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/courses"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/disputes"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/files"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payments"
@@ -42,6 +43,7 @@ type Deps struct {
 	PayoutHandler       *payouts.Handler
 	FileHandler         *files.Handler
 	ResourceHandler     *resources.Handler
+	CourseHandler       *courses.Handler
 }
 
 // NewRouter builds the gin engine with middleware, the health check, and every
@@ -82,6 +84,7 @@ func NewRouter(d Deps) *gin.Engine {
 	files.RegisterRoutes(v1, d.FileHandler, d.AuthMiddleware)
 	resources.RegisterRoutes(v1.Group("/resources"), d.ResourceHandler, d.AuthMiddleware)
 	resources.RegisterSubmissionRoutes(v1.Group("/submissions"), d.ResourceHandler, d.AuthMiddleware)
+	courses.RegisterRoutes(v1.Group("/courses"), d.CourseHandler, d.AuthMiddleware)
 
 	// /v1/admin is behind a valid access token; each route then enforces its
 	// own RBAC permission via the guard.

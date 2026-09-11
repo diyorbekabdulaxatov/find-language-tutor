@@ -226,6 +226,42 @@ type BookingResource struct {
 	CreatedAt  pgtype.Timestamptz
 }
 
+type Course struct {
+	ID               uuid.UUID
+	TeacherID        uuid.UUID
+	Title            string
+	Subtitle         string
+	Description      string
+	CoverAssetID     uuid.NullUUID
+	PriceAmountMinor int64
+	PriceCurrency    CurrencyCode
+	Status           string
+	EverPublished    bool
+	ArchivedAt       pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+}
+
+type CourseItem struct {
+	ID           uuid.UUID
+	SectionID    uuid.UUID
+	Kind         string
+	Title        string
+	VideoAssetID uuid.NullUUID
+	ResourceID   uuid.NullUUID
+	Position     int32
+	CreatedAt    pgtype.Timestamptz
+}
+
+type CourseSection struct {
+	ID        uuid.UUID
+	CourseID  uuid.UUID
+	Title     string
+	Position  int32
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
 type Dispute struct {
 	ID         uuid.UUID
 	BookingID  uuid.UUID

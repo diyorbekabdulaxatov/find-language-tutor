@@ -13,6 +13,13 @@ import (
 
 type Querier interface {
 	AddAvailabilitySlot(ctx context.Context, arg AddAvailabilitySlotParams) error
+	// Items.
+	// position is the current item count for the section, same idiom as sections.
+	AddCourseItem(ctx context.Context, arg AddCourseItemParams) (CourseItem, error)
+	// Sections.
+	// position is the current section count for the course, computed here so the
+	// insert stays a single statement (same idiom as AttachBookingResource).
+	AddCourseSection(ctx context.Context, arg AddCourseSectionParams) (CourseSection, error)
 	AddRolePermission(ctx context.Context, arg AddRolePermissionParams) error
 	AddTeacherExperience(ctx context.Context, arg AddTeacherExperienceParams) error
 	AddTeacherFocus(ctx context.Context, arg AddTeacherFocusParams) error
@@ -125,6 +132,7 @@ type Querier interface {
 	// Invalidate a user's outstanding tokens of a purpose before issuing a new one,
 	// so only the newest link works.
 	ConsumeUserAuthTokens(ctx context.Context, arg ConsumeUserAuthTokensParams) error
+	CountTeacherCourses(ctx context.Context, arg CountTeacherCoursesParams) (int64, error)
 	CountTeacherResources(ctx context.Context, arg CountTeacherResourcesParams) (int64, error)
 	CountTeacherReviews(ctx context.Context, teacherID uuid.UUID) (int64, error)
 	CountTeacherSubmissionInbox(ctx context.Context, arg CountTeacherSubmissionInboxParams) (int64, error)
@@ -133,6 +141,9 @@ type Querier interface {
 	// --- account-recovery link tokens (migration 000013) ---
 	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (uuid.UUID, error)
 	CreateBooking(ctx context.Context, arg CreateBookingParams) (uuid.UUID, error)
+	// Course authoring (phase C1): a teacher's courses, and the curriculum tree
+	// (sections -> items) each one owns.
+	CreateCourse(ctx context.Context, arg CreateCourseParams) (Course, error)
 	// File assets (phase A1): the app's handle to a blob in the store.
 	CreateFileAsset(ctx context.Context, arg CreateFileAssetParams) (FileAsset, error)
 	// Payments module: one payment intent per booking, the webhook-event log that
@@ -192,6 +203,9 @@ type Querier interface {
 	// first.
 	DeleteAllUsers(ctx context.Context) error
 	DeleteAvailabilitySlots(ctx context.Context, teacherID uuid.UUID) error
+	DeleteCourse(ctx context.Context, id uuid.UUID) error
+	DeleteCourseItem(ctx context.Context, id uuid.UUID) error
+	DeleteCourseSection(ctx context.Context, id uuid.UUID) error
 	DeleteResource(ctx context.Context, id uuid.UUID) error
 	DeleteReview(ctx context.Context, id uuid.UUID) error
 	DeleteRole(ctx context.Context, id uuid.UUID) error
@@ -222,6 +236,9 @@ type Querier interface {
 	// returns no rows here, so the booking flow treats it as "no such teacher": 404
 	// on GET /v1/teachers/{slug}/slots and 404 teacher_not_found on POST /v1/bookings.
 	GetBookingTeacherContext(ctx context.Context, slug string) (GetBookingTeacherContextRow, error)
+	GetCourse(ctx context.Context, id uuid.UUID) (Course, error)
+	GetCourseItem(ctx context.Context, id uuid.UUID) (CourseItem, error)
+	GetCourseSection(ctx context.Context, id uuid.UUID) (CourseSection, error)
 	// Disputes module (phase D): a participant contests a confirmed / completed
 	// lesson, an operator with `disputes.resolve` closes it.
 	//
@@ -308,6 +325,12 @@ type Querier interface {
 	// student_filter and/or the caller-owned teacher id as teacher_filter; use the
 	// all-zero uuid for a dimension that should not match. Newest lesson first.
 	ListBookings(ctx context.Context, arg ListBookingsParams) ([]ListBookingsRow, error)
+	ListCourseItems(ctx context.Context, sectionID uuid.UUID) ([]CourseItem, error)
+	// Every item across a course's sections, in curriculum order (section
+	// position, then item position) — one query for the whole tree instead of
+	// N+1 per-section queries; the service groups rows by section_id in Go.
+	ListCourseItemsByCourse(ctx context.Context, courseID uuid.UUID) ([]CourseItem, error)
+	ListCourseSections(ctx context.Context, courseID uuid.UUID) ([]CourseSection, error)
 	// The whole dispute thread for one booking, newest first.
 	ListDisputesForBooking(ctx context.Context, bookingID uuid.UUID) ([]ListDisputesForBookingRow, error)
 	ListExperienceForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]ListExperienceForTeachersRow, error)
@@ -321,6 +344,9 @@ type Querier interface {
 	// Non-cancelled bookings for a teacher that overlap the [from, to) window, for
 	// server-side slot generation and the pre-insert bookability re-check.
 	ListTeacherBookingIntervals(ctx context.Context, arg ListTeacherBookingIntervalsParams) ([]ListTeacherBookingIntervalsRow, error)
+	// The authoring library list. Filters are optional: status ('draft'|'published')
+	// and whether to include archived rows.
+	ListTeacherCourses(ctx context.Context, arg ListTeacherCoursesParams) ([]Course, error)
 	ListTeacherEarnings(ctx context.Context, teacherID uuid.UUID) ([]ListTeacherEarningsRow, error)
 	// The library list. Filters are optional: type, status ('draft'|'published'),
 	// and whether to include archived rows.
@@ -366,6 +392,16 @@ type Querier interface {
 	// removed. Result clamped to [0, 5]; a teacher with no baseline and no visible
 	// reviews reads as 0.
 	RecomputeTeacherRating(ctx context.Context, teacherID uuid.UUID) error
+	RenameCourseItem(ctx context.Context, arg RenameCourseItemParams) (CourseItem, error)
+	RenameCourseSection(ctx context.Context, arg RenameCourseSectionParams) (CourseSection, error)
+	ReorderCourseItems(ctx context.Context, arg ReorderCourseItemsParams) (int64, error)
+	// Rewrites positions 0..n-1 from the given ordered id array in one statement.
+	// The service has already validated the array is exactly this course's
+	// current section ids; the course_id filter is a defense-in-depth guard
+	// against a section that raced its way into another course between the
+	// service's check and this write (affected rows short of len(ids) surfaces
+	// to the caller as a write failure, never a silent partial reorder).
+	ReorderCourseSections(ctx context.Context, arg ReorderCourseSectionsParams) (int64, error)
 	// Guarded UPDATE: only an OPEN dispute moves. No rows back means either "no such
 	// dispute" or "already resolved" — the repository re-reads the row to tell the
 	// two apart, so a lost race renders 409 already_resolved rather than clobbering
@@ -411,6 +447,11 @@ type Querier interface {
 	// SetBookingStatus / CancelBooking so the capture / refund path is reused.
 	SetBookingNoShowParty(ctx context.Context, arg SetBookingNoShowPartyParams) error
 	SetBookingStatus(ctx context.Context, arg SetBookingStatusParams) error
+	SetCourseArchived(ctx context.Context, arg SetCourseArchivedParams) (Course, error)
+	// ever_published is a one-way latch: OR'd with "is this setting `published`",
+	// so unpublishing (status back to draft) never clears it — Delete stays
+	// blocked forever once a course has gone live at least once.
+	SetCourseStatus(ctx context.Context, arg SetCourseStatusParams) (Course, error)
 	SetResourceArchived(ctx context.Context, arg SetResourceArchivedParams) (Resource, error)
 	SetResourceStatus(ctx context.Context, arg SetResourceStatusParams) (Resource, error)
 	SetReviewHidden(ctx context.Context, arg SetReviewHiddenParams) error
@@ -437,6 +478,10 @@ type Querier interface {
 	// status (default 'submitted' in the service), newest-submitted-first.
 	TeacherSubmissionInbox(ctx context.Context, arg TeacherSubmissionInboxParams) ([]Submission, error)
 	UnassignRoleFromUser(ctx context.Context, arg UnassignRoleFromUserParams) error
+	// Full replace of the editable fields: title / subtitle / description / cover
+	// / price. The service passes the current value for anything it isn't
+	// changing, same convention as UpdateResource.
+	UpdateCourse(ctx context.Context, arg UpdateCourseParams) (Course, error)
 	// Partial edit: title / instructions / content are replaced wholesale when
 	// provided (the service passes the current value for fields it isn't changing).
 	UpdateResource(ctx context.Context, arg UpdateResourceParams) (Resource, error)
