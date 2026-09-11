@@ -256,44 +256,61 @@ function GradingRow({
             </div>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor={`score-${s.id}`} className="text-sm font-medium">
-              Score (optional)
-            </label>
-            <input
-              id={`score-${s.id}`}
-              type="number"
-              min={0}
-              value={score}
-              onChange={(e) => setScore(e.target.value)}
-              placeholder="No score — feedback only"
-              className="w-32 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            />
-          </div>
+          {s.status === "graded" ? (
+            // The API only grades a `submitted` submission once — there is no
+            // re-grade endpoint, so a graded row is a read-only record.
+            <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm">
+              <p className="font-medium">
+                {s.teacherScore != null ? `Score: ${s.teacherScore}` : "Graded, no score"}
+              </p>
+              {s.teacherFeedback && (
+                <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                  {s.teacherFeedback}
+                </p>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor={`score-${s.id}`} className="text-sm font-medium">
+                  Score (optional)
+                </label>
+                <input
+                  id={`score-${s.id}`}
+                  type="number"
+                  min={0}
+                  value={score}
+                  onChange={(e) => setScore(e.target.value)}
+                  placeholder="No score — feedback only"
+                  className="w-32 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                />
+              </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor={`feedback-${s.id}`} className="text-sm font-medium">
-              Feedback
-            </label>
-            <textarea
-              id={`feedback-${s.id}`}
-              rows={4}
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              placeholder="What did they do well? What should they work on?"
-              className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            />
-          </div>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor={`feedback-${s.id}`} className="text-sm font-medium">
+                  Feedback
+                </label>
+                <textarea
+                  id={`feedback-${s.id}`}
+                  rows={4}
+                  value={feedback}
+                  onChange={(e) => setFeedback(e.target.value)}
+                  placeholder="What did they do well? What should they work on?"
+                  className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                />
+              </div>
 
-          {error && (
-            <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </p>
+              {error && (
+                <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {error}
+                </p>
+              )}
+
+              <Button onClick={() => void submit()} disabled={busy} className="self-start">
+                {busy ? "Saving…" : "Save grade"}
+              </Button>
+            </>
           )}
-
-          <Button onClick={() => void submit()} disabled={busy} className="self-start">
-            {busy ? "Saving…" : s.status === "graded" ? "Update grade" : "Save grade"}
-          </Button>
         </div>
       )}
     </li>
