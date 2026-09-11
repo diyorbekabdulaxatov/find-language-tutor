@@ -6,8 +6,10 @@
 import { authedFetch, browserApi } from "@/features/auth/browser-client";
 import type { components } from "@/lib/api/schema";
 import type {
+  AttachedResource,
   Resource,
   ResourceContent,
+  ResourceKind,
   ResourceStatus,
   ResourceType,
   UploadedFile,
@@ -50,7 +52,8 @@ function toContent(c: WireContent): ResourceContent {
       prompt: q.prompt,
       kind: q.kind,
       choices: q.choices ?? [],
-      correct: q.correct,
+      // Stripped from the wire for a student viewer (never leak the answer key).
+      correct: q.correct ?? [],
       points: q.points,
     })),
     prompt: c.prompt,
@@ -205,4 +208,75 @@ export async function uploadFile(file: File): Promise<UploadedFile> {
 /** The download URL for a stored file id (goes through the auth'd endpoint). */
 export function fileUrl(id: string): string {
   return `${baseUrl}/v1/files/${id}`;
+}
+
+/* ------------------- Phase A2/A3 — lesson resources -------------------- */
+
+type WireAttachedResource = components["schemas"]["AttachedResource"];
+
+function toAttachedResource(a: WireAttachedResource): AttachedResource {
+  return {
+    id: a.id,
+    resourceId: a.resource_id,
+    kind: a.kind,
+    position: a.position,
+    dueAt: a.due_at,
+    type: a.type,
+    title: a.title,
+    instructions: a.instructions,
+    resourceStatus: a.resource_status,
+    content: toContent(a.content),
+    submission: a.submission
+      ? {
+          id: a.submission.id,
+          status: a.submission.status,
+          autoScore: a.submission.auto_score,
+          autoMax: a.submission.auto_max,
+          teacherScore: a.submission.teacher_score,
+          submittedAt: a.submission.submitted_at,
+          gradedAt: a.submission.graded_at,
+        }
+      : null,
+  };
+}
+
+/** Teacher-owner only. Attaches one of the teacher's own published resources
+ *  to a lesson, as material or homework (homework is rejected server-side
+ *  for `material` / `article` types). */
+export async function attachResourceToBooking(
+  bookingId: string,
+  input: { resourceId: string; kind: ResourceKind; dueAt?: string },
+): Promise<AttachedResource> {
+  const { data, error, response } = await browserApi.POST(
+    "/v1/bookings/{id}/resources",
+    {
+      params: { path: { id: bookingId } },
+      body: {
+        resource_id: input.resourceId,
+        kind: input.kind,
+        due_at: input.dueAt,
+      },
+    },
+  );
+  if (error || !data) throw toErr(error, response.status, "Could not attach that resource.");
+  return toAttachedResource(data);
+}
+
+/** Participant-only. The teacher sees full content (including answers); the
+ *  student sees `correct` stripped from every question plus their own
+ *  submission summary. */
+export async function listBookingAttachments(bookingId: string): Promise<AttachedResource[]> {
+  const { data, error, response } = await browserApi.GET("/v1/bookings/{id}/resources", {
+    params: { path: { id: bookingId } },
+  });
+  if (error || !data) throw toErr(error, response.status, "Could not load the lesson's resources.");
+  return data.attachments.map(toAttachedResource);
+}
+
+/** Teacher-owner only. Submissions already filed against the resource are kept. */
+export async function detachBookingResource(bookingId: string, attachmentId: string): Promise<void> {
+  const { error, response } = await browserApi.DELETE("/v1/bookings/{id}/resources/{attachmentId}", {
+    params: { path: { id: bookingId, attachmentId } },
+  });
+  if (error) throw toErr(error, response.status, "Could not remove that resource.");
 }
