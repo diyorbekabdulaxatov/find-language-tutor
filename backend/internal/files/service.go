@@ -18,9 +18,10 @@ type Repository interface {
 
 // Service holds the upload rules. Handlers call it; it never sees a *gin.Context.
 type Service struct {
-	repo   Repository
-	blob   Blob
-	logger *slog.Logger
+	repo     Repository
+	blob     Blob
+	assignee AssigneeChecker // nil until SetAssigneeChecker; owner-only without it
+	logger   *slog.Logger
 }
 
 func NewService(repo Repository, blob Blob, logger *slog.Logger) *Service {
@@ -29,6 +30,10 @@ func NewService(repo Repository, blob Blob, logger *slog.Logger) *Service {
 	}
 	return &Service{repo: repo, blob: blob, logger: logger}
 }
+
+// SetAssigneeChecker wires the resources module's access-widening port in.
+// Optional: without it, Download stays owner-only.
+func (s *Service) SetAssigneeChecker(a AssigneeChecker) { s.assignee = a }
 
 // Upload validates the file, writes the bytes to the blob store, and records
 // the asset. size is the declared size; the reader is also length-limited as a
@@ -71,15 +76,27 @@ func (s *Service) Upload(ctx context.Context, ownerID uuid.UUID, filename, conte
 // Download resolves an asset for a caller. Returns either a redirect URL (R2)
 // or an open reader (disk). The caller must Close the reader when non-nil.
 //
-// Access rule (phase A1): owner only. Phase A2 widens this to a student the
-// resource has been assigned to.
+// Access rule: the owner always. Otherwise (phase A2) the wired
+// AssigneeChecker gets the final say — a student assigned the file through an
+// attached resource. A nil checker (or a checker error) means owner-only.
 func (s *Service) Download(ctx context.Context, id, requesterID uuid.UUID) (redirectURL string, body io.ReadCloser, a Asset, err error) {
 	a, err = s.repo.ByID(ctx, id)
 	if err != nil {
 		return "", nil, Asset{}, err
 	}
 	if a.OwnerID != requesterID {
-		return "", nil, Asset{}, ErrForbidden
+		allowed := false
+		if s.assignee != nil {
+			ok, cerr := s.assignee.CanAccess(ctx, id, requesterID)
+			if cerr != nil {
+				s.logger.Error("assignee access check", slog.String("file_id", id.String()), slog.Any("error", cerr))
+			} else {
+				allowed = ok
+			}
+		}
+		if !allowed {
+			return "", nil, Asset{}, ErrForbidden
+		}
 	}
 
 	if url, ok, e := s.blob.PresignedGetURL(ctx, a.ObjectKey, 5*time.Minute); e == nil && ok {

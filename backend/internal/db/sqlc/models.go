@@ -215,6 +215,17 @@ type Booking struct {
 	CancelledBy        string
 }
 
+type BookingResource struct {
+	ID         uuid.UUID
+	BookingID  uuid.UUID
+	ResourceID uuid.UUID
+	Kind       string
+	Position   int32
+	AssignedBy uuid.UUID
+	DueAt      pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+}
+
 type Dispute struct {
 	ID         uuid.UUID
 	BookingID  uuid.UUID
@@ -333,6 +344,25 @@ type Session struct {
 	ReplacedBy       uuid.NullUUID
 	UserAgent        string
 	CreatedAt        pgtype.Timestamptz
+}
+
+type Submission struct {
+	ID              uuid.UUID
+	ResourceID      uuid.UUID
+	StudentID       uuid.UUID
+	Context         string
+	BookingID       uuid.NullUUID
+	Status          string
+	Answers         []byte
+	AutoScore       pgtype.Int4
+	AutoMax         pgtype.Int4
+	TeacherScore    pgtype.Int4
+	TeacherFeedback string
+	GradedBy        uuid.NullUUID
+	GradedAt        pgtype.Timestamptz
+	SubmittedAt     pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
 }
 
 type Teacher struct {

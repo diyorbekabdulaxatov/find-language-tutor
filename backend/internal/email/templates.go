@@ -161,6 +161,31 @@ func greetingLine(name string) string {
 	return "Hi " + name + ","
 }
 
+// SubmissionGradedContent is sent to a student once a teacher grades their
+// writing submission (auto-graded quiz-like types never reach a teacher, so
+// never send this for those). score / max are nil when the teacher left no
+// numeric score (feedback-only grading).
+func SubmissionGradedContent(studentName, resourceTitle string, score, max *int, feedback string) (subject, html, text string) {
+	subject = fmt.Sprintf("Your %q submission was graded", resourceTitle)
+	lines := []string{
+		greetingLine(studentName),
+		"",
+		fmt.Sprintf("Your teacher graded your submission for %q.", resourceTitle),
+	}
+	switch {
+	case score != nil && max != nil:
+		lines = append(lines, fmt.Sprintf("Score: %d / %d", *score, *max))
+	case score != nil:
+		lines = append(lines, fmt.Sprintf("Score: %d", *score))
+	}
+	feedback = strings.TrimSpace(feedback)
+	if feedback != "" {
+		lines = append(lines, "", "Feedback: "+feedback)
+	}
+	html, text = wrap(subject, lines)
+	return subject, html, text
+}
+
 // LessonReminderContent is the single reminder template; kind sets the wording.
 func LessonReminderContent(li LessonInfo, kind ReminderKind) (subject, html, text string) {
 	subject = fmt.Sprintf("Reminder: lesson with %s %s", li.TeacherName, kind.phrase())

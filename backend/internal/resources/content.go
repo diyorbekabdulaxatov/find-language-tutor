@@ -152,6 +152,26 @@ func stripTo(t Type, c Content) Content {
 	return out
 }
 
+// Public strips the Correct field from every question — the student-facing
+// view of a quiz-like resource's content (phase A2). It deep-copies Questions
+// and Choices so the caller's original Content is never mutated.
+func (c Content) Public() Content {
+	if len(c.Questions) == 0 {
+		return c
+	}
+	out := c
+	out.Questions = make([]Question, len(c.Questions))
+	for i, q := range c.Questions {
+		pub := q
+		pub.Correct = nil
+		if q.Choices != nil {
+			pub.Choices = append([]Choice(nil), q.Choices...)
+		}
+		out.Questions[i] = pub
+	}
+	return out
+}
+
 func isHTTPURL(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }

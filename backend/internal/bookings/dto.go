@@ -74,6 +74,23 @@ type bookingDTO struct {
 	Teacher teacherSummaryDTO  `json:"teacher"`
 	Student studentSummaryDTO  `json:"student"`
 	Payment *bookingPaymentDTO `json:"payment"`
+
+	// Resources is the lesson's attached materials / homework, summary only
+	// (no quiz content — that's GET /v1/bookings/{id}/resources). Always an
+	// array, never null.
+	Resources []bookingResourceDTO `json:"resources"`
+}
+
+type bookingResourceDTO struct {
+	ID               string     `json:"id"`
+	ResourceID       string     `json:"resource_id"`
+	Kind             string     `json:"kind"`
+	Position         int        `json:"position"`
+	DueAt            *time.Time `json:"due_at"`
+	Type             string     `json:"type"`
+	Title            string     `json:"title"`
+	ResourceStatus   string     `json:"resource_status"`
+	SubmissionStatus string     `json:"submission_status"`
 }
 
 type bookingReviewDTO struct {
@@ -153,6 +170,7 @@ func meetingURLFor(b Booking, viewerID uuid.UUID) string {
 
 func toBookingDTO(b Booking, viewerID uuid.UUID) bookingDTO {
 	return bookingDTO{
+		Resources: []bookingResourceDTO{},
 		ID:                 b.ID.String(),
 		Status:             string(b.Status),
 		StartAt:            b.StartAt.UTC(),
@@ -224,7 +242,28 @@ func withDispute(dto bookingDTO, b Booking, viewerID uuid.UUID, open *BookingDis
 	return dto
 }
 
-func toBookingListDTO(bs []Booking, viewerID uuid.UUID, reviews []*BookingReview, disputes []*BookingDispute) bookingListDTO {
+// withResources embeds a booking's attached-resource summaries. Always sets a
+// non-null (possibly empty) array.
+func withResources(dto bookingDTO, resources []BookingResource) bookingDTO {
+	out := make([]bookingResourceDTO, len(resources))
+	for i, r := range resources {
+		out[i] = bookingResourceDTO{
+			ID:               r.ID.String(),
+			ResourceID:       r.ResourceID.String(),
+			Kind:             r.Kind,
+			Position:         r.Position,
+			DueAt:            utcPtr(r.DueAt),
+			Type:             r.Type,
+			Title:            r.Title,
+			ResourceStatus:   r.ResourceStatus,
+			SubmissionStatus: r.SubmissionStatus,
+		}
+	}
+	dto.Resources = out
+	return dto
+}
+
+func toBookingListDTO(bs []Booking, viewerID uuid.UUID, reviews []*BookingReview, disputes []*BookingDispute, resourcesAll [][]BookingResource) bookingListDTO {
 	out := make([]bookingDTO, len(bs))
 	for i, b := range bs {
 		dto := toBookingDTO(b, viewerID)
@@ -236,7 +275,12 @@ func toBookingListDTO(bs []Booking, viewerID uuid.UUID, reviews []*BookingReview
 		if i < len(disputes) {
 			d = disputes[i]
 		}
-		out[i] = withDispute(withReview(dto, b, viewerID, r), b, viewerID, d)
+		var res []BookingResource
+		if i < len(resourcesAll) {
+			res = resourcesAll[i]
+		}
+		dto = withDispute(withReview(dto, b, viewerID, r), b, viewerID, d)
+		out[i] = withResources(dto, res)
 	}
 	return bookingListDTO{Bookings: out}
 }

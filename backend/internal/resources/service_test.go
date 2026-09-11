@@ -5,7 +5,9 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sort"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -18,6 +20,14 @@ type fakeRepo struct {
 	byID           map[uuid.UUID]Resource
 	assigned       map[uuid.UUID]bool
 	seq            int
+
+	// phase A2/A3
+	attachments    map[uuid.UUID]BookingResource // by attachment id
+	attachPairs    map[string]uuid.UUID          // "bookingID|resourceID" -> attachment id
+	submissions    map[uuid.UUID]Submission
+	submissionKeys map[string]uuid.UUID // "resourceID|studentID|bookingID" -> submission id
+	userContacts   map[uuid.UUID][2]string
+	fileAccessible map[string]bool // "fileAssetID|requesterID" -> ok
 }
 
 func newFakeRepo() *fakeRepo {
@@ -25,7 +35,203 @@ func newFakeRepo() *fakeRepo {
 		teacherByOwner: map[uuid.UUID]uuid.UUID{},
 		byID:           map[uuid.UUID]Resource{},
 		assigned:       map[uuid.UUID]bool{},
+
+		attachments:    map[uuid.UUID]BookingResource{},
+		attachPairs:    map[string]uuid.UUID{},
+		submissions:    map[uuid.UUID]Submission{},
+		submissionKeys: map[string]uuid.UUID{},
+		userContacts:   map[uuid.UUID][2]string{},
+		fileAccessible: map[string]bool{},
 	}
+}
+
+// --- phase A2: booking attachment ---
+
+func pairKey(a, b uuid.UUID) string { return a.String() + "|" + b.String() }
+
+func (r *fakeRepo) AttachResource(_ context.Context, bookingID, resourceID uuid.UUID, kind string, assignedBy uuid.UUID, dueAt *time.Time) (BookingResource, error) {
+	key := pairKey(bookingID, resourceID)
+	if _, exists := r.attachPairs[key]; exists {
+		return BookingResource{}, ErrAlreadyAttached
+	}
+	res, ok := r.byID[resourceID]
+	if !ok {
+		return BookingResource{}, ErrNotFound
+	}
+	position := 0
+	for _, a := range r.attachments {
+		if a.BookingID == bookingID {
+			position++
+		}
+	}
+	br := BookingResource{
+		ID: uuid.New(), BookingID: bookingID, ResourceID: resourceID, Kind: kind, Position: position,
+		AssignedBy: assignedBy, DueAt: dueAt, CreatedAt: time.Now(),
+		Type: res.Type, Title: res.Title, Instructions: res.Instructions, ResourceStatus: res.Status, Content: res.Content,
+	}
+	r.attachments[br.ID] = br
+	r.attachPairs[key] = br.ID
+	return br, nil
+}
+
+func (r *fakeRepo) DetachResource(_ context.Context, bookingID, attachmentID uuid.UUID) error {
+	a, ok := r.attachments[attachmentID]
+	if !ok || a.BookingID != bookingID {
+		return ErrAttachmentNotFound
+	}
+	delete(r.attachments, attachmentID)
+	delete(r.attachPairs, pairKey(bookingID, a.ResourceID))
+	return nil
+}
+
+func (r *fakeRepo) ListBookingResources(_ context.Context, bookingID uuid.UUID) ([]BookingResource, error) {
+	var out []BookingResource
+	for _, a := range r.attachments {
+		if a.BookingID == bookingID {
+			out = append(out, a)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Position < out[j].Position })
+	return out, nil
+}
+
+func (r *fakeRepo) GetBookingResourceByPair(_ context.Context, bookingID, resourceID uuid.UUID) (BookingResource, bool, error) {
+	id, ok := r.attachPairs[pairKey(bookingID, resourceID)]
+	if !ok {
+		return BookingResource{}, false, nil
+	}
+	return r.attachments[id], true, nil
+}
+
+// --- phase A3: submissions ---
+
+func (r *fakeRepo) StartSubmission(_ context.Context, resourceID, studentID, bookingID uuid.UUID) (Submission, error) {
+	key := resourceID.String() + "|" + studentID.String() + "|" + bookingID.String()
+	if id, ok := r.submissionKeys[key]; ok {
+		return r.submissions[id], nil
+	}
+	now := time.Now()
+	sub := Submission{
+		ID: uuid.New(), ResourceID: resourceID, StudentID: studentID, Context: "lesson", BookingID: bookingID,
+		Status: SubmissionInProgress, Answers: map[string][]string{}, CreatedAt: now, UpdatedAt: now,
+	}
+	r.submissions[sub.ID] = sub
+	r.submissionKeys[key] = sub.ID
+	return sub, nil
+}
+
+func (r *fakeRepo) SaveSubmissionAnswers(_ context.Context, id uuid.UUID, answers map[string][]string) (Submission, error) {
+	sub, ok := r.submissions[id]
+	if !ok {
+		return Submission{}, ErrSubmissionNotFound
+	}
+	sub.Answers = answers
+	r.submissions[id] = sub
+	return sub, nil
+}
+
+func (r *fakeRepo) SubmitSubmission(_ context.Context, id uuid.UUID, p SubmitParams) (Submission, error) {
+	sub, ok := r.submissions[id]
+	if !ok {
+		return Submission{}, ErrSubmissionNotFound
+	}
+	sub.Status = p.Status
+	sub.AutoScore = p.AutoScore
+	sub.AutoMax = p.AutoMax
+	t := p.SubmittedAt
+	sub.SubmittedAt = &t
+	r.submissions[id] = sub
+	return sub, nil
+}
+
+func (r *fakeRepo) GradeSubmission(_ context.Context, id uuid.UUID, score *int, feedback string, gradedBy uuid.UUID, gradedAt time.Time) (Submission, error) {
+	sub, ok := r.submissions[id]
+	if !ok {
+		return Submission{}, ErrSubmissionNotFound
+	}
+	sub.TeacherScore = score
+	sub.TeacherFeedback = feedback
+	sub.GradedBy = gradedBy
+	t := gradedAt
+	sub.GradedAt = &t
+	sub.Status = SubmissionGraded
+	r.submissions[id] = sub
+	return sub, nil
+}
+
+func (r *fakeRepo) GetSubmission(_ context.Context, id uuid.UUID) (Submission, error) {
+	sub, ok := r.submissions[id]
+	if !ok {
+		return Submission{}, ErrSubmissionNotFound
+	}
+	return sub, nil
+}
+
+func (r *fakeRepo) ListSubmissionsForBooking(_ context.Context, bookingID uuid.UUID) ([]Submission, error) {
+	var out []Submission
+	for _, s := range r.submissions {
+		if s.BookingID == bookingID {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeRepo) InboxSubmissions(_ context.Context, teacherID uuid.UUID, status string, limit, offset int) ([]Submission, int, error) {
+	var out []Submission
+	for _, s := range r.submissions {
+		res, ok := r.byID[s.ResourceID]
+		if !ok || res.TeacherID != teacherID {
+			continue
+		}
+		if status != "" && s.Status != status {
+			continue
+		}
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	total := len(out)
+	if offset > len(out) {
+		offset = len(out)
+	}
+	end := len(out)
+	if limit > 0 && offset+limit < end {
+		end = offset + limit
+	}
+	return out[offset:end], total, nil
+}
+
+func (r *fakeRepo) FileAssetAccessible(_ context.Context, fileAssetID, requesterID uuid.UUID) (bool, error) {
+	return r.fileAccessible[pairKey(fileAssetID, requesterID)], nil
+}
+
+func (r *fakeRepo) UserContact(_ context.Context, userID uuid.UUID) (string, string, error) {
+	c, ok := r.userContacts[userID]
+	if !ok {
+		return "", "", nil
+	}
+	return c[0], c[1], nil
+}
+
+// fakeBookingReader is an in-memory resources.BookingReader.
+type fakeBookingReader struct {
+	byBooking map[uuid.UUID][2]uuid.UUID // bookingID -> [teacherOwnerID, studentID]
+	err       error
+}
+
+func newFakeBookingReader() *fakeBookingReader {
+	return &fakeBookingReader{byBooking: map[uuid.UUID][2]uuid.UUID{}}
+}
+
+func (f *fakeBookingReader) Booking(_ context.Context, bookingID uuid.UUID) (uuid.UUID, uuid.UUID, bool, error) {
+	if f.err != nil {
+		return uuid.Nil, uuid.Nil, false, f.err
+	}
+	b, ok := f.byBooking[bookingID]
+	if !ok {
+		return uuid.Nil, uuid.Nil, false, nil
+	}
+	return b[0], b[1], true, nil
 }
 
 func (r *fakeRepo) TeacherIDByOwner(_ context.Context, u uuid.UUID) (uuid.UUID, bool, error) {

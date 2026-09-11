@@ -105,6 +105,13 @@ type Querier interface {
 	// /v1/teachers/{slug}/reviews 404s for a non-approved slug, same as the profile.
 	ApprovedTeacherIDBySlug(ctx context.Context, slug string) (uuid.UUID, error)
 	AssignRoleToUser(ctx context.Context, arg AssignRoleToUserParams) error
+	// Lesson resources (phase A2/A3): attaching a resource to a booking, and the
+	// student's submissions against it.
+	// position is the current attachment count for the booking, computed here so
+	// the insert stays a single statement. A duplicate (booking_id, resource_id)
+	// raises SQLSTATE 23505 on the table's UNIQUE constraint, mapped by the
+	// repository to ErrAlreadyAttached — race-safe, never a check-then-insert.
+	AttachBookingResource(ctx context.Context, arg AttachBookingResourceParams) (AttachBookingResourceRow, error)
 	// cancelled_by records WHO cancelled: 'student', 'teacher' (includes a teacher
 	// no-show) or 'admin' (the operator force-cancel override). The service picks
 	// the value; the column's CHECK constraint is the guard.
@@ -120,6 +127,7 @@ type Querier interface {
 	ConsumeUserAuthTokens(ctx context.Context, arg ConsumeUserAuthTokensParams) error
 	CountTeacherResources(ctx context.Context, arg CountTeacherResourcesParams) (int64, error)
 	CountTeacherReviews(ctx context.Context, teacherID uuid.UUID) (int64, error)
+	CountTeacherSubmissionInbox(ctx context.Context, arg CountTeacherSubmissionInboxParams) (int64, error)
 	CountTeachers(ctx context.Context, arg CountTeachersParams) (int64, error)
 	CountUsersWithRole(ctx context.Context, roleID uuid.UUID) (int64, error)
 	// --- account-recovery link tokens (migration 000013) ---
@@ -143,6 +151,9 @@ type Querier interface {
 	CreateTeacher(ctx context.Context, arg CreateTeacherParams) (uuid.UUID, error)
 	// Auth module: user accounts and refresh-token sessions.
 	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
+	// Seed-only. booking_resources.booking_id cascades; resource_id has no
+	// cascade, so the seed clears attachments before resources.
+	DeleteAllBookingResources(ctx context.Context) error
 	// Seed-only. bookings.teacher_id / student_id reference teachers / users with
 	// no ON DELETE CASCADE, so the seed must clear bookings before those tables.
 	DeleteAllBookings(ctx context.Context) error
@@ -170,6 +181,10 @@ type Querier interface {
 	DeleteAllReviews(ctx context.Context) error
 	DeleteAllRolePermissions(ctx context.Context) error
 	DeleteAllRoles(ctx context.Context) error
+	// Seed-only. submissions.booking_id cascades, but resource_id / student_id
+	// reference resources / users with no cascade, so the seed clears submissions
+	// before those tables.
+	DeleteAllSubmissions(ctx context.Context) error
 	DeleteAllTeachers(ctx context.Context) error
 	// Seed-only. Clear assignments before roles / users.
 	DeleteAllUserRoles(ctx context.Context) error
@@ -184,10 +199,18 @@ type Querier interface {
 	DeleteTeacherExperience(ctx context.Context, teacherID uuid.UUID) error
 	DeleteTeacherFocus(ctx context.Context, teacherID uuid.UUID) error
 	DeleteTeacherLanguages(ctx context.Context, teacherID uuid.UUID) error
+	DetachBookingResource(ctx context.Context, arg DetachBookingResourceParams) (int64, error)
+	// Widens files.Download beyond owner-only: true iff some resource whose
+	// content carries this file_asset_id / audio_asset_id is attached to a
+	// booking belonging to this student.
+	FileAssetAccessibleToStudent(ctx context.Context, arg FileAssetAccessibleToStudentParams) (bool, error)
 	// Whose token is this? Ignores consumed / expired — used to recognise a
 	// just-redeemed verification token on a double-submit.
 	GetAuthTokenUser(ctx context.Context, arg GetAuthTokenUserParams) (uuid.UUID, error)
 	GetBookingByID(ctx context.Context, id uuid.UUID) (GetBookingByIDRow, error)
+	// Is this resource attached to this booking, and as what kind? Backs the
+	// "homework assigned on this booking" check before a submission may start.
+	GetBookingResourceByPair(ctx context.Context, arg GetBookingResourceByPairParams) (GetBookingResourceByPairRow, error)
 	// Booking module: concrete scheduled lessons. Times are UTC timestamptz. The
 	// recurring weekly availability is read via the availability queries; here we
 	// only need the teacher context, existing bookings for overlap checks, and the
@@ -232,6 +255,7 @@ type Querier interface {
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleByName(ctx context.Context, name string) (Role, error)
 	GetSessionByRefreshHash(ctx context.Context, refreshTokenHash []byte) (Session, error)
+	GetSubmissionByID(ctx context.Context, id uuid.UUID) (Submission, error)
 	// Availability module: a teacher's weekly recurring slots (UTC minutes).
 	// Resolve a slug to the teacher id, timezone, and owning user the availability
 	// endpoints need (user_id drives the ownership check on PUT).
@@ -241,6 +265,11 @@ type Querier interface {
 	GetTeacherIDByOwner(ctx context.Context, userID uuid.NullUUID) (uuid.UUID, error)
 	GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow, error)
+	// A plain contact lookup, used only for the grading-done email.
+	GetUserContact(ctx context.Context, id uuid.UUID) (GetUserContactRow, error)
+	// Only a `writing` submission reaches this (enforced in the service);
+	// teacher_score is nullable — a teacher may grade with feedback only.
+	GradeSubmission(ctx context.Context, arg GradeSubmissionParams) (Submission, error)
 	// A second OPEN dispute for the same booking raises SQLSTATE 23505 on
 	// disputes_one_open_per_booking, which the repository maps to ErrDisputeExists
 	// (race-safe, never a check-then-insert).
@@ -261,6 +290,10 @@ type Querier interface {
 	// SQLSTATE 23505 on reviews_booking_uniq, which the repository maps to
 	// ErrAlreadyReviewed (race-safe, never a check-then-insert).
 	InsertReview(ctx context.Context, arg InsertReviewParams) (InsertReviewRow, error)
+	// Phase A2: can this resource be deleted? True once it has ever been attached
+	// to a booking (detaching does not clear this — attach it once, and it is
+	// "in use" for delete purposes forever; archive instead).
+	IsResourceAssigned(ctx context.Context, resourceID uuid.UUID) (bool, error)
 	// Count of teachers per taught language across the whole catalog. Drives the
 	// language filter in the UI, so it is intentionally unfiltered.
 	LanguageFacets(ctx context.Context) ([]LanguageFacetsRow, error)
@@ -268,6 +301,9 @@ type Querier interface {
 	// just sent, don't send another" cooldown. No row -> zero time.
 	LatestAuthTokenAt(ctx context.Context, arg LatestAuthTokenAtParams) (pgtype.Timestamptz, error)
 	ListAvailabilitySlots(ctx context.Context, teacherID uuid.UUID) ([]ListAvailabilitySlotsRow, error)
+	// A booking's attachments, teacher-ordered, each with its resource's display
+	// fields joined in (title/type/status/content) so the caller never N+1s.
+	ListBookingResources(ctx context.Context, bookingID uuid.UUID) ([]ListBookingResourcesRow, error)
 	// Bookings the caller participates in. Pass the caller's user id as
 	// student_filter and/or the caller-owned teacher id as teacher_filter; use the
 	// all-zero uuid for a dimension that should not match. Newest lesson first.
@@ -279,6 +315,9 @@ type Querier interface {
 	ListLanguagesForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]TeacherLanguage, error)
 	ListPermissionsForRoles(ctx context.Context, roleIds []uuid.UUID) ([]RolePermission, error)
 	ListRoles(ctx context.Context) ([]ListRolesRow, error)
+	// Every submission filed against one booking's homeworks. A booking has
+	// exactly one student, so this never needs a student filter of its own.
+	ListSubmissionsForBooking(ctx context.Context, bookingID uuid.NullUUID) ([]Submission, error)
 	// Non-cancelled bookings for a teacher that overlap the [from, to) window, for
 	// server-side slot generation and the pre-insert bookability re-check.
 	ListTeacherBookingIntervals(ctx context.Context, arg ListTeacherBookingIntervalsParams) ([]ListTeacherBookingIntervalsRow, error)
@@ -338,6 +377,7 @@ type Querier interface {
 	// No-op if it was already revoked.
 	RevokeSession(ctx context.Context, arg RevokeSessionParams) error
 	RolesForUser(ctx context.Context, userID uuid.UUID) ([]RolesForUserRow, error)
+	SaveSubmissionAnswers(ctx context.Context, arg SaveSubmissionAnswersParams) (Submission, error)
 	// Seed-only: a booking in an explicit lifecycle state (the API path always
 	// starts at pending_payment). Used to give the admin / dispute demo data
 	// something to point at on a fresh database.
@@ -377,12 +417,25 @@ type Querier interface {
 	// Password reset: replace the hash and bump updated_at. The caller also revokes
 	// every session in the same transaction.
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
+	// Idempotent "start homework": a second call for the same
+	// (resource_id, student_id, booking_id) returns the existing row rather than
+	// erroring — the no-op ON CONFLICT DO UPDATE is required to get RETURNING on
+	// a conflict (DO NOTHING skips it).
+	StartOrGetSubmission(ctx context.Context, arg StartOrGetSubmissionParams) (Submission, error)
+	// Writes the outcome of POST /v1/submissions/{id}/submit. For an
+	// auto-gradable type the caller passes status='graded' with the computed
+	// auto_score/auto_max; for `writing` it passes status='submitted' with both
+	// null.
+	SubmitSubmission(ctx context.Context, arg SubmitSubmissionParams) (Submission, error)
 	// The teacher profile owned by a user (one per user), or no rows.
 	TeacherRefByOwner(ctx context.Context, userID uuid.NullUUID) (TeacherRefByOwnerRow, error)
 	// Write queries: the demo seed plus the dashboard's create/update-profile flow.
 	// Slug -> id + owning user, for the ownership check on PATCH /v1/teachers/{slug}.
 	TeacherRefBySlug(ctx context.Context, slug string) (TeacherRefBySlugRow, error)
 	TeacherSlugExists(ctx context.Context, slug string) (bool, error)
+	// The grading inbox: a teacher's own resources' submissions, filtered by
+	// status (default 'submitted' in the service), newest-submitted-first.
+	TeacherSubmissionInbox(ctx context.Context, arg TeacherSubmissionInboxParams) ([]Submission, error)
 	UnassignRoleFromUser(ctx context.Context, arg UnassignRoleFromUserParams) error
 	// Partial edit: title / instructions / content are replaced wholesale when
 	// provided (the service passes the current value for fields it isn't changing).
