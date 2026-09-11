@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import {
   BookOpen,
   CalendarDays,
+  GraduationCap,
   LayoutDashboard,
   LogOut,
   PenLine,
@@ -112,6 +113,12 @@ export function AccountMenu() {
           <Link href="/grading">
             <PenLine />
             Homework to grade
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/courses">
+            <GraduationCap />
+            My courses
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
