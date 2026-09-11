@@ -21,6 +21,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/availability"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/bookings"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/courses"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/disputes"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/email"
@@ -210,6 +211,19 @@ func run(logger *slog.Logger) error {
 	fileHandler := files.NewHandler(fileService, logger)
 	resourceHandler := resources.NewHandler(resourceService, logger)
 
+	// Phase C1: course authoring. Two ports cross the courses <-> resources /
+	// files boundary, both one-way (courses is a pure consumer of each in this
+	// phase, so no structural-typing trick is needed like resources <-> bookings
+	// above): courses.ResourceReader validates a `resource`-kind item is the
+	// calling teacher's own published resource (resources.NewCourseGateway);
+	// courses.FileReader validates a `video`-kind item / cover image is the
+	// calling account's own uploaded file of the right content type
+	// (files.NewCourseGateway).
+	courseService := courses.NewService(courses.NewPostgresRepository(pool), logger)
+	courseService.SetResourceReader(resources.NewCourseGateway(resourceService))
+	courseService.SetFileReader(files.NewCourseGateway(fileService))
+	courseHandler := courses.NewHandler(courseService, logger)
+
 	router := httpapi.NewRouter(httpapi.Deps{
 		Config:              cfg,
 		Logger:              logger,
@@ -229,6 +243,7 @@ func run(logger *slog.Logger) error {
 		PayoutHandler:       payoutHandler,
 		FileHandler:         fileHandler,
 		ResourceHandler:     resourceHandler,
+		CourseHandler:       courseHandler,
 	})
 
 	srv := &http.Server{

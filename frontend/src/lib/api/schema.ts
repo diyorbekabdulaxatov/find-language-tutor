@@ -716,7 +716,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a file
-         * @description Multipart form, field `file`. PDF / image / audio only, under 25 MB. Returns a file id + the `url` to fetch the bytes back (`GET /v1/files/{id}`).
+         * @description Multipart form, field `file`. PDF / image / audio under 25 MB, or video (mp4/webm/quicktime — phase C1 course video items) under 500 MB. Returns a file id + the `url` to fetch the bytes back (`GET /v1/files/{id}`). Video is proxied through this same endpoint for now; there is no presigned direct-to-R2 upload yet.
          */
         post: operations["uploadFile"];
         delete?: never;
@@ -850,6 +850,242 @@ export interface paths {
         put?: never;
         /** Restore an archived resource */
         post: operations["unarchiveResource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's course library */
+        get: operations["listCourses"];
+        put?: never;
+        /**
+         * Create a course
+         * @description Creates an empty draft course. Build its curriculum with the section/item routes below, then publish.
+         */
+        post: operations["createCourse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One of the caller's courses, with its full curriculum */
+        get: operations["getCourse"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a course
+         * @description Only if it has never been published; otherwise 409 — archive it instead.
+         */
+        delete: operations["deleteCourse"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit a course
+         * @description Title / subtitle / description / cover / price are replaced. A non-null cover_asset_id must be the caller's own uploaded image.
+         */
+        patch: operations["updateCourse"];
+        trace?: never;
+    };
+    "/v1/courses/{id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish a course
+         * @description Requires at least one section, each with at least one item. price_amount_minor may be 0 (a free course is valid).
+         */
+        post: operations["publishCourse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/{id}/unpublish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Return a course to draft */
+        post: operations["unpublishCourse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/{id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive a course */
+        post: operations["archiveCourse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/{id}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore an archived course */
+        post: operations["unarchiveCourse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/{id}/sections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a curriculum section */
+        post: operations["addCourseSection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/{id}/sections/{sectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a section
+         * @description Also deletes its items.
+         */
+        delete: operations["deleteCourseSection"];
+        options?: never;
+        head?: never;
+        /** Rename a section */
+        patch: operations["renameCourseSection"];
+        trace?: never;
+    };
+    "/v1/courses/{id}/sections/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder a course's sections
+         * @description ids must be exactly the course's current section ids, each once, in the new order.
+         */
+        put: operations["reorderCourseSections"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/{id}/sections/{sectionId}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a curriculum item
+         * @description kind `video` needs video_asset_id (the caller's own uploaded video, content type video/*); kind `resource` needs resource_id (one of the caller's own published, non-archived resources).
+         */
+        post: operations["addCourseItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/{id}/sections/{sectionId}/items/{itemId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete an item */
+        delete: operations["deleteCourseItem"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit an item's display-title override
+         * @description An empty title clears the override, falling back to the video filename / resource title in the UI.
+         */
+        patch: operations["renameCourseItem"];
+        trace?: never;
+    };
+    "/v1/courses/{id}/sections/{sectionId}/items/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder a section's items
+         * @description ids must be exactly the section's current item ids, each once, in the new order.
+         */
+        put: operations["reorderCourseItems"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2108,6 +2344,135 @@ export interface components {
         GradeSubmissionRequest: {
             score?: number | null;
             feedback: string;
+        };
+        /** @description A library-list row — course fields only, no curriculum. See CourseDetail for the full tree. */
+        Course: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            subtitle: string;
+            description: string;
+            /** Format: uuid */
+            cover_asset_id: string | null;
+            price: components["schemas"]["Money"];
+            /** @enum {string} */
+            status: "draft" | "published";
+            archived: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CourseList: {
+            courses: components["schemas"]["Course"][];
+            /** @description Total matches */
+            total: number;
+        };
+        CreateCourseRequest: {
+            title: string;
+            subtitle?: string;
+            description?: string;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            price_amount_minor: number;
+            price_currency?: components["schemas"]["Currency"];
+        };
+        UpdateCourseRequest: {
+            title: string;
+            subtitle?: string;
+            description?: string;
+            /**
+             * Format: uuid
+             * @description Must be one of the caller's own uploaded image files.
+             */
+            cover_asset_id?: string | null;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            price_amount_minor: number;
+            price_currency?: components["schemas"]["Currency"];
+        };
+        /** @enum {string} */
+        CourseItemKind: "video" | "resource";
+        CourseItem: {
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["CourseItemKind"];
+            /** @description Optional display-title override; "" falls back to the video filename / resource title in the UI. */
+            title: string;
+            /** Format: uuid */
+            video_asset_id: string | null;
+            /** Format: uuid */
+            resource_id: string | null;
+            position: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CourseSection: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            position: number;
+            items: components["schemas"]["CourseItem"][];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        /** @description A course with its full curriculum tree loaded — the response shape of every course- and curriculum-mutating endpoint (create/get/update/ publish/archive, and every section/item mutation), so a client can re-render its whole authoring view from one response. */
+        CourseDetail: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            subtitle: string;
+            description: string;
+            /** Format: uuid */
+            cover_asset_id: string | null;
+            price: components["schemas"]["Money"];
+            /** @enum {string} */
+            status: "draft" | "published";
+            archived: boolean;
+            sections: components["schemas"]["CourseSection"][];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreateSectionRequest: {
+            title: string;
+        };
+        UpdateSectionRequest: {
+            title: string;
+        };
+        ReorderSectionsRequest: {
+            /** @description Exactly the course's current section ids, each once, in the new order. */
+            section_ids: string[];
+        };
+        CreateItemRequest: {
+            kind: components["schemas"]["CourseItemKind"];
+            /** @description Optional display-title override. */
+            title?: string;
+            /**
+             * Format: uuid
+             * @description Required when kind is `video`.
+             */
+            video_asset_id?: string;
+            /**
+             * Format: uuid
+             * @description Required when kind is `resource`.
+             */
+            resource_id?: string;
+        };
+        UpdateItemRequest: {
+            /** @description "" clears the override. */
+            title: string;
+        };
+        ReorderItemsRequest: {
+            /** @description Exactly the section's current item ids, each once, in the new order. */
+            item_ids: string[];
         };
         AdminReviewList: {
             reviews: components["schemas"]["AdminReview"][];
@@ -4281,6 +4646,504 @@ export interface operations {
                     "application/json": components["schemas"]["Resource"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listCourses: {
+        parameters: {
+            query?: {
+                status?: "draft" | "published";
+                /** @description Include archived courses. */
+                archived?: "true";
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the library. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description `no_teacher_profile` — the caller has no teacher profile. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createCourse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCourseRequest"];
+            };
+        };
+        responses: {
+            /** @description The created course. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description `no_teacher_profile`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getCourse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The course and its sections/items. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteCourse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description `course_in_use` — the course has been published at least once. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateCourse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCourseRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    publishCourse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The course */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    unpublishCourse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The course */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    archiveCourse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The archived course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    unarchiveCourse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The restored course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    addCourseSection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSectionRequest"];
+            };
+        };
+        responses: {
+            /** @description The course */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteCourseSection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                sectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The updated course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    renameCourseSection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                sectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSectionRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    reorderCourseSections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderSectionsRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    addCourseItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                sectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateItemRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated course */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteCourseItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                sectionId: string;
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The updated course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    renameCourseItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                sectionId: string;
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateItemRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    reorderCourseItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                sectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderItemsRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

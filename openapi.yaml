@@ -57,6 +57,16 @@ tags:
       and graded tasks (quiz / listening / reading / writing). Authored once,
       later attached to a scheduled lesson as homework or dropped into a course.
       Blob uploads (PDF / image / audio) back the materials and listening audio.
+  - name: courses
+    description: >
+      A teacher's self-paced video courses: authoring only in this phase (no
+      purchase, catalog, enrollment, or student-facing surface yet). A course
+      groups ordered sections, each holding ordered items that are either an
+      uploaded video (`POST /v1/uploads`, now also accepting video/*) or a
+      reference to one of the teacher's own published resources. Publishing
+      requires at least one section, each with at least one item; a course
+      that has ever been published can no longer be deleted — archive it
+      instead.
   - name: system
 
 paths:
@@ -1511,9 +1521,11 @@ paths:
       tags: [resources]
       summary: Upload a file
       description: >
-        Multipart form, field `file`. PDF / image / audio only, under 25 MB.
+        Multipart form, field `file`. PDF / image / audio under 25 MB, or
+        video (mp4/webm/quicktime — phase C1 course video items) under 500 MB.
         Returns a file id + the `url` to fetch the bytes back
-        (`GET /v1/files/{id}`).
+        (`GET /v1/files/{id}`). Video is proxied through this same endpoint
+        for now; there is no presigned direct-to-R2 upload yet.
       operationId: uploadFile
       security: [{ bearerAuth: [] }]
       requestBody:
@@ -1713,6 +1725,336 @@ paths:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
         "200": { description: The restored resource., content: { application/json: { schema: { $ref: "#/components/schemas/Resource" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ----------------------------------------------------------------------------
+  # Courses (phase C1): authoring only. Every course-mutating endpoint here —
+  # create/update/publish/archive and every section/item mutation — returns
+  # the full CourseDetail (course fields + its curriculum tree), not just the
+  # row that changed, so a client can re-render its whole authoring view from
+  # a single response. GET /v1/courses (the library list) is the one
+  # exception: it returns lightweight Course rows with no curriculum, for a
+  # cheap list.
+  # ----------------------------------------------------------------------------
+
+  /v1/courses:
+    get:
+      tags: [courses]
+      summary: The caller's course library
+      operationId: listCourses
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [draft, published] } }
+        - { name: archived, in: query, schema: { type: string, enum: ["true"] }, description: Include archived courses. }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of the library.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`no_teacher_profile` — the caller has no teacher profile."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    post:
+      tags: [courses]
+      summary: Create a course
+      description: Creates an empty draft course. Build its curriculum with the section/item routes below, then publish.
+      operationId: createCourse
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCourseRequest" }
+      responses:
+        "201":
+          description: The created course.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`no_teacher_profile`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/courses/{id}:
+    get:
+      tags: [courses]
+      summary: One of the caller's courses, with its full curriculum
+      operationId: getCourse
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The course and its sections/items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [courses]
+      summary: Edit a course
+      description: Title / subtitle / description / cover / price are replaced. A non-null cover_asset_id must be the caller's own uploaded image.
+      operationId: updateCourse
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateCourseRequest" }
+      responses:
+        "200":
+          description: The updated course.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [courses]
+      summary: Delete a course
+      description: Only if it has never been published; otherwise 409 — archive it instead.
+      operationId: deleteCourse
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`course_in_use` — the course has been published at least once."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/courses/{id}/publish:
+    post:
+      tags: [courses]
+      summary: Publish a course
+      description: Requires at least one section, each with at least one item. price_amount_minor may be 0 (a free course is valid).
+      operationId: publishCourse
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The course, now published., content: { application/json: { schema: { $ref: "#/components/schemas/CourseDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/unpublish:
+    post:
+      tags: [courses]
+      summary: Return a course to draft
+      operationId: unpublishCourse
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The course, now a draft., content: { application/json: { schema: { $ref: "#/components/schemas/CourseDetail" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/archive:
+    post:
+      tags: [courses]
+      summary: Archive a course
+      operationId: archiveCourse
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The archived course., content: { application/json: { schema: { $ref: "#/components/schemas/CourseDetail" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/unarchive:
+    post:
+      tags: [courses]
+      summary: Restore an archived course
+      operationId: unarchiveCourse
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The restored course., content: { application/json: { schema: { $ref: "#/components/schemas/CourseDetail" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/sections:
+    post:
+      tags: [courses]
+      summary: Add a curriculum section
+      operationId: addCourseSection
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSectionRequest" }
+      responses:
+        "201": { description: The course, with the new section appended., content: { application/json: { schema: { $ref: "#/components/schemas/CourseDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/sections/{sectionId}:
+    patch:
+      tags: [courses]
+      summary: Rename a section
+      operationId: renameCourseSection
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: sectionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateSectionRequest" }
+      responses:
+        "200": { description: The updated course., content: { application/json: { schema: { $ref: "#/components/schemas/CourseDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [courses]
+      summary: Delete a section
+      description: Also deletes its items.
+      operationId: deleteCourseSection
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: sectionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The updated course., content: { application/json: { schema: { $ref: "#/components/schemas/CourseDetail" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/sections/reorder:
+    put:
+      tags: [courses]
+      summary: Reorder a course's sections
+      description: ids must be exactly the course's current section ids, each once, in the new order.
+      operationId: reorderCourseSections
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReorderSectionsRequest" }
+      responses:
+        "200": { description: The updated course., content: { application/json: { schema: { $ref: "#/components/schemas/CourseDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/sections/{sectionId}/items:
+    post:
+      tags: [courses]
+      summary: Add a curriculum item
+      description: >
+        kind `video` needs video_asset_id (the caller's own uploaded video,
+        content type video/*); kind `resource` needs resource_id (one of the
+        caller's own published, non-archived resources).
+      operationId: addCourseItem
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: sectionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateItemRequest" }
+      responses:
+        "201": { description: The updated course, with the new item appended., content: { application/json: { schema: { $ref: "#/components/schemas/CourseDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/sections/{sectionId}/items/{itemId}:
+    patch:
+      tags: [courses]
+      summary: Edit an item's display-title override
+      description: An empty title clears the override, falling back to the video filename / resource title in the UI.
+      operationId: renameCourseItem
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: sectionId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: itemId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateItemRequest" }
+      responses:
+        "200": { description: The updated course., content: { application/json: { schema: { $ref: "#/components/schemas/CourseDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [courses]
+      summary: Delete an item
+      operationId: deleteCourseItem
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: sectionId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: itemId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The updated course., content: { application/json: { schema: { $ref: "#/components/schemas/CourseDetail" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/sections/{sectionId}/items/reorder:
+    put:
+      tags: [courses]
+      summary: Reorder a section's items
+      description: ids must be exactly the section's current item ids, each once, in the new order.
+      operationId: reorderCourseItems
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: sectionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReorderItemsRequest" }
+      responses:
+        "200": { description: The updated course., content: { application/json: { schema: { $ref: "#/components/schemas/CourseDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -3468,6 +3810,151 @@ components:
       properties:
         score: { type: integer, nullable: true }
         feedback: { type: string }
+
+    # --- Courses (phase C1): authoring only ---
+
+    Course:
+      type: object
+      description: A library-list row — course fields only, no curriculum. See CourseDetail for the full tree.
+      required: [id, title, subtitle, description, cover_asset_id, price, status, archived, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        subtitle: { type: string }
+        description: { type: string }
+        cover_asset_id: { type: string, format: uuid, nullable: true }
+        price: { $ref: "#/components/schemas/Money" }
+        status: { type: string, enum: [draft, published] }
+        archived: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CourseList:
+      type: object
+      required: [courses, total]
+      properties:
+        courses: { type: array, items: { $ref: "#/components/schemas/Course" } }
+        total: { type: integer, description: Total matches, not just this page. }
+
+    CreateCourseRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1 }
+        subtitle: { type: string }
+        description: { type: string }
+        price_amount_minor: { type: integer, format: int64, minimum: 0, default: 0 }
+        price_currency: { $ref: "#/components/schemas/Currency" }
+
+    UpdateCourseRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1 }
+        subtitle: { type: string }
+        description: { type: string }
+        cover_asset_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Must be one of the caller's own uploaded image files.
+        price_amount_minor: { type: integer, format: int64, minimum: 0, default: 0 }
+        price_currency: { $ref: "#/components/schemas/Currency" }
+
+    CourseItemKind:
+      type: string
+      enum: [video, resource]
+
+    CourseItem:
+      type: object
+      required: [id, kind, title, video_asset_id, resource_id, position, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/CourseItemKind" }
+        title:
+          type: string
+          description: Optional display-title override; "" falls back to the video filename / resource title in the UI.
+        video_asset_id: { type: string, format: uuid, nullable: true }
+        resource_id: { type: string, format: uuid, nullable: true }
+        position: { type: integer }
+        created_at: { type: string, format: date-time }
+
+    CourseSection:
+      type: object
+      required: [id, title, position, items, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        position: { type: integer }
+        items: { type: array, items: { $ref: "#/components/schemas/CourseItem" } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CourseDetail:
+      type: object
+      description: >
+        A course with its full curriculum tree loaded — the response shape of
+        every course- and curriculum-mutating endpoint (create/get/update/
+        publish/archive, and every section/item mutation), so a client can
+        re-render its whole authoring view from one response.
+      required: [id, title, subtitle, description, cover_asset_id, price, status, archived, sections, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        subtitle: { type: string }
+        description: { type: string }
+        cover_asset_id: { type: string, format: uuid, nullable: true }
+        price: { $ref: "#/components/schemas/Money" }
+        status: { type: string, enum: [draft, published] }
+        archived: { type: boolean }
+        sections: { type: array, items: { $ref: "#/components/schemas/CourseSection" } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateSectionRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1 }
+
+    UpdateSectionRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1 }
+
+    ReorderSectionsRequest:
+      type: object
+      required: [section_ids]
+      properties:
+        section_ids:
+          type: array
+          items: { type: string, format: uuid }
+          description: Exactly the course's current section ids, each once, in the new order.
+
+    CreateItemRequest:
+      type: object
+      required: [kind]
+      properties:
+        kind: { $ref: "#/components/schemas/CourseItemKind" }
+        title: { type: string, description: Optional display-title override. }
+        video_asset_id: { type: string, format: uuid, description: Required when kind is `video`. }
+        resource_id: { type: string, format: uuid, description: Required when kind is `resource`. }
+
+    UpdateItemRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, description: "\"\" clears the override." }
+
+    ReorderItemsRequest:
+      type: object
+      required: [item_ids]
+      properties:
+        item_ids:
+          type: array
+          items: { type: string, format: uuid }
+          description: Exactly the section's current item ids, each once, in the new order.
 
     AdminReviewList:
       type: object

@@ -2,6 +2,7 @@ package files
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"strings"
@@ -37,7 +38,8 @@ func (s *Service) SetAssigneeChecker(a AssigneeChecker) { s.assignee = a }
 
 // Upload validates the file, writes the bytes to the blob store, and records
 // the asset. size is the declared size; the reader is also length-limited as a
-// backstop.
+// backstop. The size cap depends on the negotiated content type's category —
+// MaxVideoUploadBytes for video/*, MaxUploadBytes for everything else.
 func (s *Service) Upload(ctx context.Context, ownerID uuid.UUID, filename, contentType string, size int64, r io.Reader) (Asset, error) {
 	contentType = normalizeContentType(contentType)
 	ext, ok := allowedContentTypes[contentType]
@@ -47,12 +49,13 @@ func (s *Service) Upload(ctx context.Context, ownerID uuid.UUID, filename, conte
 	if size <= 0 {
 		return Asset{}, ErrEmptyUpload
 	}
-	if size > MaxUploadBytes {
+	maxBytes := maxUploadBytesFor(contentType)
+	if size > maxBytes {
 		return Asset{}, ErrTooLarge
 	}
 
 	key := "resources/" + ownerID.String() + "/" + uuid.NewString() + ext
-	limited := io.LimitReader(r, MaxUploadBytes+1)
+	limited := io.LimitReader(r, maxBytes+1)
 	if err := s.blob.Put(ctx, key, contentType, limited); err != nil {
 		return Asset{}, err
 	}
@@ -107,6 +110,25 @@ func (s *Service) Download(ctx context.Context, id, requesterID uuid.UUID) (redi
 		return "", nil, Asset{}, e
 	}
 	return "", rc, a, nil
+}
+
+// FileOwnedBy reports whether fileAssetID belongs to callerID, and its stored
+// content type. Backs courses.FileReader (video item / course cover
+// validation): ok is false, contentType "" when the asset doesn't exist or
+// belongs to someone else — never an error for either case, only for a real
+// lookup failure.
+func (s *Service) FileOwnedBy(ctx context.Context, fileAssetID, callerID uuid.UUID) (ok bool, contentType string, err error) {
+	a, err := s.repo.ByID(ctx, fileAssetID)
+	if err != nil {
+		if errors.Is(err, ErrAssetNotFound) {
+			return false, "", nil
+		}
+		return false, "", err
+	}
+	if a.OwnerID != callerID {
+		return false, "", nil
+	}
+	return true, a.ContentType, nil
 }
 
 func normalizeContentType(ct string) string {
