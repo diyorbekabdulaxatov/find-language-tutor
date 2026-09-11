@@ -134,6 +134,7 @@ type Service struct {
 	notifier  Notifier          // nil until SetNotifier; guarded
 	reviews   ReviewReader      // nil until SetReviewReader; guarded
 	disputes  DisputeReader     // nil until SetDisputeReader; guarded
+	resources ResourceReader    // nil until SetResourceReader; guarded
 	logger    *slog.Logger
 }
 
@@ -202,6 +203,31 @@ func (s *Service) OpenDisputeFor(ctx context.Context, bookingID uuid.UUID) *Book
 		return nil
 	}
 	return d
+}
+
+// SetResourceReader wires the resources module's read port in. Optional: a
+// nil reader leaves `resources` empty on every BookingDTO.
+func (s *Service) SetResourceReader(r ResourceReader) { s.resources = r }
+
+// resourcesFor best-effort loads a booking's attached-resource summaries; a
+// lookup error is logged and treated as "no resources" so it never fails a
+// booking read.
+func (s *Service) resourcesFor(ctx context.Context, bookingID, viewerID uuid.UUID) []BookingResource {
+	if s.resources == nil {
+		return nil
+	}
+	rs, err := s.resources.ForBooking(ctx, bookingID, viewerID)
+	if err != nil {
+		s.log().Error("load booking resources", slog.String("booking_id", bookingID.String()), slog.Any("error", err))
+		return nil
+	}
+	return rs
+}
+
+// ResourcesFor exposes resourcesFor to the handler so it can annotate booking
+// DTOs with `resources`.
+func (s *Service) ResourcesFor(ctx context.Context, bookingID, viewerID uuid.UUID) []BookingResource {
+	return s.resourcesFor(ctx, bookingID, viewerID)
 }
 
 // --- guarded port calls (all safe with a nil port) ---

@@ -24,6 +24,7 @@ import { BookingStatusBadge } from "./booking-status-badge";
 import { PaymentForm } from "./payment-form";
 import { LessonJoinCard } from "./lesson-join-card";
 import { DisputePanel } from "./dispute-panel";
+import { LessonResourcesPanel } from "./lesson-resources-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -310,6 +311,8 @@ export function BookingDetail({ id }: { id: string }) {
           />
         </div>
       )}
+
+      <LessonResourcesPanel booking={booking} isTeacher={isTeacher} isStudent={isStudent} />
 
       {booking.review ? (
         <BookingReview

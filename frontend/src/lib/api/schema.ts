@@ -530,6 +530,138 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/bookings/{id}/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A lesson's attached resources
+         * @description Participant-only. The teacher sees the full resource content (including quiz answers) and no submission; the student sees every question's `correct` field stripped and their own submission summary per attachment.
+         */
+        get: operations["listBookingResources"];
+        put?: never;
+        /**
+         * Attach a resource to a lesson
+         * @description Teacher-owner only. The resource must belong to the same teacher, be `published`, and not archived. `kind: homework` is rejected for `material` / `article` resources (400 — they have no submission flow; attach them as `material` instead). Attaching the same resource to the same booking twice is a 409 (`resource_already_attached`), not a duplicate row.
+         */
+        post: operations["attachBookingResource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bookings/{id}/resources/{attachmentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Detach a resource from a lesson
+         * @description Teacher-owner only. Any submissions already filed against the resource are kept — detaching does not delete history.
+         */
+        delete: operations["detachBookingResource"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The teacher's grading inbox
+         * @description The caller's own resources' submissions. `status` defaults to `submitted` (i.e. `writing` submissions awaiting a grade); `all` lifts the filter. Newest-submitted-first.
+         */
+        get: operations["listSubmissionInbox"];
+        put?: never;
+        /**
+         * Start (or resume) a homework submission
+         * @description Idempotent: a second call for the same resource/booking returns the existing submission rather than erroring. The resource must be attached to the booking as `homework`, the caller must be the booking's student, and the resource type must carry a submission flow (`quiz` / `listening` / `reading` / `writing`).
+         */
+        post: operations["startSubmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/submissions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one submission
+         * @description The owning student or the booking's teacher-owner only.
+         */
+        get: operations["getSubmission"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Save draft answers
+         * @description Owner-only, and only while the submission is `in_progress`.
+         */
+        patch: operations["saveSubmissionAnswers"];
+        trace?: never;
+    };
+    "/v1/submissions/{id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a homework
+         * @description Owner-only, only from `in_progress`. `quiz` / `listening` / `reading` auto-grade against the resource's questions and land directly on `graded` (`auto_score` / `auto_max` set, all-or-nothing per question, no partial credit). `writing` lands on `submitted` and awaits a teacher's grade.
+         */
+        post: operations["submitSubmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/submissions/{id}/grade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grade a writing submission
+         * @description Only a `writing` submission, only from `submitted`. Caller must be the teacher-owner of the submission's booking. `score` is nullable — a teacher may grade with feedback only. Best-effort emails the student; a mail failure never fails the request.
+         */
+        post: operations["gradeSubmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/payments/webhook": {
         parameters: {
             query?: never;
@@ -1580,6 +1712,8 @@ export interface components {
             student: components["schemas"]["BookingStudentSummary"];
             /** @description The booking's payment intent. Null when there is none yet, and omitted from list responses (only single-booking responses embed it). */
             payment: components["schemas"]["BookingPayment"] | null;
+            /** @description The lesson's attached materials / homework, summary only (no quiz content — see GET /v1/bookings/{id}/resources for that). Always an array, never null. */
+            resources: components["schemas"]["BookingResource"][];
         };
         /** @description The payment intent embedded in a booking. */
         BookingPayment: {
@@ -1858,6 +1992,122 @@ export interface components {
             title: string;
             instructions?: string;
             content: components["schemas"]["ResourceContent"];
+        };
+        /** @description The summary of one resource attached to a booking, embedded in `Booking.resources`. No quiz content — see GET /v1/bookings/{id}/resources for the full attach view. */
+        BookingResource: {
+            /**
+             * Format: uuid
+             * @description The attachment id.
+             */
+            id: string;
+            /** Format: uuid */
+            resource_id: string;
+            /** @enum {string} */
+            kind: "material" | "homework";
+            position: number;
+            /** Format: date-time */
+            due_at: string | null;
+            type: components["schemas"]["ResourceType"];
+            title: string;
+            /** @enum {string} */
+            resource_status: "draft" | "published";
+            /**
+             * @description The viewer's own submission status for this homework; empty when the viewer is not the student, or hasn't started it yet.
+             * @enum {string}
+             */
+            submission_status: "" | "in_progress" | "submitted" | "graded";
+        };
+        AttachResourceRequest: {
+            /** Format: uuid */
+            resource_id: string;
+            /** @enum {string} */
+            kind: "material" | "homework";
+            /** Format: date-time */
+            due_at?: string;
+        };
+        /** @description The caller's own submission for an attached resource (student view only). */
+        SubmissionSummary: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            status: "in_progress" | "submitted" | "graded";
+            auto_score: number | null;
+            auto_max: number | null;
+            teacher_score: number | null;
+            /** Format: date-time */
+            submitted_at: string | null;
+            /** Format: date-time */
+            graded_at: string | null;
+        };
+        /** @description One booking attachment with its resource's full display content — the response shape of POST/GET /v1/bookings/{id}/resources. When the caller is the booking's student, every question's `correct` field is stripped from `content`. */
+        AttachedResource: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            resource_id: string;
+            /** @enum {string} */
+            kind: "material" | "homework";
+            position: number;
+            /** Format: date-time */
+            due_at: string | null;
+            type: components["schemas"]["ResourceType"];
+            title: string;
+            instructions: string;
+            /** @enum {string} */
+            resource_status: "draft" | "published";
+            content: components["schemas"]["ResourceContent"];
+            /** @description The caller's own submission summary; null for the teacher viewer, or a student who hasn't started. */
+            submission: components["schemas"]["SubmissionSummary"] | null;
+        };
+        AttachedResourceList: {
+            attachments: components["schemas"]["AttachedResource"][];
+        };
+        Submission: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            resource_id: string;
+            /** Format: uuid */
+            booking_id: string;
+            /** @enum {string} */
+            status: "in_progress" | "submitted" | "graded";
+            /** @description Question id -> the student's chosen choice ids (single/multi) or free-text answer (text, one-element array). */
+            answers: {
+                [key: string]: string[];
+            };
+            auto_score: number | null;
+            auto_max: number | null;
+            /** @description Nullable — a teacher may grade with feedback only. */
+            teacher_score: number | null;
+            teacher_feedback: string;
+            /** Format: date-time */
+            submitted_at: string | null;
+            /** Format: date-time */
+            graded_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        SubmissionList: {
+            submissions: components["schemas"]["Submission"][];
+            /** @description Total matches */
+            total: number;
+        };
+        StartSubmissionRequest: {
+            /** Format: uuid */
+            resource_id: string;
+            /** Format: uuid */
+            booking_id: string;
+        };
+        SaveAnswersRequest: {
+            answers: {
+                [key: string]: string[];
+            };
+        };
+        GradeSubmissionRequest: {
+            score?: number | null;
+            feedback: string;
         };
         AdminReviewList: {
             reviews: components["schemas"]["AdminReview"][];
@@ -3306,6 +3556,327 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             /** @description The lesson is not `confirmed` / `completed` (`dispute_not_allowed`), or it already has an open dispute (`dispute_exists`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listBookingResources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The lesson's attachments. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttachedResourceList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    attachBookingResource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttachResourceRequest"];
+            };
+        };
+        responses: {
+            /** @description The created attachment. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttachedResource"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The caller is not the teacher for this lesson, or does not own the resource (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description `resource_already_attached`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    detachBookingResource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                attachmentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detached. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listSubmissionInbox: {
+        parameters: {
+            query?: {
+                status?: "in_progress" | "submitted" | "graded" | "all";
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the inbox. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description `no_teacher_profile`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    startSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartSubmissionRequest"];
+            };
+        };
+        responses: {
+            /** @description The submission (new or already in progress). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Submission"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The caller is not the booking's student (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description `homework_not_assigned` — the resource isn't attached to this booking as homework. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The submission. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Submission"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    saveSubmissionAnswers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveAnswersRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated submission. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Submission"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description `invalid_state` — the submission is no longer `in_progress`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    submitSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The finalized submission. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Submission"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description `invalid_state` — the submission is not `in_progress`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    gradeSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GradeSubmissionRequest"];
+            };
+        };
+        responses: {
+            /** @description The graded submission. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Submission"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The caller is not the teacher-owner of this submission's booking (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description `invalid_state` — the submission is not `submitted`, or is not a writing task. */
             409: {
                 headers: {
                     [name: string]: unknown;

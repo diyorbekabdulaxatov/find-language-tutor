@@ -118,6 +118,7 @@ func (h *Handler) List(c *gin.Context) {
 	}
 	reviews := make([]*BookingReview, len(bs))
 	disputes := make([]*BookingDispute, len(bs))
+	resourcesAll := make([][]BookingResource, len(bs))
 	for i, b := range bs {
 		if b.Status == StatusCompleted {
 			reviews[i] = h.svc.ReviewFor(c.Request.Context(), b.ID)
@@ -125,8 +126,9 @@ func (h *Handler) List(c *gin.Context) {
 		if b.Status != StatusPendingPayment {
 			disputes[i] = h.svc.OpenDisputeFor(c.Request.Context(), b.ID)
 		}
+		resourcesAll[i] = h.svc.ResourcesFor(c.Request.Context(), b.ID, uid)
 	}
-	c.JSON(http.StatusOK, toBookingListDTO(bs, uid, reviews, disputes))
+	c.JSON(http.StatusOK, toBookingListDTO(bs, uid, reviews, disputes, resourcesAll))
 }
 
 // Get handles GET /v1/bookings/:id.
@@ -262,7 +264,8 @@ func (h *Handler) annotate(c *gin.Context, dto bookingDTO, b Booking, viewerID u
 	if b.Status != StatusPendingPayment {
 		dispute = h.svc.OpenDisputeFor(ctx, b.ID)
 	}
-	return withDispute(withReview(dto, b, viewerID, review), b, viewerID, dispute)
+	dto = withDispute(withReview(dto, b, viewerID, review), b, viewerID, dispute)
+	return withResources(dto, h.svc.ResourcesFor(ctx, b.ID, viewerID))
 }
 
 // callerAndID pulls the authenticated user id and the :id path param, writing

@@ -8,6 +8,12 @@
 import { browserApi } from "@/features/auth/browser-client";
 import type { components } from "@/lib/api/schema";
 import type { Money } from "@/types/teacher";
+import type {
+  ResourceKind,
+  ResourceStatus,
+  ResourceType,
+  SubmissionStatus,
+} from "@/features/resources/types";
 
 export type BookingStatus = components["schemas"]["BookingStatus"];
 
@@ -65,6 +71,21 @@ export interface Dispute {
   resolvedAt: string | null;
 }
 
+/** One resource attached to a booking (summary only — no quiz content; see
+ *  `listBookingAttachments` in `@/features/resources/api` for the full view). */
+export interface BookingResource {
+  id: string;
+  resourceId: string;
+  kind: ResourceKind;
+  position: number;
+  dueAt: string | null;
+  type: ResourceType;
+  title: string;
+  resourceStatus: ResourceStatus;
+  /** The viewer's own submission status; "" when not the student or not started. */
+  submissionStatus: SubmissionStatus;
+}
+
 export interface Booking {
   id: string;
   status: BookingStatus;
@@ -88,6 +109,8 @@ export interface Booking {
   canRaiseDispute: boolean;
   /** the booking's open dispute, if any (visible to both participants). */
   openDispute: OpenDispute | null;
+  /** attached materials / homework, summary only. Always an array. */
+  resources: BookingResource[];
   teacher: {
     slug: string;
     displayName: string;
@@ -153,6 +176,20 @@ const money = (m: WireMoney): Money => ({
   currency: m.currency,
 });
 
+function toBookingResource(r: components["schemas"]["BookingResource"]): BookingResource {
+  return {
+    id: r.id,
+    resourceId: r.resource_id,
+    kind: r.kind,
+    position: r.position,
+    dueAt: r.due_at,
+    type: r.type,
+    title: r.title,
+    resourceStatus: r.resource_status,
+    submissionStatus: r.submission_status,
+  };
+}
+
 function toBooking(b: WireBooking): Booking {
   // `payment` / `meeting_url` are absent from list responses; read defensively.
   const wp = (b as { payment?: components["schemas"]["BookingPayment"] | null })
@@ -196,6 +233,7 @@ function toBooking(b: WireBooking): Booking {
           createdAt: b.open_dispute.created_at,
         }
       : null,
+    resources: (b.resources ?? []).map(toBookingResource),
     teacher: {
       slug: b.teacher.slug,
       displayName: b.teacher.display_name,

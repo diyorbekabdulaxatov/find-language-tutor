@@ -12,6 +12,80 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const attachBookingResource = `-- name: AttachBookingResource :one
+
+WITH ins AS (
+    INSERT INTO booking_resources (booking_id, resource_id, kind, assigned_by, due_at, position)
+    VALUES (
+        $1, $2, $3,
+        $4, $5,
+        COALESCE((SELECT max(position) + 1 FROM booking_resources WHERE booking_id = $1), 0)
+    )
+    RETURNING id, booking_id, resource_id, kind, position, assigned_by, due_at, created_at
+)
+SELECT ins.id, ins.booking_id, ins.resource_id, ins.kind, ins.position, ins.assigned_by, ins.due_at, ins.created_at,
+       r.type, r.title, r.instructions, r.status, r.content
+FROM ins
+JOIN resources r ON r.id = ins.resource_id
+`
+
+type AttachBookingResourceParams struct {
+	BookingID  uuid.UUID
+	ResourceID uuid.UUID
+	Kind       string
+	AssignedBy uuid.UUID
+	DueAt      pgtype.Timestamptz
+}
+
+type AttachBookingResourceRow struct {
+	ID           uuid.UUID
+	BookingID    uuid.UUID
+	ResourceID   uuid.UUID
+	Kind         string
+	Position     int32
+	AssignedBy   uuid.UUID
+	DueAt        pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
+	Type         string
+	Title        string
+	Instructions string
+	Status       string
+	Content      []byte
+}
+
+// Lesson resources (phase A2/A3): attaching a resource to a booking, and the
+// student's submissions against it.
+// position is the current attachment count for the booking, computed here so
+// the insert stays a single statement. A duplicate (booking_id, resource_id)
+// raises SQLSTATE 23505 on the table's UNIQUE constraint, mapped by the
+// repository to ErrAlreadyAttached — race-safe, never a check-then-insert.
+func (q *Queries) AttachBookingResource(ctx context.Context, arg AttachBookingResourceParams) (AttachBookingResourceRow, error) {
+	row := q.db.QueryRow(ctx, attachBookingResource,
+		arg.BookingID,
+		arg.ResourceID,
+		arg.Kind,
+		arg.AssignedBy,
+		arg.DueAt,
+	)
+	var i AttachBookingResourceRow
+	err := row.Scan(
+		&i.ID,
+		&i.BookingID,
+		&i.ResourceID,
+		&i.Kind,
+		&i.Position,
+		&i.AssignedBy,
+		&i.DueAt,
+		&i.CreatedAt,
+		&i.Type,
+		&i.Title,
+		&i.Instructions,
+		&i.Status,
+		&i.Content,
+	)
+	return i, err
+}
+
 const countTeacherResources = `-- name: CountTeacherResources :one
 SELECT count(*)
 FROM resources
@@ -35,6 +109,26 @@ func (q *Queries) CountTeacherResources(ctx context.Context, arg CountTeacherRes
 		arg.Status,
 		arg.IncludeArchived,
 	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTeacherSubmissionInbox = `-- name: CountTeacherSubmissionInbox :one
+SELECT count(*)
+FROM submissions s
+JOIN resources r ON r.id = s.resource_id
+WHERE r.teacher_id = $1
+  AND ($2::text IS NULL OR s.status = $2::text)
+`
+
+type CountTeacherSubmissionInboxParams struct {
+	TeacherID uuid.UUID
+	Status    pgtype.Text
+}
+
+func (q *Queries) CountTeacherSubmissionInbox(ctx context.Context, arg CountTeacherSubmissionInboxParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTeacherSubmissionInbox, arg.TeacherID, arg.Status)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -82,6 +176,17 @@ func (q *Queries) CreateResource(ctx context.Context, arg CreateResourceParams) 
 	return i, err
 }
 
+const deleteAllBookingResources = `-- name: DeleteAllBookingResources :exec
+DELETE FROM booking_resources
+`
+
+// Seed-only. booking_resources.booking_id cascades; resource_id has no
+// cascade, so the seed clears attachments before resources.
+func (q *Queries) DeleteAllBookingResources(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteAllBookingResources)
+	return err
+}
+
 const deleteAllResources = `-- name: DeleteAllResources :exec
 DELETE FROM resources
 `
@@ -92,6 +197,18 @@ func (q *Queries) DeleteAllResources(ctx context.Context) error {
 	return err
 }
 
+const deleteAllSubmissions = `-- name: DeleteAllSubmissions :exec
+DELETE FROM submissions
+`
+
+// Seed-only. submissions.booking_id cascades, but resource_id / student_id
+// reference resources / users with no cascade, so the seed clears submissions
+// before those tables.
+func (q *Queries) DeleteAllSubmissions(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteAllSubmissions)
+	return err
+}
+
 const deleteResource = `-- name: DeleteResource :exec
 DELETE FROM resources WHERE id = $1
 `
@@ -99,6 +216,104 @@ DELETE FROM resources WHERE id = $1
 func (q *Queries) DeleteResource(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteResource, id)
 	return err
+}
+
+const detachBookingResource = `-- name: DetachBookingResource :execrows
+DELETE FROM booking_resources WHERE id = $1 AND booking_id = $2
+`
+
+type DetachBookingResourceParams struct {
+	ID        uuid.UUID
+	BookingID uuid.UUID
+}
+
+func (q *Queries) DetachBookingResource(ctx context.Context, arg DetachBookingResourceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, detachBookingResource, arg.ID, arg.BookingID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const fileAssetAccessibleToStudent = `-- name: FileAssetAccessibleToStudent :one
+SELECT EXISTS(
+    SELECT 1
+    FROM booking_resources br
+    JOIN resources res ON res.id = br.resource_id
+    JOIN bookings b ON b.id = br.booking_id
+    WHERE b.student_id = $1
+      AND (
+          (res.content ->> 'file_asset_id') = $2::text
+          OR (res.content ->> 'audio_asset_id') = $2::text
+      )
+) AS accessible
+`
+
+type FileAssetAccessibleToStudentParams struct {
+	RequesterID uuid.UUID
+	FileAssetID string
+}
+
+// Widens files.Download beyond owner-only: true iff some resource whose
+// content carries this file_asset_id / audio_asset_id is attached to a
+// booking belonging to this student.
+func (q *Queries) FileAssetAccessibleToStudent(ctx context.Context, arg FileAssetAccessibleToStudentParams) (bool, error) {
+	row := q.db.QueryRow(ctx, fileAssetAccessibleToStudent, arg.RequesterID, arg.FileAssetID)
+	var accessible bool
+	err := row.Scan(&accessible)
+	return accessible, err
+}
+
+const getBookingResourceByPair = `-- name: GetBookingResourceByPair :one
+SELECT br.id, br.booking_id, br.resource_id, br.kind, br.position, br.assigned_by, br.due_at, br.created_at,
+       r.type, r.title, r.instructions, r.status, r.content
+FROM booking_resources br
+JOIN resources r ON r.id = br.resource_id
+WHERE br.booking_id = $1 AND br.resource_id = $2
+`
+
+type GetBookingResourceByPairParams struct {
+	BookingID  uuid.UUID
+	ResourceID uuid.UUID
+}
+
+type GetBookingResourceByPairRow struct {
+	ID           uuid.UUID
+	BookingID    uuid.UUID
+	ResourceID   uuid.UUID
+	Kind         string
+	Position     int32
+	AssignedBy   uuid.UUID
+	DueAt        pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
+	Type         string
+	Title        string
+	Instructions string
+	Status       string
+	Content      []byte
+}
+
+// Is this resource attached to this booking, and as what kind? Backs the
+// "homework assigned on this booking" check before a submission may start.
+func (q *Queries) GetBookingResourceByPair(ctx context.Context, arg GetBookingResourceByPairParams) (GetBookingResourceByPairRow, error) {
+	row := q.db.QueryRow(ctx, getBookingResourceByPair, arg.BookingID, arg.ResourceID)
+	var i GetBookingResourceByPairRow
+	err := row.Scan(
+		&i.ID,
+		&i.BookingID,
+		&i.ResourceID,
+		&i.Kind,
+		&i.Position,
+		&i.AssignedBy,
+		&i.DueAt,
+		&i.CreatedAt,
+		&i.Type,
+		&i.Title,
+		&i.Instructions,
+		&i.Status,
+		&i.Content,
+	)
+	return i, err
 }
 
 const getResource = `-- name: GetResource :one
@@ -123,6 +338,231 @@ func (q *Queries) GetResource(ctx context.Context, id uuid.UUID) (Resource, erro
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getSubmissionByID = `-- name: GetSubmissionByID :one
+SELECT id, resource_id, student_id, context, booking_id, status, answers,
+       auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
+       submitted_at, created_at, updated_at
+FROM submissions
+WHERE id = $1
+`
+
+func (q *Queries) GetSubmissionByID(ctx context.Context, id uuid.UUID) (Submission, error) {
+	row := q.db.QueryRow(ctx, getSubmissionByID, id)
+	var i Submission
+	err := row.Scan(
+		&i.ID,
+		&i.ResourceID,
+		&i.StudentID,
+		&i.Context,
+		&i.BookingID,
+		&i.Status,
+		&i.Answers,
+		&i.AutoScore,
+		&i.AutoMax,
+		&i.TeacherScore,
+		&i.TeacherFeedback,
+		&i.GradedBy,
+		&i.GradedAt,
+		&i.SubmittedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserContact = `-- name: GetUserContact :one
+SELECT email::text AS email, display_name FROM users WHERE id = $1
+`
+
+type GetUserContactRow struct {
+	Email       string
+	DisplayName string
+}
+
+// A plain contact lookup, used only for the grading-done email.
+func (q *Queries) GetUserContact(ctx context.Context, id uuid.UUID) (GetUserContactRow, error) {
+	row := q.db.QueryRow(ctx, getUserContact, id)
+	var i GetUserContactRow
+	err := row.Scan(&i.Email, &i.DisplayName)
+	return i, err
+}
+
+const gradeSubmission = `-- name: GradeSubmission :one
+UPDATE submissions
+SET teacher_score    = $1,
+    teacher_feedback = $2,
+    graded_by        = $3,
+    graded_at        = $4,
+    status           = 'graded',
+    updated_at       = now()
+WHERE id = $5
+RETURNING id, resource_id, student_id, context, booking_id, status, answers,
+          auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
+          submitted_at, created_at, updated_at
+`
+
+type GradeSubmissionParams struct {
+	TeacherScore    pgtype.Int4
+	TeacherFeedback string
+	GradedBy        uuid.NullUUID
+	GradedAt        pgtype.Timestamptz
+	ID              uuid.UUID
+}
+
+// Only a `writing` submission reaches this (enforced in the service);
+// teacher_score is nullable — a teacher may grade with feedback only.
+func (q *Queries) GradeSubmission(ctx context.Context, arg GradeSubmissionParams) (Submission, error) {
+	row := q.db.QueryRow(ctx, gradeSubmission,
+		arg.TeacherScore,
+		arg.TeacherFeedback,
+		arg.GradedBy,
+		arg.GradedAt,
+		arg.ID,
+	)
+	var i Submission
+	err := row.Scan(
+		&i.ID,
+		&i.ResourceID,
+		&i.StudentID,
+		&i.Context,
+		&i.BookingID,
+		&i.Status,
+		&i.Answers,
+		&i.AutoScore,
+		&i.AutoMax,
+		&i.TeacherScore,
+		&i.TeacherFeedback,
+		&i.GradedBy,
+		&i.GradedAt,
+		&i.SubmittedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const isResourceAssigned = `-- name: IsResourceAssigned :one
+SELECT EXISTS(SELECT 1 FROM booking_resources WHERE resource_id = $1)
+`
+
+// Phase A2: can this resource be deleted? True once it has ever been attached
+// to a booking (detaching does not clear this — attach it once, and it is
+// "in use" for delete purposes forever; archive instead).
+func (q *Queries) IsResourceAssigned(ctx context.Context, resourceID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, isResourceAssigned, resourceID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const listBookingResources = `-- name: ListBookingResources :many
+SELECT br.id, br.booking_id, br.resource_id, br.kind, br.position, br.assigned_by, br.due_at, br.created_at,
+       r.type, r.title, r.instructions, r.status, r.content
+FROM booking_resources br
+JOIN resources r ON r.id = br.resource_id
+WHERE br.booking_id = $1
+ORDER BY br.position, br.id
+`
+
+type ListBookingResourcesRow struct {
+	ID           uuid.UUID
+	BookingID    uuid.UUID
+	ResourceID   uuid.UUID
+	Kind         string
+	Position     int32
+	AssignedBy   uuid.UUID
+	DueAt        pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
+	Type         string
+	Title        string
+	Instructions string
+	Status       string
+	Content      []byte
+}
+
+// A booking's attachments, teacher-ordered, each with its resource's display
+// fields joined in (title/type/status/content) so the caller never N+1s.
+func (q *Queries) ListBookingResources(ctx context.Context, bookingID uuid.UUID) ([]ListBookingResourcesRow, error) {
+	rows, err := q.db.Query(ctx, listBookingResources, bookingID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListBookingResourcesRow{}
+	for rows.Next() {
+		var i ListBookingResourcesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.BookingID,
+			&i.ResourceID,
+			&i.Kind,
+			&i.Position,
+			&i.AssignedBy,
+			&i.DueAt,
+			&i.CreatedAt,
+			&i.Type,
+			&i.Title,
+			&i.Instructions,
+			&i.Status,
+			&i.Content,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSubmissionsForBooking = `-- name: ListSubmissionsForBooking :many
+SELECT id, resource_id, student_id, context, booking_id, status, answers,
+       auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
+       submitted_at, created_at, updated_at
+FROM submissions
+WHERE booking_id = $1
+`
+
+// Every submission filed against one booking's homeworks. A booking has
+// exactly one student, so this never needs a student filter of its own.
+func (q *Queries) ListSubmissionsForBooking(ctx context.Context, bookingID uuid.NullUUID) ([]Submission, error) {
+	rows, err := q.db.Query(ctx, listSubmissionsForBooking, bookingID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Submission{}
+	for rows.Next() {
+		var i Submission
+		if err := rows.Scan(
+			&i.ID,
+			&i.ResourceID,
+			&i.StudentID,
+			&i.Context,
+			&i.BookingID,
+			&i.Status,
+			&i.Answers,
+			&i.AutoScore,
+			&i.AutoMax,
+			&i.TeacherScore,
+			&i.TeacherFeedback,
+			&i.GradedBy,
+			&i.GradedAt,
+			&i.SubmittedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTeacherResources = `-- name: ListTeacherResources :many
@@ -185,6 +625,44 @@ func (q *Queries) ListTeacherResources(ctx context.Context, arg ListTeacherResou
 	return items, nil
 }
 
+const saveSubmissionAnswers = `-- name: SaveSubmissionAnswers :one
+UPDATE submissions
+SET answers = $1, updated_at = now()
+WHERE id = $2
+RETURNING id, resource_id, student_id, context, booking_id, status, answers,
+          auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
+          submitted_at, created_at, updated_at
+`
+
+type SaveSubmissionAnswersParams struct {
+	Answers []byte
+	ID      uuid.UUID
+}
+
+func (q *Queries) SaveSubmissionAnswers(ctx context.Context, arg SaveSubmissionAnswersParams) (Submission, error) {
+	row := q.db.QueryRow(ctx, saveSubmissionAnswers, arg.Answers, arg.ID)
+	var i Submission
+	err := row.Scan(
+		&i.ID,
+		&i.ResourceID,
+		&i.StudentID,
+		&i.Context,
+		&i.BookingID,
+		&i.Status,
+		&i.Answers,
+		&i.AutoScore,
+		&i.AutoMax,
+		&i.TeacherScore,
+		&i.TeacherFeedback,
+		&i.GradedBy,
+		&i.GradedAt,
+		&i.SubmittedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const setResourceArchived = `-- name: SetResourceArchived :one
 UPDATE resources
 SET archived_at = CASE WHEN $1::bool THEN now() ELSE NULL END,
@@ -244,6 +722,168 @@ func (q *Queries) SetResourceStatus(ctx context.Context, arg SetResourceStatusPa
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const startOrGetSubmission = `-- name: StartOrGetSubmission :one
+INSERT INTO submissions (resource_id, student_id, booking_id, context)
+VALUES ($1, $2, $3, 'lesson')
+ON CONFLICT (resource_id, student_id, booking_id) WHERE booking_id IS NOT NULL
+DO UPDATE SET updated_at = submissions.updated_at
+RETURNING id, resource_id, student_id, context, booking_id, status, answers,
+          auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
+          submitted_at, created_at, updated_at
+`
+
+type StartOrGetSubmissionParams struct {
+	ResourceID uuid.UUID
+	StudentID  uuid.UUID
+	BookingID  uuid.NullUUID
+}
+
+// Idempotent "start homework": a second call for the same
+// (resource_id, student_id, booking_id) returns the existing row rather than
+// erroring — the no-op ON CONFLICT DO UPDATE is required to get RETURNING on
+// a conflict (DO NOTHING skips it).
+func (q *Queries) StartOrGetSubmission(ctx context.Context, arg StartOrGetSubmissionParams) (Submission, error) {
+	row := q.db.QueryRow(ctx, startOrGetSubmission, arg.ResourceID, arg.StudentID, arg.BookingID)
+	var i Submission
+	err := row.Scan(
+		&i.ID,
+		&i.ResourceID,
+		&i.StudentID,
+		&i.Context,
+		&i.BookingID,
+		&i.Status,
+		&i.Answers,
+		&i.AutoScore,
+		&i.AutoMax,
+		&i.TeacherScore,
+		&i.TeacherFeedback,
+		&i.GradedBy,
+		&i.GradedAt,
+		&i.SubmittedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const submitSubmission = `-- name: SubmitSubmission :one
+UPDATE submissions
+SET status       = $1,
+    auto_score   = $2,
+    auto_max     = $3,
+    submitted_at = $4,
+    updated_at   = now()
+WHERE id = $5
+RETURNING id, resource_id, student_id, context, booking_id, status, answers,
+          auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
+          submitted_at, created_at, updated_at
+`
+
+type SubmitSubmissionParams struct {
+	Status      string
+	AutoScore   pgtype.Int4
+	AutoMax     pgtype.Int4
+	SubmittedAt pgtype.Timestamptz
+	ID          uuid.UUID
+}
+
+// Writes the outcome of POST /v1/submissions/{id}/submit. For an
+// auto-gradable type the caller passes status='graded' with the computed
+// auto_score/auto_max; for `writing` it passes status='submitted' with both
+// null.
+func (q *Queries) SubmitSubmission(ctx context.Context, arg SubmitSubmissionParams) (Submission, error) {
+	row := q.db.QueryRow(ctx, submitSubmission,
+		arg.Status,
+		arg.AutoScore,
+		arg.AutoMax,
+		arg.SubmittedAt,
+		arg.ID,
+	)
+	var i Submission
+	err := row.Scan(
+		&i.ID,
+		&i.ResourceID,
+		&i.StudentID,
+		&i.Context,
+		&i.BookingID,
+		&i.Status,
+		&i.Answers,
+		&i.AutoScore,
+		&i.AutoMax,
+		&i.TeacherScore,
+		&i.TeacherFeedback,
+		&i.GradedBy,
+		&i.GradedAt,
+		&i.SubmittedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const teacherSubmissionInbox = `-- name: TeacherSubmissionInbox :many
+SELECT s.id, s.resource_id, s.student_id, s.context, s.booking_id, s.status, s.answers,
+       s.auto_score, s.auto_max, s.teacher_score, s.teacher_feedback, s.graded_by, s.graded_at,
+       s.submitted_at, s.created_at, s.updated_at
+FROM submissions s
+JOIN resources r ON r.id = s.resource_id
+WHERE r.teacher_id = $1
+  AND ($2::text IS NULL OR s.status = $2::text)
+ORDER BY s.submitted_at DESC NULLS LAST, s.id
+LIMIT $4::int OFFSET $3::int
+`
+
+type TeacherSubmissionInboxParams struct {
+	TeacherID  uuid.UUID
+	Status     pgtype.Text
+	PageOffset int32
+	PageLimit  int32
+}
+
+// The grading inbox: a teacher's own resources' submissions, filtered by
+// status (default 'submitted' in the service), newest-submitted-first.
+func (q *Queries) TeacherSubmissionInbox(ctx context.Context, arg TeacherSubmissionInboxParams) ([]Submission, error) {
+	rows, err := q.db.Query(ctx, teacherSubmissionInbox,
+		arg.TeacherID,
+		arg.Status,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Submission{}
+	for rows.Next() {
+		var i Submission
+		if err := rows.Scan(
+			&i.ID,
+			&i.ResourceID,
+			&i.StudentID,
+			&i.Context,
+			&i.BookingID,
+			&i.Status,
+			&i.Answers,
+			&i.AutoScore,
+			&i.AutoMax,
+			&i.TeacherScore,
+			&i.TeacherFeedback,
+			&i.GradedBy,
+			&i.GradedAt,
+			&i.SubmittedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateResource = `-- name: UpdateResource :one

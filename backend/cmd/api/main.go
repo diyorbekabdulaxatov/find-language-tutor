@@ -31,6 +31,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payouts"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/rbac"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/resources"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/resourcesmail"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/reviews"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/teachers"
 )
@@ -186,14 +187,28 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("file store: %w", err)
 	}
-	fileHandler := files.NewHandler(
-		files.NewService(files.NewPostgresRepository(pool), blob, logger),
-		logger,
-	)
-	resourceHandler := resources.NewHandler(
-		resources.NewService(resources.NewPostgresRepository(pool), logger),
-		logger,
-	)
+	fileService := files.NewService(files.NewPostgresRepository(pool), blob, logger)
+
+	// Phase A2/A3: attaching a resource to a lesson (as material or homework)
+	// and the student's submissions against it. Two ports cross the
+	// resources <-> bookings boundary, one each direction:
+	//   - resources.BookingReader (attach/detach/submission authorization) is
+	//     satisfied by bookings.NewResourceBookingGateway purely by structural
+	//     typing, so internal/bookings never imports internal/resources.
+	//   - bookings.ResourceReader (the `resources` summary embedded in a
+	//     BookingDTO) is satisfied by resources.NewBookingGateway, an ordinary
+	//     import of internal/bookings from internal/resources.
+	// Together they keep the dependency graph one-way (resources -> bookings)
+	// with no import cycle. resources also widens files.Download to a student
+	// assigned the file, via files.AssigneeChecker.
+	resourceService := resources.NewService(resources.NewPostgresRepository(pool), logger)
+	resourceService.SetBookingReader(bookings.NewResourceBookingGateway(bookingService))
+	resourceService.SetMailer(resourcesmail.New(mailer, cfg.AppBaseURL, logger))
+	bookingService.SetResourceReader(resources.NewBookingGateway(resourceService))
+	fileService.SetAssigneeChecker(resources.NewFileGateway(resourceService))
+
+	fileHandler := files.NewHandler(fileService, logger)
+	resourceHandler := resources.NewHandler(resourceService, logger)
 
 	router := httpapi.NewRouter(httpapi.Deps{
 		Config:              cfg,

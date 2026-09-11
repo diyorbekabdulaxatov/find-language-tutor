@@ -14,6 +14,7 @@ import {
   CalendarDays,
   LayoutDashboard,
   LogOut,
+  PenLine,
   Shield,
   User as UserIcon,
 } from "lucide-react";
@@ -105,6 +106,12 @@ export function AccountMenu() {
           <Link href="/resources">
             <BookOpen />
             Teaching resources
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/grading">
+            <PenLine />
+            Homework to grade
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>

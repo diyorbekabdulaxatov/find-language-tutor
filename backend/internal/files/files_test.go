@@ -151,3 +151,64 @@ func TestService_Download_OwnerOnly(t *testing.T) {
 		t.Errorf("wrong asset")
 	}
 }
+
+// fakeAssigneeChecker is an in-memory AssigneeChecker.
+type fakeAssigneeChecker struct {
+	allowed map[string]bool
+	err     error
+}
+
+func (c *fakeAssigneeChecker) CanAccess(_ context.Context, fileAssetID, requesterID uuid.UUID) (bool, error) {
+	if c.err != nil {
+		return false, c.err
+	}
+	return c.allowed[fileAssetID.String()+"|"+requesterID.String()], nil
+}
+
+func TestService_Download_NilCheckerPreservesOwnerOnly(t *testing.T) {
+	svc := NewService(&fakeRepo{}, &memBlob{}, discardLogger())
+	ctx := context.Background()
+	owner := uuid.New()
+	a, _ := svc.Upload(ctx, owner, "notes.pdf", "application/pdf", 5, strings.NewReader("hello"))
+
+	// No SetAssigneeChecker call: behavior must be unchanged from phase A1.
+	if _, _, _, err := svc.Download(ctx, a.ID, uuid.New()); !errors.Is(err, ErrForbidden) {
+		t.Errorf("non-owner, nil checker: %v, want ErrForbidden", err)
+	}
+}
+
+func TestService_Download_AssigneeCheckerGrantsAccess(t *testing.T) {
+	svc := NewService(&fakeRepo{}, &memBlob{}, discardLogger())
+	ctx := context.Background()
+	owner, assignee, stranger := uuid.New(), uuid.New(), uuid.New()
+	a, _ := svc.Upload(ctx, owner, "notes.pdf", "application/pdf", 5, strings.NewReader("hello"))
+
+	checker := &fakeAssigneeChecker{allowed: map[string]bool{a.ID.String() + "|" + assignee.String(): true}}
+	svc.SetAssigneeChecker(checker)
+
+	_, body, got, err := svc.Download(ctx, a.ID, assignee)
+	if err != nil {
+		t.Fatalf("assigned student download: %v", err)
+	}
+	body.Close()
+	if got.ID != a.ID {
+		t.Errorf("wrong asset")
+	}
+
+	if _, _, _, err := svc.Download(ctx, a.ID, stranger); !errors.Is(err, ErrForbidden) {
+		t.Errorf("unassigned caller: %v, want ErrForbidden", err)
+	}
+}
+
+func TestService_Download_AssigneeCheckerErrorDeniesAccess(t *testing.T) {
+	svc := NewService(&fakeRepo{}, &memBlob{}, discardLogger())
+	ctx := context.Background()
+	owner := uuid.New()
+	a, _ := svc.Upload(ctx, owner, "notes.pdf", "application/pdf", 5, strings.NewReader("hello"))
+
+	svc.SetAssigneeChecker(&fakeAssigneeChecker{err: errors.New("db down")})
+
+	if _, _, _, err := svc.Download(ctx, a.ID, uuid.New()); !errors.Is(err, ErrForbidden) {
+		t.Errorf("checker error: %v, want ErrForbidden (fail closed)", err)
+	}
+}

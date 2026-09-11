@@ -1094,6 +1094,325 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /v1/bookings/{id}/resources:
+    post:
+      tags: [resources]
+      summary: Attach a resource to a lesson
+      description: >
+        Teacher-owner only. The resource must belong to the same teacher, be
+        `published`, and not archived. `kind: homework` is rejected for
+        `material` / `article` resources (400 — they have no submission flow;
+        attach them as `material` instead). Attaching the same resource to the
+        same booking twice is a 409 (`resource_already_attached`), not a
+        duplicate row.
+      operationId: attachBookingResource
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttachResourceRequest" }
+      responses:
+        "201":
+          description: The created attachment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttachedResource" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not the teacher for this lesson, or does not own the resource (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`resource_already_attached`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      tags: [resources]
+      summary: A lesson's attached resources
+      description: >
+        Participant-only. The teacher sees the full resource content
+        (including quiz answers) and no submission; the student sees every
+        question's `correct` field stripped and their own submission summary
+        per attachment.
+      operationId: listBookingResources
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The lesson's attachments.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttachedResourceList" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/bookings/{id}/resources/{attachmentId}:
+    delete:
+      tags: [resources]
+      summary: Detach a resource from a lesson
+      description: >
+        Teacher-owner only. Any submissions already filed against the
+        resource are kept — detaching does not delete history.
+      operationId: detachBookingResource
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: attachmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: Detached. }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/submissions:
+    post:
+      tags: [resources]
+      summary: Start (or resume) a homework submission
+      description: >
+        Idempotent: a second call for the same resource/booking returns the
+        existing submission rather than erroring. The resource must be
+        attached to the booking as `homework`, the caller must be the
+        booking's student, and the resource type must carry a submission flow
+        (`quiz` / `listening` / `reading` / `writing`).
+      operationId: startSubmission
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StartSubmissionRequest" }
+      responses:
+        "201":
+          description: The submission (new or already in progress).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Submission" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not the booking's student (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`homework_not_assigned` — the resource isn't attached to this booking as homework."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      tags: [resources]
+      summary: The teacher's grading inbox
+      description: >
+        The caller's own resources' submissions. `status` defaults to
+        `submitted` (i.e. `writing` submissions awaiting a grade); `all` lifts
+        the filter. Newest-submitted-first.
+      operationId: listSubmissionInbox
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [in_progress, submitted, graded, all], default: submitted }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of the inbox.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubmissionList" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: "`no_teacher_profile`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/submissions/{id}:
+    patch:
+      tags: [resources]
+      summary: Save draft answers
+      description: Owner-only, and only while the submission is `in_progress`.
+      operationId: saveSubmissionAnswers
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaveAnswersRequest" }
+      responses:
+        "200":
+          description: The updated submission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Submission" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`invalid_state` — the submission is no longer `in_progress`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      tags: [resources]
+      summary: Get one submission
+      description: The owning student or the booking's teacher-owner only.
+      operationId: getSubmission
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The submission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Submission" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/submissions/{id}/submit:
+    post:
+      tags: [resources]
+      summary: Submit a homework
+      description: >
+        Owner-only, only from `in_progress`. `quiz` / `listening` / `reading`
+        auto-grade against the resource's questions and land directly on
+        `graded` (`auto_score` / `auto_max` set, all-or-nothing per question,
+        no partial credit). `writing` lands on `submitted` and awaits a
+        teacher's grade.
+      operationId: submitSubmission
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The finalized submission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Submission" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`invalid_state` — the submission is not `in_progress`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/submissions/{id}/grade:
+    post:
+      tags: [resources]
+      summary: Grade a writing submission
+      description: >
+        Only a `writing` submission, only from `submitted`. Caller must be the
+        teacher-owner of the submission's booking. `score` is nullable — a
+        teacher may grade with feedback only. Best-effort emails the student;
+        a mail failure never fails the request.
+      operationId: gradeSubmission
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GradeSubmissionRequest" }
+      responses:
+        "200":
+          description: The graded submission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Submission" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not the teacher-owner of this submission's booking (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`invalid_state` — the submission is not `submitted`, or is not a writing task."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /v1/payments/webhook:
     post:
       tags: [payments]
@@ -2599,6 +2918,7 @@ components:
         - teacher
         - student
         - payment
+        - resources
       properties:
         id: { type: string, format: uuid }
         status: { $ref: "#/components/schemas/BookingStatus" }
@@ -2673,6 +2993,13 @@ components:
             The booking's payment intent. Null when there is none yet, and
             omitted from list responses (only single-booking responses embed
             it).
+        resources:
+          type: array
+          items: { $ref: "#/components/schemas/BookingResource" }
+          description: >
+            The lesson's attached materials / homework, summary only (no quiz
+            content — see GET /v1/bookings/{id}/resources for that). Always an
+            array, never null.
 
     BookingPayment:
       type: object
@@ -3001,6 +3328,146 @@ components:
         title: { type: string, minLength: 1 }
         instructions: { type: string }
         content: { $ref: "#/components/schemas/ResourceContent" }
+
+    # --- Lesson resources (phase A2/A3): attaching a resource to a booking
+    # as material or homework, and the student's submissions against it. ---
+
+    BookingResource:
+      type: object
+      description: >
+        The summary of one resource attached to a booking, embedded in
+        `Booking.resources`. No quiz content — see GET
+        /v1/bookings/{id}/resources for the full attach view.
+      required: [id, resource_id, kind, position, due_at, type, title, resource_status, submission_status]
+      properties:
+        id: { type: string, format: uuid, description: The attachment id. }
+        resource_id: { type: string, format: uuid }
+        kind: { type: string, enum: [material, homework] }
+        position: { type: integer }
+        due_at: { type: string, format: date-time, nullable: true }
+        type: { $ref: "#/components/schemas/ResourceType" }
+        title: { type: string }
+        resource_status: { type: string, enum: [draft, published] }
+        submission_status:
+          type: string
+          enum: ["", in_progress, submitted, graded]
+          description: >
+            The viewer's own submission status for this homework; empty when
+            the viewer is not the student, or hasn't started it yet.
+
+    AttachResourceRequest:
+      type: object
+      required: [resource_id, kind]
+      properties:
+        resource_id: { type: string, format: uuid }
+        kind: { type: string, enum: [material, homework] }
+        due_at: { type: string, format: date-time }
+
+    SubmissionSummary:
+      type: object
+      description: The caller's own submission for an attached resource (student view only).
+      required: [id, status, auto_score, auto_max, teacher_score, submitted_at, graded_at]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [in_progress, submitted, graded] }
+        auto_score: { type: integer, nullable: true }
+        auto_max: { type: integer, nullable: true }
+        teacher_score: { type: integer, nullable: true }
+        submitted_at: { type: string, format: date-time, nullable: true }
+        graded_at: { type: string, format: date-time, nullable: true }
+
+    AttachedResource:
+      type: object
+      description: >
+        One booking attachment with its resource's full display content — the
+        response shape of POST/GET /v1/bookings/{id}/resources. When the caller
+        is the booking's student, every question's `correct` field is
+        stripped from `content`.
+      required: [id, resource_id, kind, position, due_at, type, title, instructions, resource_status, content, submission]
+      properties:
+        id: { type: string, format: uuid }
+        resource_id: { type: string, format: uuid }
+        kind: { type: string, enum: [material, homework] }
+        position: { type: integer }
+        due_at: { type: string, format: date-time, nullable: true }
+        type: { $ref: "#/components/schemas/ResourceType" }
+        title: { type: string }
+        instructions: { type: string }
+        resource_status: { type: string, enum: [draft, published] }
+        content: { $ref: "#/components/schemas/ResourceContent" }
+        submission:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/SubmissionSummary" }]
+          description: The caller's own submission summary; null for the teacher viewer, or a student who hasn't started.
+
+    AttachedResourceList:
+      type: object
+      required: [attachments]
+      properties:
+        attachments: { type: array, items: { $ref: "#/components/schemas/AttachedResource" } }
+
+    Submission:
+      type: object
+      required:
+        - id
+        - resource_id
+        - booking_id
+        - status
+        - answers
+        - auto_score
+        - auto_max
+        - teacher_score
+        - teacher_feedback
+        - submitted_at
+        - graded_at
+        - created_at
+        - updated_at
+      properties:
+        id: { type: string, format: uuid }
+        resource_id: { type: string, format: uuid }
+        booking_id: { type: string, format: uuid }
+        status: { type: string, enum: [in_progress, submitted, graded] }
+        answers:
+          type: object
+          description: Question id -> the student's chosen choice ids (single/multi) or free-text answer (text, one-element array).
+          additionalProperties: { type: array, items: { type: string } }
+        auto_score: { type: integer, nullable: true }
+        auto_max: { type: integer, nullable: true }
+        teacher_score: { type: integer, nullable: true, description: Nullable — a teacher may grade with feedback only. }
+        teacher_feedback: { type: string }
+        submitted_at: { type: string, format: date-time, nullable: true }
+        graded_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    SubmissionList:
+      type: object
+      required: [submissions, total]
+      properties:
+        submissions: { type: array, items: { $ref: "#/components/schemas/Submission" } }
+        total: { type: integer, description: Total matches, not just this page. }
+
+    StartSubmissionRequest:
+      type: object
+      required: [resource_id, booking_id]
+      properties:
+        resource_id: { type: string, format: uuid }
+        booking_id: { type: string, format: uuid }
+
+    SaveAnswersRequest:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: object
+          additionalProperties: { type: array, items: { type: string } }
+
+    GradeSubmissionRequest:
+      type: object
+      required: [feedback]
+      properties:
+        score: { type: integer, nullable: true }
+        feedback: { type: string }
 
     AdminReviewList:
       type: object

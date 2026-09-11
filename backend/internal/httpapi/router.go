@@ -75,11 +75,13 @@ func NewRouter(d Deps) *gin.Engine {
 	bookings.RegisterRoutes(bookingRoutes, d.BookingHandler, d.AuthMiddleware)
 	reviews.RegisterBookingRoutes(bookingRoutes, d.ReviewHandler, d.AuthMiddleware)
 	disputes.RegisterBookingRoutes(bookingRoutes, d.DisputeHandler, d.AuthMiddleware)
+	resources.RegisterBookingRoutes(bookingRoutes, d.ResourceHandler, d.AuthMiddleware)
 
 	payments.RegisterRoutes(v1.Group("/payments"), d.PaymentHandler, d.AuthMiddleware)
 
 	files.RegisterRoutes(v1, d.FileHandler, d.AuthMiddleware)
 	resources.RegisterRoutes(v1.Group("/resources"), d.ResourceHandler, d.AuthMiddleware)
+	resources.RegisterSubmissionRoutes(v1.Group("/submissions"), d.ResourceHandler, d.AuthMiddleware)
 
 	// /v1/admin is behind a valid access token; each route then enforces its
 	// own RBAC permission via the guard.
