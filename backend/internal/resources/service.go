@@ -511,6 +511,20 @@ func (s *Service) Grade(ctx context.Context, teacherCallerID, submissionID uuid.
 	if err != nil {
 		return Submission{}, err
 	}
+
+	// Authorize before any state-revealing validation below — otherwise a
+	// caller who isn't even a participant on the booking could distinguish
+	// "not writing type" (400) from "not submitted yet" (409) via a valid but
+	// not-theirs submission id, learning submission state before being told
+	// they're forbidden.
+	teacherOwnerID, _, found, err := s.booking(ctx, sub.BookingID)
+	if err != nil {
+		return Submission{}, err
+	}
+	if !found || teacherOwnerID == uuid.Nil || teacherOwnerID != teacherCallerID {
+		return Submission{}, ErrForbidden
+	}
+
 	res, err := s.repo.ByID(ctx, sub.ResourceID)
 	if err != nil {
 		return Submission{}, err
@@ -520,14 +534,6 @@ func (s *Service) Grade(ctx context.Context, teacherCallerID, submissionID uuid.
 	}
 	if sub.Status != SubmissionSubmitted {
 		return Submission{}, ErrInvalidSubmissionState
-	}
-
-	teacherOwnerID, _, found, err := s.booking(ctx, sub.BookingID)
-	if err != nil {
-		return Submission{}, err
-	}
-	if !found || teacherOwnerID == uuid.Nil || teacherOwnerID != teacherCallerID {
-		return Submission{}, ErrForbidden
 	}
 
 	graded, err := s.repo.GradeSubmission(ctx, submissionID, score, strings.TrimSpace(feedback), teacherCallerID, s.now().UTC())
