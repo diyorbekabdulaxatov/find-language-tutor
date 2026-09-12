@@ -227,9 +227,10 @@ func toLearnSectionDTO(sec LearnSection) learnSectionDTO {
 }
 
 type learnDetailDTO struct {
-	ID       string            `json:"id"`
-	Title    string            `json:"title"`
-	Sections []learnSectionDTO `json:"sections"`
+	ID           string            `json:"id"`
+	Title        string            `json:"title"`
+	EnrollmentID *string           `json:"enrollment_id"`
+	Sections     []learnSectionDTO `json:"sections"`
 }
 
 func toLearnDetailDTO(d LearnDetail) learnDetailDTO {
@@ -237,7 +238,12 @@ func toLearnDetailDTO(d LearnDetail) learnDetailDTO {
 	for i, sec := range d.Sections {
 		sections[i] = toLearnSectionDTO(sec)
 	}
-	return learnDetailDTO{ID: d.Course.ID.String(), Title: d.Course.Title, Sections: sections}
+	dto := learnDetailDTO{ID: d.Course.ID.String(), Title: d.Course.Title, Sections: sections}
+	if d.EnrollmentID != nil {
+		v := d.EnrollmentID.String()
+		dto.EnrollmentID = &v
+	}
+	return dto
 }
 
 type recordProgressRequest struct {

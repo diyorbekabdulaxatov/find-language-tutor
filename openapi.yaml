@@ -4300,10 +4300,18 @@ components:
 
     CourseLearnDetail:
       type: object
-      required: [id, title, sections]
+      required: [id, title, enrollment_id, sections]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
+        enrollment_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            Null for the owner-preview view (no enrollment to start a
+            submission against); set for an enrolled student — pass it as
+            `enrollment_id` to POST /v1/submissions for a resource item.
         sections: { type: array, items: { $ref: "#/components/schemas/CourseLearnSection" } }
 
     AdminReviewList:

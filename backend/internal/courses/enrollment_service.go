@@ -261,7 +261,11 @@ func (s *Service) Learn(ctx context.Context, callerID, courseID uuid.UUID) (Lear
 	for i, sec := range sections {
 		out[i] = LearnSection{Section: sec, Items: bySection[sec.ID]}
 	}
-	return LearnDetail{Course: c, Sections: out}, nil
+	var enrollmentID *uuid.UUID
+	if enrollment != nil {
+		enrollmentID = &enrollment.ID
+	}
+	return LearnDetail{Course: c, EnrollmentID: enrollmentID, Sections: out}, nil
 }
 
 // RecordProgress upserts a video item's playback position and/or completion.

@@ -166,6 +166,10 @@ type LearnSection struct {
 // LearnDetail is the full curriculum tree for the enrolled-student (or
 // owner-preview) player.
 type LearnDetail struct {
-	Course   Course
-	Sections []LearnSection
+	Course Course
+	// EnrollmentID is nil for the owner-preview view (there is no enrollment
+	// row to start a submission against). The frontend needs it to call
+	// POST /v1/submissions {resource_id, enrollment_id} for a resource item.
+	EnrollmentID *uuid.UUID
+	Sections     []LearnSection
 }

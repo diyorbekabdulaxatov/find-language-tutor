@@ -518,6 +518,9 @@ func TestService_Learn_EnrolledOrOwner(t *testing.T) {
 	if learn.Sections[0].Items[0].Progress.Status != ItemInProgress {
 		t.Errorf("owner preview should show not-started progress: %+v", learn.Sections[0].Items[0].Progress)
 	}
+	if learn.EnrollmentID != nil {
+		t.Errorf("owner preview has no enrollment, want nil EnrollmentID, got %v", *learn.EnrollmentID)
+	}
 
 	// a random caller: forbidden.
 	if _, err := e.svc.Learn(ctx, uuid.New(), d.Course.ID); !errors.Is(err, ErrForbidden) {
@@ -539,6 +542,16 @@ func TestService_Learn_EnrolledOrOwner(t *testing.T) {
 	}
 	if learn.Sections[0].Items[0].Progress.VideoPositionSeconds != 10 {
 		t.Errorf("student's own progress should show up: %+v", learn.Sections[0].Items[0].Progress)
+	}
+	if learn.EnrollmentID == nil {
+		t.Fatal("an enrolled student's Learn() should carry their EnrollmentID")
+	}
+	enrollment, ok, err := e.repo.EnrollmentByCourseAndStudent(ctx, d.Course.ID, student)
+	if err != nil || !ok {
+		t.Fatalf("load enrollment: ok=%v err=%v", ok, err)
+	}
+	if *learn.EnrollmentID != enrollment.ID {
+		t.Errorf("EnrollmentID = %v, want %v", *learn.EnrollmentID, enrollment.ID)
 	}
 }
 
