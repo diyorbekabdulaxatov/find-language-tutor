@@ -20,14 +20,22 @@ type multiAssigneeChecker []files.AssigneeChecker
 var _ files.AssigneeChecker = multiAssigneeChecker(nil)
 
 func (m multiAssigneeChecker) CanAccess(ctx context.Context, fileAssetID, requesterID uuid.UUID) (bool, error) {
+	// A checker erroring doesn't short-circuit the rest: one widening having a
+	// transient problem shouldn't deny access a sibling widening would have
+	// granted. The first error is only surfaced if nothing ends up granting
+	// access, so Download still gets to log it.
+	var firstErr error
 	for _, checker := range m {
 		ok, err := checker.CanAccess(ctx, fileAssetID, requesterID)
 		if err != nil {
-			return false, err
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
 		if ok {
 			return true, nil
 		}
 	}
-	return false, nil
+	return false, firstErr
 }
