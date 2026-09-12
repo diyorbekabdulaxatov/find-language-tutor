@@ -123,6 +123,20 @@ type Querier interface {
 	// no-show) or 'admin' (the operator force-cancel override). The service picks
 	// the value; the column's CHECK constraint is the guard.
 	CancelBooking(ctx context.Context, arg CancelBookingParams) error
+	// Catalog: published, non-archived courses only, from an approved teacher
+	// (mirrors GetBookingTeacherContext's status = 'approved' gate — a suspended
+	// teacher's courses shouldn't surface in the public marketplace even if the
+	// course row itself is still 'published').
+	// sort: 'price_asc' | 'price_desc' | anything else (including "" / 'newest' /
+	// 'recommended' — there is no rating-based ranking for courses yet) falls
+	// back to newest-first. The two CASE columns are NULL for every row unless
+	// their own sort is selected, so they never affect ordering otherwise and the
+	// final created_at/id tiebreak always applies.
+	CatalogListCourses(ctx context.Context, arg CatalogListCoursesParams) ([]CatalogListCoursesRow, error)
+	// Marks an item complete unconditionally (a course-embedded resource's
+	// submission reaching submitted/graded, via resources.CourseProgress). Never
+	// regresses video_position_seconds or an already-recorded completed_at.
+	CompleteItemProgress(ctx context.Context, arg CompleteItemProgressParams) (CourseItemProgress, error)
 	// System transition (no participant check): pending_payment -> confirmed on a
 	// successful authorization webhook. Guarded so a replay cannot resurrect a
 	// cancelled booking.
@@ -132,6 +146,7 @@ type Querier interface {
 	// Invalidate a user's outstanding tokens of a purpose before issuing a new one,
 	// so only the newest link works.
 	ConsumeUserAuthTokens(ctx context.Context, arg ConsumeUserAuthTokensParams) error
+	CountCatalogCourses(ctx context.Context, arg CountCatalogCoursesParams) (int64, error)
 	CountTeacherCourses(ctx context.Context, arg CountTeacherCoursesParams) (int64, error)
 	CountTeacherResources(ctx context.Context, arg CountTeacherResourcesParams) (int64, error)
 	CountTeacherReviews(ctx context.Context, teacherID uuid.UUID) (int64, error)
@@ -144,6 +159,14 @@ type Querier interface {
 	// Course authoring (phase C1): a teacher's courses, and the curriculum tree
 	// (sections -> items) each one owns.
 	CreateCourse(ctx context.Context, arg CreateCourseParams) (Course, error)
+	// Phase C2: course-purchase payments. A sibling of payments.sql's booking
+	// flow — same status lifecycle and webhook-idempotency shape, keyed to
+	// (course_id, student_id) instead of booking_id. No payout-ledger write here;
+	// revenue-share for course sales is a future phase.
+	// Idempotent: a second call for the same (course_id, student_id) is a no-op
+	// and still returns the existing row (mirrors CreatePayment's ON CONFLICT
+	// DO UPDATE no-op trick).
+	CreateCoursePayment(ctx context.Context, arg CreateCoursePaymentParams) (CoursePayment, error)
 	// File assets (phase A1): the app's handle to a blob in the store.
 	CreateFileAsset(ctx context.Context, arg CreateFileAssetParams) (FileAsset, error)
 	// Payments module: one payment intent per booking, the webhook-event log that
@@ -214,6 +237,10 @@ type Querier interface {
 	DeleteTeacherFocus(ctx context.Context, teacherID uuid.UUID) error
 	DeleteTeacherLanguages(ctx context.Context, teacherID uuid.UUID) error
 	DetachBookingResource(ctx context.Context, arg DetachBookingResourceParams) (int64, error)
+	// Does this enrollment's course actually embed resourceID as a curriculum
+	// item? The course-context equivalent of GetBookingResourceByPair's "is this
+	// actually attached" check.
+	EnrollmentGrantsResource(ctx context.Context, arg EnrollmentGrantsResourceParams) (bool, error)
 	// Widens files.Download beyond owner-only: true iff some resource whose
 	// content carries this file_asset_id / audio_asset_id is attached to a
 	// booking belonging to this student.
@@ -238,6 +265,12 @@ type Querier interface {
 	GetBookingTeacherContext(ctx context.Context, slug string) (GetBookingTeacherContextRow, error)
 	GetCourse(ctx context.Context, id uuid.UUID) (Course, error)
 	GetCourseItem(ctx context.Context, id uuid.UUID) (CourseItem, error)
+	// Resolves the curriculum item a course-context submission's resource
+	// corresponds to, scoped to the enrollment's own course. Backs
+	// resources.CourseProgress.ItemCompleted.
+	GetCourseItemForEnrollmentResource(ctx context.Context, arg GetCourseItemForEnrollmentResourceParams) (CourseItem, error)
+	GetCoursePaymentByCourseAndStudent(ctx context.Context, arg GetCoursePaymentByCourseAndStudentParams) (CoursePayment, error)
+	GetCoursePaymentByID(ctx context.Context, id uuid.UUID) (CoursePayment, error)
 	GetCourseSection(ctx context.Context, id uuid.UUID) (CourseSection, error)
 	// Disputes module (phase D): a participant contests a confirmed / completed
 	// lesson, an operator with `disputes.resolve` closes it.
@@ -250,6 +283,11 @@ type Querier interface {
 	// (only confirmed / completed lessons can be disputed).
 	GetDisputeBookingContext(ctx context.Context, id uuid.UUID) (GetDisputeBookingContextRow, error)
 	GetDisputeByID(ctx context.Context, id uuid.UUID) (GetDisputeByIDRow, error)
+	GetEnrollmentByCourseAndStudent(ctx context.Context, arg GetEnrollmentByCourseAndStudentParams) (CourseEnrollment, error)
+	GetEnrollmentByID(ctx context.Context, id uuid.UUID) (CourseEnrollment, error)
+	// Resolves an enrollment's two participants for authorization: the course's
+	// teacher's owning account, and the enrolled student.
+	GetEnrollmentParticipants(ctx context.Context, id uuid.UUID) (GetEnrollmentParticipantsRow, error)
 	GetFileAsset(ctx context.Context, id uuid.UUID) (FileAsset, error)
 	// A token that can still be redeemed: matches the hash + purpose, not consumed,
 	// not expired.
@@ -280,6 +318,13 @@ type Querier interface {
 	GetTeacherBySlug(ctx context.Context, slug string) (Teacher, error)
 	// The teacher profile owned by an account (one per user), or no rows.
 	GetTeacherIDByOwner(ctx context.Context, userID uuid.NullUUID) (uuid.UUID, error)
+	// Phase C2: public catalog, purchase/enrollment, the student player, and
+	// progress tracking.
+	// The account that owns a teacher profile (the reverse of GetTeacherIDByOwner).
+	// Used to resolve who to authorize as "the teacher" for a course (e.g. an
+	// enrollment's grading authorization) without joining through users elsewhere.
+	GetTeacherOwnerID(ctx context.Context, id uuid.UUID) (uuid.NullUUID, error)
+	GetTeacherSummary(ctx context.Context, id uuid.UUID) (GetTeacherSummaryRow, error)
 	GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow, error)
 	// A plain contact lookup, used only for the grading-done email.
@@ -287,10 +332,16 @@ type Querier interface {
 	// Only a `writing` submission reaches this (enforced in the service);
 	// teacher_score is nullable — a teacher may grade with feedback only.
 	GradeSubmission(ctx context.Context, arg GradeSubmissionParams) (Submission, error)
+	InsertCoursePaymentEvent(ctx context.Context, arg InsertCoursePaymentEventParams) error
 	// A second OPEN dispute for the same booking raises SQLSTATE 23505 on
 	// disputes_one_open_per_booking, which the repository maps to ErrDisputeExists
 	// (race-safe, never a check-then-insert).
 	InsertDispute(ctx context.Context, arg InsertDisputeParams) (Dispute, error)
+	// Enrollment.
+	// Insert-first idempotency: a duplicate (course_id, student_id) raises
+	// SQLSTATE 23505 on the table's UNIQUE constraint, mapped by the repository
+	// to load-and-return the existing row instead — never check-then-insert.
+	InsertEnrollment(ctx context.Context, arg InsertEnrollmentParams) (CourseEnrollment, error)
 	// One row per captured booking. teacher_id is copied from the booking, and
 	// available_at opens the clearing window: capture time + PAYOUTS_CLEARING_DAYS.
 	// The row stays 'held' until a payout run settles it (phase E) — nothing flips
@@ -333,8 +384,14 @@ type Querier interface {
 	ListCourseSections(ctx context.Context, courseID uuid.UUID) ([]CourseSection, error)
 	// The whole dispute thread for one booking, newest first.
 	ListDisputesForBooking(ctx context.Context, bookingID uuid.UUID) ([]ListDisputesForBookingRow, error)
+	// "My learning": the student's enrollments, newest first, each with its
+	// course summary and a progress percent computed from two correlated
+	// subqueries (total curriculum items for the course; completed rows for this
+	// specific enrollment) — cheap since a course has at most a few dozen items.
+	ListEnrollmentsForStudent(ctx context.Context, studentID uuid.UUID) ([]ListEnrollmentsForStudentRow, error)
 	ListExperienceForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]ListExperienceForTeachersRow, error)
 	ListFocusForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]TeacherFocu, error)
+	ListItemProgressForEnrollment(ctx context.Context, enrollmentID uuid.UUID) ([]CourseItemProgress, error)
 	ListLanguagesForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]TeacherLanguage, error)
 	ListPermissionsForRoles(ctx context.Context, roleIds []uuid.UUID) ([]RolePermission, error)
 	ListRoles(ctx context.Context) ([]ListRolesRow, error)
@@ -368,6 +425,10 @@ type Querier interface {
 	// locked rather than blocking on them or settling them a second time — and the
 	// loser typically ends up with nothing to pay (409 nothing_to_pay).
 	LockPayablePayoutLedger(ctx context.Context) ([]LockPayablePayoutLedgerRow, error)
+	MarkCoursePaymentAuthorized(ctx context.Context, arg MarkCoursePaymentAuthorizedParams) error
+	MarkCoursePaymentCaptured(ctx context.Context, id uuid.UUID) error
+	MarkCoursePaymentFailed(ctx context.Context, arg MarkCoursePaymentFailedParams) error
+	MarkCoursePaymentRefunded(ctx context.Context, id uuid.UUID) error
 	// A refund reverses the teacher's earning — unless a payout batch already paid
 	// it out, which cannot be un-paid from here (the money has left the platform).
 	MarkLedgerReversed(ctx context.Context, bookingID uuid.UUID) error
@@ -407,6 +468,12 @@ type Querier interface {
 	// two apart, so a lost race renders 409 already_resolved rather than clobbering
 	// another operator's resolution.
 	ResolveDispute(ctx context.Context, arg ResolveDisputeParams) (Dispute, error)
+	// Phase C2: which resource(s) reference this file_asset_id as their
+	// material file or listening audio? Backs FileAssetAccessible's course-based
+	// widening — the caller checks each returned resource id against
+	// resources.EnrollmentReader.StudentResourceAccess, keeping the course-side
+	// check behind that port rather than a raw join into course_items here.
+	ResourceIDsForFileAsset(ctx context.Context, fileAssetID string) ([]uuid.UUID, error)
 	// Reuse-detection hammer: kills every still-active session for a user.
 	RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) error
 	// Marks a session revoked and records the session that replaced it (rotation).
@@ -458,11 +525,23 @@ type Querier interface {
 	// Password reset: replace the hash and bump updated_at. The caller also revokes
 	// every session in the same transaction.
 	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error
+	// Phase C2's course-context sibling of StartOrGetSubmission: idempotent
+	// "start" against submissions_course_uniq instead of submissions_lesson_uniq.
+	// There is no separate "attach" step for courses — the resource IS the
+	// curriculum item, checked by the service via EnrollmentGrantsResource.
+	StartOrGetCourseSubmission(ctx context.Context, arg StartOrGetCourseSubmissionParams) (Submission, error)
 	// Idempotent "start homework": a second call for the same
 	// (resource_id, student_id, booking_id) returns the existing row rather than
 	// erroring — the no-op ON CONFLICT DO UPDATE is required to get RETURNING on
 	// a conflict (DO NOTHING skips it).
 	StartOrGetSubmission(ctx context.Context, arg StartOrGetSubmissionParams) (Submission, error)
+	// Does studentID have SOME active enrollment granting access to resourceID,
+	// independent of which specific enrollment? Backs the course-based widening
+	// of a course-embedded resource's material/audio file.
+	StudentHasResourceAccess(ctx context.Context, arg StudentHasResourceAccessParams) (bool, error)
+	// Backs files.AssigneeChecker's course-based widening: is fileAssetID a video
+	// item's asset in some course the student is actively enrolled in?
+	StudentHasVideoAccess(ctx context.Context, arg StudentHasVideoAccessParams) (bool, error)
 	// Writes the outcome of POST /v1/submissions/{id}/submit. For an
 	// auto-gradable type the caller passes status='graded' with the computed
 	// auto_score/auto_max; for `writing` it passes status='submitted' with both
@@ -474,8 +553,9 @@ type Querier interface {
 	// Slug -> id + owning user, for the ownership check on PATCH /v1/teachers/{slug}.
 	TeacherRefBySlug(ctx context.Context, slug string) (TeacherRefBySlugRow, error)
 	TeacherSlugExists(ctx context.Context, slug string) (bool, error)
-	// The grading inbox: a teacher's own resources' submissions, filtered by
-	// status (default 'submitted' in the service), newest-submitted-first.
+	// The grading inbox: a teacher's own resources' submissions (lesson or
+	// course context alike — both join through resources.teacher_id), filtered
+	// by status (default 'submitted' in the service), newest-submitted-first.
 	TeacherSubmissionInbox(ctx context.Context, arg TeacherSubmissionInboxParams) ([]Submission, error)
 	UnassignRoleFromUser(ctx context.Context, arg UnassignRoleFromUserParams) error
 	// Full replace of the editable fields: title / subtitle / description / cover
@@ -493,6 +573,13 @@ type Querier interface {
 	// Edit the caller's own account. Email is immutable here (changing it needs a
 	// verification flow that does not exist yet).
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error)
+	// Progress.
+	// Merges the given fields into a video item's progress row for a student
+	// driving the player (position updates as they watch; explicit
+	// complete/uncomplete). NULL args (a field the client didn't send) leave the
+	// stored value unchanged. completed=true stamps completed_at once (COALESCE
+	// keeps the first time it was ever set); completed=false clears it.
+	UpsertItemProgress(ctx context.Context, arg UpsertItemProgressParams) (CourseItemProgress, error)
 	UserExists(ctx context.Context, id uuid.UUID) (bool, error)
 }
 

@@ -2,7 +2,9 @@ package resources
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 
@@ -33,4 +35,28 @@ func (g *CourseGateway) ResourceOwnedAndPublished(ctx context.Context, resourceI
 		return false, err
 	}
 	return r.TeacherID == teacherID && r.Status == StatusPublished && r.ArchivedAt == nil, nil
+}
+
+// PublicResource returns resourceID's student-safe content (correct answers
+// stripped via Content.Public(), same stripping the booking-attachment view
+// applies) marshalled to opaque JSON, for embedding in the course player.
+// Phase C2's courses.Service has already authorized the caller (enrolled
+// student or owning teacher) before calling through; this method does not
+// re-check status/ownership beyond "does the resource exist".
+func (g *CourseGateway) PublicResource(ctx context.Context, resourceID uuid.UUID) (courses.CourseResourceView, error) {
+	r, err := g.svc.repo.ByID(ctx, resourceID)
+	if err != nil {
+		return courses.CourseResourceView{}, err
+	}
+	blob, err := json.Marshal(r.Content.Public())
+	if err != nil {
+		return courses.CourseResourceView{}, fmt.Errorf("marshal public resource content: %w", err)
+	}
+	return courses.CourseResourceView{
+		ID:           r.ID,
+		Type:         string(r.Type),
+		Title:        r.Title,
+		Instructions: r.Instructions,
+		Content:      blob,
+	}, nil
 }

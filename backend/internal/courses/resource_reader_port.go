@@ -26,4 +26,10 @@ type ResourceReader interface {
 	// ResourceOwnedAndPublished reports whether resourceID belongs to
 	// teacherID and is published and not archived.
 	ResourceOwnedAndPublished(ctx context.Context, resourceID, teacherID uuid.UUID) (ok bool, err error)
+
+	// PublicResource returns a published resource's student-safe view
+	// (correct answers stripped) for embedding in the course player (phase
+	// C2). courses has no dependency on resources.Content's concrete type —
+	// Content is opaque JSON.
+	PublicResource(ctx context.Context, resourceID uuid.UUID) (CourseResourceView, error)
 }

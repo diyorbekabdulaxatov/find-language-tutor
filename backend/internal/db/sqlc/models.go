@@ -242,6 +242,16 @@ type Course struct {
 	UpdatedAt        pgtype.Timestamptz
 }
 
+type CourseEnrollment struct {
+	ID              uuid.UUID
+	CourseID        uuid.UUID
+	StudentID       uuid.UUID
+	Source          string
+	AmountPaidMinor int64
+	Currency        CurrencyCode
+	CreatedAt       pgtype.Timestamptz
+}
+
 type CourseItem struct {
 	ID           uuid.UUID
 	SectionID    uuid.UUID
@@ -251,6 +261,40 @@ type CourseItem struct {
 	ResourceID   uuid.NullUUID
 	Position     int32
 	CreatedAt    pgtype.Timestamptz
+}
+
+type CourseItemProgress struct {
+	ID                   uuid.UUID
+	EnrollmentID         uuid.UUID
+	ItemID               uuid.UUID
+	Status               string
+	VideoPositionSeconds int32
+	CompletedAt          pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+}
+
+type CoursePayment struct {
+	ID           uuid.UUID
+	CourseID     uuid.UUID
+	StudentID    uuid.UUID
+	Provider     string
+	ProviderRef  pgtype.Text
+	Status       string
+	AmountMinor  int64
+	Currency     CurrencyCode
+	LastError    string
+	AuthorizedAt pgtype.Timestamptz
+	CapturedAt   pgtype.Timestamptz
+	RefundedAt   pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type CoursePaymentEvent struct {
+	EventID    string
+	PaymentID  uuid.UUID
+	Type       string
+	ReceivedAt pgtype.Timestamptz
 }
 
 type CourseSection struct {
@@ -399,6 +443,7 @@ type Submission struct {
 	SubmittedAt     pgtype.Timestamptz
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+	EnrollmentID    uuid.NullUUID
 }
 
 type Teacher struct {

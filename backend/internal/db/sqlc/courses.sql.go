@@ -87,6 +87,163 @@ func (q *Queries) AddCourseSection(ctx context.Context, arg AddCourseSectionPara
 	return i, err
 }
 
+const catalogListCourses = `-- name: CatalogListCourses :many
+
+SELECT
+    c.id, c.teacher_id, c.title, c.subtitle, c.description, c.cover_asset_id,
+    c.price_amount_minor, c.price_currency, c.status, c.ever_published, c.archived_at,
+    c.created_at, c.updated_at,
+    t.slug AS teacher_slug, t.display_name AS teacher_display_name,
+    (SELECT count(*) FROM course_sections cs WHERE cs.course_id = c.id) AS section_count,
+    (SELECT count(*) FROM course_items ci JOIN course_sections cs2 ON cs2.id = ci.section_id WHERE cs2.course_id = c.id) AS item_count
+FROM courses c
+JOIN teachers t ON t.id = c.teacher_id
+WHERE c.status = 'published' AND c.archived_at IS NULL AND t.status = 'approved'
+  AND ($1::text IS NULL OR c.title ILIKE '%' || $1::text || '%' OR c.subtitle ILIKE '%' || $1::text || '%')
+  AND ($2::bigint IS NULL OR c.price_amount_minor <= $2::bigint)
+ORDER BY
+    (CASE WHEN $3::text = 'price_asc'  THEN c.price_amount_minor END) ASC NULLS LAST,
+    (CASE WHEN $3::text = 'price_desc' THEN c.price_amount_minor END) DESC NULLS LAST,
+    c.created_at DESC, c.id
+LIMIT $5::int OFFSET $4::int
+`
+
+type CatalogListCoursesParams struct {
+	Q             pgtype.Text
+	MaxPriceMinor pgtype.Int8
+	Sort          string
+	PageOffset    int32
+	PageLimit     int32
+}
+
+type CatalogListCoursesRow struct {
+	ID                 uuid.UUID
+	TeacherID          uuid.UUID
+	Title              string
+	Subtitle           string
+	Description        string
+	CoverAssetID       uuid.NullUUID
+	PriceAmountMinor   int64
+	PriceCurrency      CurrencyCode
+	Status             string
+	EverPublished      bool
+	ArchivedAt         pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+	TeacherSlug        string
+	TeacherDisplayName string
+	SectionCount       int64
+	ItemCount          int64
+}
+
+// Catalog: published, non-archived courses only, from an approved teacher
+// (mirrors GetBookingTeacherContext's status = 'approved' gate — a suspended
+// teacher's courses shouldn't surface in the public marketplace even if the
+// course row itself is still 'published').
+// sort: 'price_asc' | 'price_desc' | anything else (including "" / 'newest' /
+// 'recommended' — there is no rating-based ranking for courses yet) falls
+// back to newest-first. The two CASE columns are NULL for every row unless
+// their own sort is selected, so they never affect ordering otherwise and the
+// final created_at/id tiebreak always applies.
+func (q *Queries) CatalogListCourses(ctx context.Context, arg CatalogListCoursesParams) ([]CatalogListCoursesRow, error) {
+	rows, err := q.db.Query(ctx, catalogListCourses,
+		arg.Q,
+		arg.MaxPriceMinor,
+		arg.Sort,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CatalogListCoursesRow{}
+	for rows.Next() {
+		var i CatalogListCoursesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeacherID,
+			&i.Title,
+			&i.Subtitle,
+			&i.Description,
+			&i.CoverAssetID,
+			&i.PriceAmountMinor,
+			&i.PriceCurrency,
+			&i.Status,
+			&i.EverPublished,
+			&i.ArchivedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TeacherSlug,
+			&i.TeacherDisplayName,
+			&i.SectionCount,
+			&i.ItemCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const completeItemProgress = `-- name: CompleteItemProgress :one
+INSERT INTO course_item_progress (enrollment_id, item_id, status, completed_at)
+VALUES ($1, $2, 'completed', $3)
+ON CONFLICT (enrollment_id, item_id) DO UPDATE SET
+    status = 'completed',
+    completed_at = COALESCE(course_item_progress.completed_at, $3),
+    updated_at = now()
+RETURNING id, enrollment_id, item_id, status, video_position_seconds, completed_at, updated_at
+`
+
+type CompleteItemProgressParams struct {
+	EnrollmentID uuid.UUID
+	ItemID       uuid.UUID
+	CompletedAt  pgtype.Timestamptz
+}
+
+// Marks an item complete unconditionally (a course-embedded resource's
+// submission reaching submitted/graded, via resources.CourseProgress). Never
+// regresses video_position_seconds or an already-recorded completed_at.
+func (q *Queries) CompleteItemProgress(ctx context.Context, arg CompleteItemProgressParams) (CourseItemProgress, error) {
+	row := q.db.QueryRow(ctx, completeItemProgress, arg.EnrollmentID, arg.ItemID, arg.CompletedAt)
+	var i CourseItemProgress
+	err := row.Scan(
+		&i.ID,
+		&i.EnrollmentID,
+		&i.ItemID,
+		&i.Status,
+		&i.VideoPositionSeconds,
+		&i.CompletedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const countCatalogCourses = `-- name: CountCatalogCourses :one
+SELECT count(*)
+FROM courses c
+JOIN teachers t ON t.id = c.teacher_id
+WHERE c.status = 'published' AND c.archived_at IS NULL AND t.status = 'approved'
+  AND ($1::text IS NULL OR c.title ILIKE '%' || $1::text || '%' OR c.subtitle ILIKE '%' || $1::text || '%')
+  AND ($2::bigint IS NULL OR c.price_amount_minor <= $2::bigint)
+`
+
+type CountCatalogCoursesParams struct {
+	Q             pgtype.Text
+	MaxPriceMinor pgtype.Int8
+}
+
+func (q *Queries) CountCatalogCourses(ctx context.Context, arg CountCatalogCoursesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countCatalogCourses, arg.Q, arg.MaxPriceMinor)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countTeacherCourses = `-- name: CountTeacherCourses :one
 SELECT count(*)
 FROM courses
@@ -183,6 +340,31 @@ func (q *Queries) DeleteCourseSection(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const enrollmentGrantsResource = `-- name: EnrollmentGrantsResource :one
+SELECT EXISTS(
+    SELECT 1
+    FROM course_enrollments e
+    JOIN course_sections cs ON cs.course_id = e.course_id
+    JOIN course_items ci ON ci.section_id = cs.id
+    WHERE e.id = $1 AND ci.resource_id = $2
+) AS granted
+`
+
+type EnrollmentGrantsResourceParams struct {
+	EnrollmentID uuid.UUID
+	ResourceID   uuid.NullUUID
+}
+
+// Does this enrollment's course actually embed resourceID as a curriculum
+// item? The course-context equivalent of GetBookingResourceByPair's "is this
+// actually attached" check.
+func (q *Queries) EnrollmentGrantsResource(ctx context.Context, arg EnrollmentGrantsResourceParams) (bool, error) {
+	row := q.db.QueryRow(ctx, enrollmentGrantsResource, arg.EnrollmentID, arg.ResourceID)
+	var granted bool
+	err := row.Scan(&granted)
+	return granted, err
+}
+
 const getCourse = `-- name: GetCourse :one
 SELECT id, teacher_id, title, subtitle, description, cover_asset_id,
        price_amount_minor, price_currency, status, ever_published, archived_at,
@@ -234,6 +416,39 @@ func (q *Queries) GetCourseItem(ctx context.Context, id uuid.UUID) (CourseItem, 
 	return i, err
 }
 
+const getCourseItemForEnrollmentResource = `-- name: GetCourseItemForEnrollmentResource :one
+SELECT ci.id, ci.section_id, ci.kind, ci.title, ci.video_asset_id, ci.resource_id, ci.position, ci.created_at
+FROM course_enrollments e
+JOIN course_sections cs ON cs.course_id = e.course_id
+JOIN course_items ci ON ci.section_id = cs.id
+WHERE e.id = $1 AND ci.resource_id = $2
+LIMIT 1
+`
+
+type GetCourseItemForEnrollmentResourceParams struct {
+	EnrollmentID uuid.UUID
+	ResourceID   uuid.NullUUID
+}
+
+// Resolves the curriculum item a course-context submission's resource
+// corresponds to, scoped to the enrollment's own course. Backs
+// resources.CourseProgress.ItemCompleted.
+func (q *Queries) GetCourseItemForEnrollmentResource(ctx context.Context, arg GetCourseItemForEnrollmentResourceParams) (CourseItem, error) {
+	row := q.db.QueryRow(ctx, getCourseItemForEnrollmentResource, arg.EnrollmentID, arg.ResourceID)
+	var i CourseItem
+	err := row.Scan(
+		&i.ID,
+		&i.SectionID,
+		&i.Kind,
+		&i.Title,
+		&i.VideoAssetID,
+		&i.ResourceID,
+		&i.Position,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getCourseSection = `-- name: GetCourseSection :one
 SELECT id, course_id, title, position, created_at, updated_at
 FROM course_sections
@@ -250,6 +465,149 @@ func (q *Queries) GetCourseSection(ctx context.Context, id uuid.UUID) (CourseSec
 		&i.Position,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getEnrollmentByCourseAndStudent = `-- name: GetEnrollmentByCourseAndStudent :one
+SELECT id, course_id, student_id, source, amount_paid_minor, currency, created_at
+FROM course_enrollments
+WHERE course_id = $1 AND student_id = $2
+`
+
+type GetEnrollmentByCourseAndStudentParams struct {
+	CourseID  uuid.UUID
+	StudentID uuid.UUID
+}
+
+func (q *Queries) GetEnrollmentByCourseAndStudent(ctx context.Context, arg GetEnrollmentByCourseAndStudentParams) (CourseEnrollment, error) {
+	row := q.db.QueryRow(ctx, getEnrollmentByCourseAndStudent, arg.CourseID, arg.StudentID)
+	var i CourseEnrollment
+	err := row.Scan(
+		&i.ID,
+		&i.CourseID,
+		&i.StudentID,
+		&i.Source,
+		&i.AmountPaidMinor,
+		&i.Currency,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getEnrollmentByID = `-- name: GetEnrollmentByID :one
+SELECT id, course_id, student_id, source, amount_paid_minor, currency, created_at
+FROM course_enrollments
+WHERE id = $1
+`
+
+func (q *Queries) GetEnrollmentByID(ctx context.Context, id uuid.UUID) (CourseEnrollment, error) {
+	row := q.db.QueryRow(ctx, getEnrollmentByID, id)
+	var i CourseEnrollment
+	err := row.Scan(
+		&i.ID,
+		&i.CourseID,
+		&i.StudentID,
+		&i.Source,
+		&i.AmountPaidMinor,
+		&i.Currency,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getEnrollmentParticipants = `-- name: GetEnrollmentParticipants :one
+SELECT t.user_id AS teacher_owner_id, e.student_id AS student_id
+FROM course_enrollments e
+JOIN courses c ON c.id = e.course_id
+JOIN teachers t ON t.id = c.teacher_id
+WHERE e.id = $1
+`
+
+type GetEnrollmentParticipantsRow struct {
+	TeacherOwnerID uuid.NullUUID
+	StudentID      uuid.UUID
+}
+
+// Resolves an enrollment's two participants for authorization: the course's
+// teacher's owning account, and the enrolled student.
+func (q *Queries) GetEnrollmentParticipants(ctx context.Context, id uuid.UUID) (GetEnrollmentParticipantsRow, error) {
+	row := q.db.QueryRow(ctx, getEnrollmentParticipants, id)
+	var i GetEnrollmentParticipantsRow
+	err := row.Scan(&i.TeacherOwnerID, &i.StudentID)
+	return i, err
+}
+
+const getTeacherOwnerID = `-- name: GetTeacherOwnerID :one
+
+SELECT user_id FROM teachers WHERE id = $1
+`
+
+// Phase C2: public catalog, purchase/enrollment, the student player, and
+// progress tracking.
+// The account that owns a teacher profile (the reverse of GetTeacherIDByOwner).
+// Used to resolve who to authorize as "the teacher" for a course (e.g. an
+// enrollment's grading authorization) without joining through users elsewhere.
+func (q *Queries) GetTeacherOwnerID(ctx context.Context, id uuid.UUID) (uuid.NullUUID, error) {
+	row := q.db.QueryRow(ctx, getTeacherOwnerID, id)
+	var user_id uuid.NullUUID
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
+const getTeacherSummary = `-- name: GetTeacherSummary :one
+SELECT id, slug, display_name FROM teachers WHERE id = $1
+`
+
+type GetTeacherSummaryRow struct {
+	ID          uuid.UUID
+	Slug        string
+	DisplayName string
+}
+
+func (q *Queries) GetTeacherSummary(ctx context.Context, id uuid.UUID) (GetTeacherSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getTeacherSummary, id)
+	var i GetTeacherSummaryRow
+	err := row.Scan(&i.ID, &i.Slug, &i.DisplayName)
+	return i, err
+}
+
+const insertEnrollment = `-- name: InsertEnrollment :one
+
+INSERT INTO course_enrollments (course_id, student_id, source, amount_paid_minor, currency)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, course_id, student_id, source, amount_paid_minor, currency, created_at
+`
+
+type InsertEnrollmentParams struct {
+	CourseID        uuid.UUID
+	StudentID       uuid.UUID
+	Source          string
+	AmountPaidMinor int64
+	Currency        CurrencyCode
+}
+
+// Enrollment.
+// Insert-first idempotency: a duplicate (course_id, student_id) raises
+// SQLSTATE 23505 on the table's UNIQUE constraint, mapped by the repository
+// to load-and-return the existing row instead — never check-then-insert.
+func (q *Queries) InsertEnrollment(ctx context.Context, arg InsertEnrollmentParams) (CourseEnrollment, error) {
+	row := q.db.QueryRow(ctx, insertEnrollment,
+		arg.CourseID,
+		arg.StudentID,
+		arg.Source,
+		arg.AmountPaidMinor,
+		arg.Currency,
+	)
+	var i CourseEnrollment
+	err := row.Scan(
+		&i.ID,
+		&i.CourseID,
+		&i.StudentID,
+		&i.Source,
+		&i.AmountPaidMinor,
+		&i.Currency,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -352,6 +710,126 @@ func (q *Queries) ListCourseSections(ctx context.Context, courseID uuid.UUID) ([
 			&i.Title,
 			&i.Position,
 			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEnrollmentsForStudent = `-- name: ListEnrollmentsForStudent :many
+SELECT
+    e.id, e.course_id, e.student_id, e.source, e.amount_paid_minor, e.currency, e.created_at,
+    c.teacher_id AS course_teacher_id, c.title AS course_title, c.subtitle AS course_subtitle,
+    c.description AS course_description, c.cover_asset_id AS course_cover_asset_id,
+    c.price_amount_minor AS course_price_amount_minor, c.price_currency AS course_price_currency,
+    c.status AS course_status, c.ever_published AS course_ever_published, c.archived_at AS course_archived_at,
+    c.created_at AS course_created_at, c.updated_at AS course_updated_at,
+    (SELECT count(*) FROM course_items ci JOIN course_sections cs ON cs.id = ci.section_id WHERE cs.course_id = c.id) AS total_items,
+    (SELECT count(*) FROM course_item_progress cip WHERE cip.enrollment_id = e.id AND cip.status = 'completed') AS completed_items
+FROM course_enrollments e
+JOIN courses c ON c.id = e.course_id
+WHERE e.student_id = $1
+ORDER BY e.created_at DESC, e.id
+`
+
+type ListEnrollmentsForStudentRow struct {
+	ID                     uuid.UUID
+	CourseID               uuid.UUID
+	StudentID              uuid.UUID
+	Source                 string
+	AmountPaidMinor        int64
+	Currency               CurrencyCode
+	CreatedAt              pgtype.Timestamptz
+	CourseTeacherID        uuid.UUID
+	CourseTitle            string
+	CourseSubtitle         string
+	CourseDescription      string
+	CourseCoverAssetID     uuid.NullUUID
+	CoursePriceAmountMinor int64
+	CoursePriceCurrency    CurrencyCode
+	CourseStatus           string
+	CourseEverPublished    bool
+	CourseArchivedAt       pgtype.Timestamptz
+	CourseCreatedAt        pgtype.Timestamptz
+	CourseUpdatedAt        pgtype.Timestamptz
+	TotalItems             int64
+	CompletedItems         int64
+}
+
+// "My learning": the student's enrollments, newest first, each with its
+// course summary and a progress percent computed from two correlated
+// subqueries (total curriculum items for the course; completed rows for this
+// specific enrollment) — cheap since a course has at most a few dozen items.
+func (q *Queries) ListEnrollmentsForStudent(ctx context.Context, studentID uuid.UUID) ([]ListEnrollmentsForStudentRow, error) {
+	rows, err := q.db.Query(ctx, listEnrollmentsForStudent, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListEnrollmentsForStudentRow{}
+	for rows.Next() {
+		var i ListEnrollmentsForStudentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CourseID,
+			&i.StudentID,
+			&i.Source,
+			&i.AmountPaidMinor,
+			&i.Currency,
+			&i.CreatedAt,
+			&i.CourseTeacherID,
+			&i.CourseTitle,
+			&i.CourseSubtitle,
+			&i.CourseDescription,
+			&i.CourseCoverAssetID,
+			&i.CoursePriceAmountMinor,
+			&i.CoursePriceCurrency,
+			&i.CourseStatus,
+			&i.CourseEverPublished,
+			&i.CourseArchivedAt,
+			&i.CourseCreatedAt,
+			&i.CourseUpdatedAt,
+			&i.TotalItems,
+			&i.CompletedItems,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listItemProgressForEnrollment = `-- name: ListItemProgressForEnrollment :many
+SELECT id, enrollment_id, item_id, status, video_position_seconds, completed_at, updated_at
+FROM course_item_progress
+WHERE enrollment_id = $1
+`
+
+func (q *Queries) ListItemProgressForEnrollment(ctx context.Context, enrollmentID uuid.UUID) ([]CourseItemProgress, error) {
+	rows, err := q.db.Query(ctx, listItemProgressForEnrollment, enrollmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CourseItemProgress{}
+	for rows.Next() {
+		var i CourseItemProgress
+		if err := rows.Scan(
+			&i.ID,
+			&i.EnrollmentID,
+			&i.ItemID,
+			&i.Status,
+			&i.VideoPositionSeconds,
+			&i.CompletedAt,
 			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -610,6 +1088,55 @@ func (q *Queries) SetCourseStatus(ctx context.Context, arg SetCourseStatusParams
 	return i, err
 }
 
+const studentHasResourceAccess = `-- name: StudentHasResourceAccess :one
+SELECT EXISTS(
+    SELECT 1
+    FROM course_enrollments e
+    JOIN course_sections cs ON cs.course_id = e.course_id
+    JOIN course_items ci ON ci.section_id = cs.id
+    WHERE e.student_id = $1 AND ci.resource_id = $2
+) AS accessible
+`
+
+type StudentHasResourceAccessParams struct {
+	StudentID  uuid.UUID
+	ResourceID uuid.NullUUID
+}
+
+// Does studentID have SOME active enrollment granting access to resourceID,
+// independent of which specific enrollment? Backs the course-based widening
+// of a course-embedded resource's material/audio file.
+func (q *Queries) StudentHasResourceAccess(ctx context.Context, arg StudentHasResourceAccessParams) (bool, error) {
+	row := q.db.QueryRow(ctx, studentHasResourceAccess, arg.StudentID, arg.ResourceID)
+	var accessible bool
+	err := row.Scan(&accessible)
+	return accessible, err
+}
+
+const studentHasVideoAccess = `-- name: StudentHasVideoAccess :one
+SELECT EXISTS(
+    SELECT 1
+    FROM course_enrollments e
+    JOIN course_sections cs ON cs.course_id = e.course_id
+    JOIN course_items ci ON ci.section_id = cs.id
+    WHERE e.student_id = $1 AND ci.video_asset_id = $2
+) AS accessible
+`
+
+type StudentHasVideoAccessParams struct {
+	StudentID   uuid.UUID
+	FileAssetID uuid.NullUUID
+}
+
+// Backs files.AssigneeChecker's course-based widening: is fileAssetID a video
+// item's asset in some course the student is actively enrolled in?
+func (q *Queries) StudentHasVideoAccess(ctx context.Context, arg StudentHasVideoAccessParams) (bool, error) {
+	row := q.db.QueryRow(ctx, studentHasVideoAccess, arg.StudentID, arg.FileAssetID)
+	var accessible bool
+	err := row.Scan(&accessible)
+	return accessible, err
+}
+
 const updateCourse = `-- name: UpdateCourse :one
 UPDATE courses
 SET title = $2, subtitle = $3, description = $4, cover_asset_id = $5,
@@ -657,6 +1184,64 @@ func (q *Queries) UpdateCourse(ctx context.Context, arg UpdateCourseParams) (Cou
 		&i.EverPublished,
 		&i.ArchivedAt,
 		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertItemProgress = `-- name: UpsertItemProgress :one
+
+INSERT INTO course_item_progress (enrollment_id, item_id, video_position_seconds, status, completed_at)
+VALUES (
+    $1, $2,
+    COALESCE($3::int, 0),
+    CASE WHEN $4::bool IS TRUE THEN 'completed' ELSE 'in_progress' END,
+    CASE WHEN $4::bool IS TRUE THEN now() ELSE NULL END
+)
+ON CONFLICT (enrollment_id, item_id) DO UPDATE SET
+    video_position_seconds = COALESCE($3::int, course_item_progress.video_position_seconds),
+    status = CASE
+        WHEN $4::bool IS TRUE  THEN 'completed'
+        WHEN $4::bool IS FALSE THEN 'in_progress'
+        ELSE course_item_progress.status
+    END,
+    completed_at = CASE
+        WHEN $4::bool IS TRUE  THEN COALESCE(course_item_progress.completed_at, now())
+        WHEN $4::bool IS FALSE THEN NULL
+        ELSE course_item_progress.completed_at
+    END,
+    updated_at = now()
+RETURNING id, enrollment_id, item_id, status, video_position_seconds, completed_at, updated_at
+`
+
+type UpsertItemProgressParams struct {
+	EnrollmentID         uuid.UUID
+	ItemID               uuid.UUID
+	VideoPositionSeconds pgtype.Int4
+	Completed            pgtype.Bool
+}
+
+// Progress.
+// Merges the given fields into a video item's progress row for a student
+// driving the player (position updates as they watch; explicit
+// complete/uncomplete). NULL args (a field the client didn't send) leave the
+// stored value unchanged. completed=true stamps completed_at once (COALESCE
+// keeps the first time it was ever set); completed=false clears it.
+func (q *Queries) UpsertItemProgress(ctx context.Context, arg UpsertItemProgressParams) (CourseItemProgress, error) {
+	row := q.db.QueryRow(ctx, upsertItemProgress,
+		arg.EnrollmentID,
+		arg.ItemID,
+		arg.VideoPositionSeconds,
+		arg.Completed,
+	)
+	var i CourseItemProgress
+	err := row.Scan(
+		&i.ID,
+		&i.EnrollmentID,
+		&i.ItemID,
+		&i.Status,
+		&i.VideoPositionSeconds,
+		&i.CompletedAt,
 		&i.UpdatedAt,
 	)
 	return i, err

@@ -112,6 +112,29 @@ func (s *Service) Download(ctx context.Context, id, requesterID uuid.UUID) (redi
 	return "", rc, a, nil
 }
 
+// ServePublic resolves an asset's bytes for UNCONDITIONAL public serving — no
+// ownership or assignee check at all, unlike Download. Backs courses.FileReader's
+// PublicAsset (phase C2's public cover-image route): the caller has already
+// decided the bytes are meant to be public (e.g. courses.Service checks the
+// owning course is published before calling through) — this method's whole
+// point is "serve unconditionally", so never call it from a path that hasn't
+// made that decision itself. Named distinctly from Download so a future
+// reader doesn't reach for it by mistake.
+func (s *Service) ServePublic(ctx context.Context, id uuid.UUID) (redirectURL string, body io.ReadCloser, a Asset, err error) {
+	a, err = s.repo.ByID(ctx, id)
+	if err != nil {
+		return "", nil, Asset{}, err
+	}
+	if url, ok, e := s.blob.PresignedGetURL(ctx, a.ObjectKey, 5*time.Minute); e == nil && ok {
+		return url, nil, a, nil
+	}
+	rc, e := s.blob.Open(ctx, a.ObjectKey)
+	if e != nil {
+		return "", nil, Asset{}, e
+	}
+	return "", rc, a, nil
+}
+
 // FileOwnedBy reports whether fileAssetID belongs to callerID, and its stored
 // content type. Backs courses.FileReader (video item / course cover
 // validation): ok is false, contentType "" when the asset doesn't exist or

@@ -2,6 +2,7 @@ package courses
 
 import (
 	"context"
+	"io"
 
 	"github.com/google/uuid"
 )
@@ -27,4 +28,13 @@ type FileReader interface {
 	// stored content type. ok is false when the asset doesn't exist or
 	// belongs to someone else.
 	FileOwnedBy(ctx context.Context, fileAssetID, callerID uuid.UUID) (ok bool, contentType string, err error)
+
+	// PublicAsset serves fileAssetID's bytes with NO ownership/assignee
+	// check at all (phase C2's public cover-image route) — the caller
+	// (courses.Service) has already authorized "this course is published,
+	// its cover is meant to be public" before calling through. body is
+	// non-nil exactly when redirectURL is "" (disk store vs. a presigned R2
+	// URL), mirroring files.Service.Download's return shape; the caller must
+	// Close a non-nil body.
+	PublicAsset(ctx context.Context, fileAssetID uuid.UUID) (redirectURL string, body io.ReadCloser, contentType string, err error)
 }

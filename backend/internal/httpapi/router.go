@@ -31,6 +31,7 @@ type Deps struct {
 	Redis               *redis.Client
 	AuthHandler         *auth.Handler
 	AuthMiddleware      gin.HandlerFunc // auth.RequireAuth(tokenManager)
+	OptionalAuth        gin.HandlerFunc // auth.OptionalAuth(tokenManager)
 	AdminHandler        *admin.Handler
 	RBACHandler         *rbac.Handler
 	RBACGuard           *rbac.Guard
@@ -84,7 +85,15 @@ func NewRouter(d Deps) *gin.Engine {
 	files.RegisterRoutes(v1, d.FileHandler, d.AuthMiddleware)
 	resources.RegisterRoutes(v1.Group("/resources"), d.ResourceHandler, d.AuthMiddleware)
 	resources.RegisterSubmissionRoutes(v1.Group("/submissions"), d.ResourceHandler, d.AuthMiddleware)
-	courses.RegisterRoutes(v1.Group("/courses"), d.CourseHandler, d.AuthMiddleware)
+
+	courseRoutes := v1.Group("/courses")
+	courses.RegisterRoutes(courseRoutes, d.CourseHandler, d.AuthMiddleware)
+	// Phase C2: public catalog + cover image (no auth, or optional auth for
+	// personalised catalog detail), and the purchase/player/progress routes
+	// (auth required, enrollment/ownership checked in the service).
+	courses.RegisterCatalogRoutes(courseRoutes, d.CourseHandler, d.OptionalAuth)
+	courses.RegisterLearnerRoutes(courseRoutes, d.CourseHandler, d.AuthMiddleware)
+	courses.RegisterEnrollmentRoutes(v1.Group("/enrollments"), d.CourseHandler, d.AuthMiddleware)
 
 	// /v1/admin is behind a valid access token; each route then enforces its
 	// own RBAC permission via the guard.

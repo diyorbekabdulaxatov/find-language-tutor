@@ -28,6 +28,10 @@ type fakeRepo struct {
 	submissionKeys map[string]uuid.UUID // "resourceID|studentID|bookingID" -> submission id
 	userContacts   map[uuid.UUID][2]string
 	fileAccessible map[string]bool // "fileAssetID|requesterID" -> ok
+
+	// phase C2
+	courseSubmissionKeys map[string]uuid.UUID      // "resourceID|studentID|enrollmentID" -> submission id
+	resourceFileIndex    map[uuid.UUID][]uuid.UUID // fileAssetID -> resource ids carrying it
 }
 
 func newFakeRepo() *fakeRepo {
@@ -42,6 +46,9 @@ func newFakeRepo() *fakeRepo {
 		submissionKeys: map[string]uuid.UUID{},
 		userContacts:   map[uuid.UUID][2]string{},
 		fileAccessible: map[string]bool{},
+
+		courseSubmissionKeys: map[string]uuid.UUID{},
+		resourceFileIndex:    map[uuid.UUID][]uuid.UUID{},
 	}
 }
 

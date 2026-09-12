@@ -254,16 +254,20 @@ func (h *Handler) callerAndBookingID(c *gin.Context) (uuid.UUID, uuid.UUID, bool
 
 // --- phase A3: submissions ---
 
-// StartSubmission handles POST /v1/submissions. Body {"resource_id", "booking_id"}.
+// StartSubmission handles POST /v1/submissions. Body
+// {"resource_id", "booking_id"} (lesson homework) or
+// {"resource_id", "enrollment_id"} (course-embedded resource) — exactly one
+// of booking_id / enrollment_id.
 func (h *Handler) StartSubmission(c *gin.Context) {
 	uid, ok := auth.UserID(c)
 	if !ok {
 		web.Unauthorized(c, "A valid access token is required.")
 		return
 	}
+	const bodyHint = `Request body must be {"resource_id", "booking_id"} or {"resource_id", "enrollment_id"}.`
 	var req startSubmissionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		web.BadRequest(c, `Request body must be {"resource_id", "booking_id"}.`)
+		web.BadRequest(c, bodyHint)
 		return
 	}
 	resourceID, err := uuid.Parse(req.ResourceID)
@@ -271,16 +275,35 @@ func (h *Handler) StartSubmission(c *gin.Context) {
 		web.BadRequest(c, "`resource_id` must be a UUID.")
 		return
 	}
-	bookingID, err := uuid.Parse(req.BookingID)
-	if err != nil {
-		web.BadRequest(c, "`booking_id` must be a UUID.")
-		return
+
+	switch {
+	case req.BookingID != "" && req.EnrollmentID != "":
+		web.BadRequest(c, "Provide exactly one of `booking_id` or `enrollment_id`, not both.")
+	case req.BookingID != "":
+		bookingID, err := uuid.Parse(req.BookingID)
+		if err != nil {
+			web.BadRequest(c, "`booking_id` must be a UUID.")
+			return
+		}
+		sub, err := h.svc.StartSubmission(c.Request.Context(), uid, resourceID, bookingID)
+		if h.rendered(c, err, "start submission", slog.String("booking_id", bookingID.String())) {
+			return
+		}
+		c.JSON(http.StatusCreated, toSubmissionDTO(sub))
+	case req.EnrollmentID != "":
+		enrollmentID, err := uuid.Parse(req.EnrollmentID)
+		if err != nil {
+			web.BadRequest(c, "`enrollment_id` must be a UUID.")
+			return
+		}
+		sub, err := h.svc.StartCourseSubmission(c.Request.Context(), uid, resourceID, enrollmentID)
+		if h.rendered(c, err, "start course submission", slog.String("enrollment_id", enrollmentID.String())) {
+			return
+		}
+		c.JSON(http.StatusCreated, toSubmissionDTO(sub))
+	default:
+		web.BadRequest(c, bodyHint)
 	}
-	sub, err := h.svc.StartSubmission(c.Request.Context(), uid, resourceID, bookingID)
-	if h.rendered(c, err, "start submission", slog.String("booking_id", bookingID.String())) {
-		return
-	}
-	c.JSON(http.StatusCreated, toSubmissionDTO(sub))
 }
 
 // SaveAnswers handles PATCH /v1/submissions/:id. Body {"answers": object}.
@@ -434,6 +457,11 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 		web.WriteError(c, http.StatusNotFound, "submission_not_found", "No submission with that id.")
 	case errors.Is(err, ErrInvalidSubmissionState):
 		web.WriteError(c, http.StatusConflict, "invalid_state", "The submission is not in a state that allows this.")
+	case errors.Is(err, ErrEnrollmentNotFound):
+		web.NotFound(c, "No enrollment with that id.")
+	case errors.Is(err, ErrResourceNotInCourse):
+		web.WriteError(c, http.StatusConflict, "resource_not_in_course",
+			"This resource is not part of the enrolled course.")
 	default:
 		anys := make([]any, 0, len(attrs)+1)
 		for _, a := range attrs {

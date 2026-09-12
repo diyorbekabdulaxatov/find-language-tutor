@@ -1210,13 +1210,23 @@ paths:
   /v1/submissions:
     post:
       tags: [resources]
-      summary: Start (or resume) a homework submission
+      summary: Start (or resume) a submission
       description: >
-        Idempotent: a second call for the same resource/booking returns the
-        existing submission rather than erroring. The resource must be
-        attached to the booking as `homework`, the caller must be the
-        booking's student, and the resource type must carry a submission flow
-        (`quiz` / `listening` / `reading` / `writing`).
+        Body must carry exactly one of `booking_id` (lesson-context homework)
+        or `enrollment_id` (phase C2, a course-embedded resource). Idempotent:
+        a second call for the same resource/booking (or resource/enrollment)
+        returns the existing submission rather than erroring.
+
+        Lesson context: the resource must be attached to the booking as
+        `homework`, and the caller must be the booking's student (409
+        `homework_not_assigned` / 403 otherwise).
+
+        Course context: the resource must actually be a curriculum item of
+        the enrollment's course (409 `resource_not_in_course` otherwise), and
+        the caller must be the enrollment's student.
+
+        Either way the resource type must carry a submission flow (`quiz` /
+        `listening` / `reading` / `writing`).
       operationId: startSubmission
       security:
         - bearerAuth: []
@@ -1236,14 +1246,20 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: The caller is not the booking's student (`forbidden`).
+          description: The caller is not the booking's/enrollment's student (`forbidden`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "404":
-          $ref: "#/components/responses/NotFound"
+          description: "No booking/enrollment with that id (`not_found`)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "409":
-          description: "`homework_not_assigned` — the resource isn't attached to this booking as homework."
+          description: >
+            `homework_not_assigned` — the resource isn't attached to this
+            booking as homework — or `resource_not_in_course` — the resource
+            isn't part of the enrolled course.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2058,6 +2074,183 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  # ----------------------------------------------------------------------------
+  # Courses (phase C2): public catalog, one-time purchase, enrollment, the
+  # enrolled-student player, and progress tracking. Builds on phase C1's
+  # authoring surface above. No course reviews, no admin moderation, no
+  # payouts/revenue-share for course sales — separate future phases.
+  # ----------------------------------------------------------------------------
+
+  /v1/courses/catalog:
+    get:
+      tags: [courses]
+      summary: Public course catalog
+      description: Published, non-archived courses from approved teachers only. No auth required.
+      operationId: courseCatalog
+      security: []
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: Filters by title/subtitle substring. }
+        - { name: max_price_minor, in: query, schema: { type: integer, format: int64 } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: sort, in: query, schema: { type: string, enum: [newest, price_asc, price_desc], default: newest } }
+      responses:
+        "200":
+          description: A page of the catalog.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseCatalogList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /v1/courses/catalog/{id}:
+    get:
+      tags: [courses]
+      summary: A course's public landing page
+      description: >
+        Course + teacher summary + curriculum outline only (no video URLs, no
+        resource content). 404 unless the course is published. An
+        Authorization header, if present and valid, personalises
+        is_enrolled / is_owner; omitted or invalid, both read false.
+      operationId: courseCatalogDetail
+      security: [{}, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The course's public landing page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseCatalogDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/cover:
+    get:
+      tags: [courses]
+      summary: A course's cover image
+      description: Streams (or redirects to) the cover image's bytes. No auth. 404 unless the course is published and has a cover set.
+      operationId: courseCover
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The cover image bytes. }
+        "302": { description: Redirect to a presigned URL for the image (R2-backed storage). }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/purchase:
+    post:
+      tags: [courses]
+      summary: Enroll in (buy) a course
+      description: >
+        method_token is omitted/ignored for a free course (price_amount_minor
+        0). Otherwise the same deterministic fake payment provider as the
+        booking flow: `pm_ok` captures, `pm_decline` is refused (402
+        `payment_failed`), `pm_capture_fail` authorizes but fails the first
+        capture (502 `capture_failed`, retry by purchasing again).
+
+        200 if the caller is already enrolled or the course is free; 201 on a
+        brand-new paid purchase.
+      operationId: purchaseCourse
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PurchaseCourseRequest" }
+      responses:
+        "200":
+          description: Already enrolled, or newly enrolled in a free course.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseEnrollment" }
+        "201":
+          description: Newly purchased.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseEnrollment" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402":
+          description: The payment method was declined (`payment_failed`).
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "403":
+          description: "`courses: you can't buy your own course` — the caller's own teacher profile owns it."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: The provider could not capture the hold (`capture_failed`). Retryable — purchase again.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "503":
+          description: "`purchase_unavailable` — no payment provider is wired up server-side."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/courses/{id}/learn:
+    get:
+      tags: [courses]
+      summary: The enrolled-student (or owner-preview) curriculum player
+      description: >
+        Full curriculum tree: video items carry video_asset_id (fetch bytes
+        via GET /v1/files/{id}); resource items embed the student-safe
+        content (answers already stripped). Every item carries the caller's
+        progress. Enrolled-or-owner only.
+      operationId: learnCourse
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The curriculum tree.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseLearnDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/items/{itemId}/progress:
+    post:
+      tags: [courses]
+      summary: Record playback progress / completion on a video item
+      description: Enrolled only. 400 for a resource item — submit against it via /v1/submissions instead.
+      operationId: recordCourseItemProgress
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: itemId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecordProgressRequest" }
+      responses:
+        "200":
+          description: The updated item progress.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseItemProgress" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/enrollments:
+    get:
+      tags: [courses]
+      summary: The caller's "my learning" list
+      operationId: myEnrollments
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller's enrollments, newest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourseEnrollmentList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   # ----------------------------------------------------------------------------
   # Admin (phase A/B). Everything under /v1/admin needs a valid access token
@@ -3753,7 +3946,6 @@ components:
       required:
         - id
         - resource_id
-        - booking_id
         - status
         - answers
         - auto_score
@@ -3767,7 +3959,14 @@ components:
       properties:
         id: { type: string, format: uuid }
         resource_id: { type: string, format: uuid }
-        booking_id: { type: string, format: uuid }
+        booking_id:
+          type: string
+          format: uuid
+          description: Present only for a lesson-context submission (mutually exclusive with enrollment_id).
+        enrollment_id:
+          type: string
+          format: uuid
+          description: Present only for a course-context submission (phase C2, mutually exclusive with booking_id).
         status: { type: string, enum: [in_progress, submitted, graded] }
         answers:
           type: object
@@ -3791,10 +3990,12 @@ components:
 
     StartSubmissionRequest:
       type: object
-      required: [resource_id, booking_id]
+      description: Exactly one of booking_id / enrollment_id must be set.
+      required: [resource_id]
       properties:
         resource_id: { type: string, format: uuid }
-        booking_id: { type: string, format: uuid }
+        booking_id: { type: string, format: uuid, description: Lesson context. }
+        enrollment_id: { type: string, format: uuid, description: Course context (phase C2). }
 
     SaveAnswersRequest:
       type: object
@@ -3955,6 +4156,155 @@ components:
           type: array
           items: { type: string, format: uuid }
           description: Exactly the section's current item ids, each once, in the new order.
+
+    # --- Courses (phase C2): public catalog, purchase, the player, progress ---
+
+    CourseTeacherSummary:
+      type: object
+      description: Light teacher summary embedded in catalog rows.
+      required: [id, display_name, slug]
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+        slug: { type: string }
+
+    CourseCatalogEntry:
+      type: object
+      description: One public catalog row — course summary + teacher summary + curriculum size, no curriculum detail.
+      required: [id, title, subtitle, cover_asset_id, price, teacher, section_count, item_count]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        subtitle: { type: string }
+        cover_asset_id: { type: string, format: uuid, nullable: true }
+        price: { $ref: "#/components/schemas/Money" }
+        teacher: { $ref: "#/components/schemas/CourseTeacherSummary" }
+        section_count: { type: integer }
+        item_count: { type: integer }
+
+    CourseCatalogList:
+      type: object
+      required: [courses, total]
+      properties:
+        courses: { type: array, items: { $ref: "#/components/schemas/CourseCatalogEntry" } }
+        total: { type: integer, description: Total matches, not just this page. }
+
+    CourseCatalogItemOutline:
+      type: object
+      description: A curriculum item's pre-purchase outline — no video_asset_id, no resource content.
+      required: [id, kind, title, position]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/CourseItemKind" }
+        title: { type: string }
+        position: { type: integer }
+
+    CourseCatalogSectionOutline:
+      type: object
+      required: [id, title, position, items]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        position: { type: integer }
+        items: { type: array, items: { $ref: "#/components/schemas/CourseCatalogItemOutline" } }
+
+    CourseCatalogDetail:
+      type: object
+      description: A course's public landing page — course + teacher summary, curriculum outline only, and the viewer's relationship to it.
+      required: [id, title, subtitle, description, cover_asset_id, price, teacher, sections, is_enrolled, is_owner]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        subtitle: { type: string }
+        description: { type: string }
+        cover_asset_id: { type: string, format: uuid, nullable: true }
+        price: { $ref: "#/components/schemas/Money" }
+        teacher: { $ref: "#/components/schemas/CourseTeacherSummary" }
+        sections: { type: array, items: { $ref: "#/components/schemas/CourseCatalogSectionOutline" } }
+        is_enrolled: { type: boolean, description: False when unauthenticated. }
+        is_owner: { type: boolean, description: False when unauthenticated. }
+
+    PurchaseCourseRequest:
+      type: object
+      properties:
+        method_token: { type: string, description: Omitted/ignored for a free course. }
+
+    CourseEnrollment:
+      type: object
+      required: [id, course, source, amount_paid, progress_percent, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        course: { $ref: "#/components/schemas/Course" }
+        source: { type: string, enum: [purchase, free] }
+        amount_paid: { $ref: "#/components/schemas/Money" }
+        progress_percent: { type: integer, description: completed_items / total_items * 100, 0 for an empty course. }
+        created_at: { type: string, format: date-time }
+
+    CourseEnrollmentList:
+      type: object
+      required: [enrollments]
+      properties:
+        enrollments: { type: array, items: { $ref: "#/components/schemas/CourseEnrollment" } }
+
+    CourseItemProgress:
+      type: object
+      required: [status, video_position_seconds, completed_at]
+      properties:
+        status: { type: string, enum: [in_progress, completed] }
+        video_position_seconds: { type: integer }
+        completed_at: { type: string, format: date-time, nullable: true }
+
+    RecordProgressRequest:
+      type: object
+      properties:
+        position_seconds: { type: integer, minimum: 0 }
+        completed: { type: boolean }
+
+    CourseResourceView:
+      type: object
+      description: A published resource's student-safe view (correct answers already stripped), embedded in the course player.
+      required: [id, type, title, instructions, content]
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: "#/components/schemas/ResourceType" }
+        title: { type: string }
+        instructions: { type: string }
+        content: { $ref: "#/components/schemas/ResourceContent" }
+
+    CourseLearnItem:
+      type: object
+      required: [id, kind, title, position, video_asset_id, resource, progress]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: "#/components/schemas/CourseItemKind" }
+        title: { type: string }
+        position: { type: integer }
+        video_asset_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Set for a `video` item; fetch bytes via GET /v1/files/{id}.
+        resource:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/CourseResourceView" }]
+          description: Set for a `resource` item.
+        progress: { $ref: "#/components/schemas/CourseItemProgress" }
+
+    CourseLearnSection:
+      type: object
+      required: [id, title, items]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        items: { type: array, items: { $ref: "#/components/schemas/CourseLearnItem" } }
+
+    CourseLearnDetail:
+      type: object
+      required: [id, title, sections]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        sections: { type: array, items: { $ref: "#/components/schemas/CourseLearnSection" } }
 
     AdminReviewList:
       type: object

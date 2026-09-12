@@ -368,6 +368,7 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 		return false
 	}
 	var ve ValidationError
+	var payFailed PaymentFailedError
 	switch {
 	case errors.As(err, &ve):
 		web.BadRequest(c, ve.Error())
@@ -385,6 +386,15 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 		web.NotFound(c, "No section with that id on this course.")
 	case errors.Is(err, ErrItemNotFound):
 		web.NotFound(c, "No item with that id on this section.")
+	case errors.Is(err, ErrCannotBuyOwnCourse):
+		web.Forbidden(c, "You can't buy your own course.")
+	case errors.Is(err, ErrPurchaseUnavailable):
+		web.WriteError(c, http.StatusServiceUnavailable, "purchase_unavailable",
+			"Course purchases aren't available right now.")
+	case errors.As(err, &payFailed):
+		web.WriteError(c, http.StatusPaymentRequired, "payment_failed", payFailed.Error())
+	case errors.Is(err, ErrCaptureFailed):
+		web.WriteError(c, http.StatusBadGateway, "capture_failed", "The payment could not be captured. Please try again.")
 	default:
 		anys := make([]any, 0, len(attrs)+1)
 		for _, a := range attrs {
