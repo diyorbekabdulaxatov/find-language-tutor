@@ -45,6 +45,11 @@ type Repository interface {
 	// StartSubmission idempotently gets-or-creates a student's submission for
 	// a lesson homework.
 	StartSubmission(ctx context.Context, resourceID, studentID, bookingID uuid.UUID) (Submission, error)
+	// StartCourseSubmission idempotently gets-or-creates a student's
+	// submission against a course-embedded resource (phase C2). Mirrors
+	// StartSubmission's upsert idiom against submissions_course_uniq instead
+	// of submissions_lesson_uniq.
+	StartCourseSubmission(ctx context.Context, resourceID, studentID, enrollmentID uuid.UUID) (Submission, error)
 	SaveSubmissionAnswers(ctx context.Context, id uuid.UUID, answers map[string][]string) (Submission, error)
 	SubmitSubmission(ctx context.Context, id uuid.UUID, p SubmitParams) (Submission, error)
 	GradeSubmission(ctx context.Context, id uuid.UUID, score *int, feedback string, gradedBy uuid.UUID, gradedAt time.Time) (Submission, error)
@@ -60,6 +65,11 @@ type Repository interface {
 	// (as its material file or listening audio) is attached to a booking whose
 	// student is requesterID. Backs files.AssigneeChecker.
 	FileAssetAccessible(ctx context.Context, fileAssetID, requesterID uuid.UUID) (bool, error)
+	// ResourceIDsForFileAsset resolves which resource(s) reference fileAssetID
+	// as their material file or listening audio — backs FileAssetAccessible's
+	// course-based widening (phase C2): the service checks each returned id
+	// against EnrollmentReader.StudentResourceAccess.
+	ResourceIDsForFileAsset(ctx context.Context, fileAssetID uuid.UUID) ([]uuid.UUID, error)
 	// UserContact is a plain contact lookup, used only for the grading-done email.
 	UserContact(ctx context.Context, userID uuid.UUID) (email, displayName string, err error)
 }
@@ -76,11 +86,13 @@ type CreateParams struct {
 
 // Service holds the authoring rules. Handlers call it; it never sees a *gin.Context.
 type Service struct {
-	repo     Repository
-	bookings BookingReader // nil until SetBookingReader; guarded, fails closed
-	mailer   Mailer        // never nil (noopMailer default)
-	now      func() time.Time
-	logger   *slog.Logger
+	repo           Repository
+	bookings       BookingReader    // nil until SetBookingReader; guarded, fails closed
+	enrollments    EnrollmentReader // nil until SetEnrollmentReader; guarded, fails closed (phase C2)
+	mailer         Mailer           // never nil (noopMailer default)
+	courseProgress CourseProgress   // nil until SetCourseProgress; optional, best-effort (phase C2)
+	now            func() time.Time
+	logger         *slog.Logger
 }
 
 func NewService(repo Repository, logger *slog.Logger) *Service {
@@ -102,6 +114,16 @@ func (s *Service) SetMailer(m Mailer) {
 		s.mailer = m
 	}
 }
+
+// SetEnrollmentReader wires the courses module's read port in (phase C2).
+// Optional, but every course-context submission call fails closed
+// (enrollment not found) without it.
+func (s *Service) SetEnrollmentReader(e EnrollmentReader) { s.enrollments = e }
+
+// SetCourseProgress wires the courses module's best-effort progress-write
+// port in (phase C2). Optional: without it, submitting a course-embedded
+// resource marks nothing complete on the course side.
+func (s *Service) SetCourseProgress(p CourseProgress) { s.courseProgress = p }
 
 // Library returns a page of the caller's resources.
 func (s *Service) Library(ctx context.Context, ownerID uuid.UUID, q ListQuery) (Page, error) {
@@ -266,6 +288,17 @@ func (s *Service) booking(ctx context.Context, bookingID uuid.UUID) (teacherOwne
 		return uuid.Nil, uuid.Nil, false, nil
 	}
 	return s.bookings.Booking(ctx, bookingID)
+}
+
+// enrollment resolves an enrollment's participants through EnrollmentReader,
+// the course-context sibling of booking above. A nil reader (or an unknown
+// enrollment id) reports found=false, so every caller fails closed to
+// ErrEnrollmentNotFound rather than panicking.
+func (s *Service) enrollment(ctx context.Context, enrollmentID uuid.UUID) (teacherOwnerID, studentID uuid.UUID, found bool, err error) {
+	if s.enrollments == nil {
+		return uuid.Nil, uuid.Nil, false, nil
+	}
+	return s.enrollments.Enrollment(ctx, enrollmentID)
 }
 
 // --- phase A2: attaching a resource to a booking ---
@@ -451,6 +484,46 @@ func (s *Service) StartSubmission(ctx context.Context, studentID, resourceID, bo
 	return s.repo.StartSubmission(ctx, resourceID, studentID, bookingID)
 }
 
+// StartCourseSubmission idempotently begins (or resumes) a student's work
+// against a course-embedded resource (phase C2). Mirrors StartSubmission,
+// but resolves participants via EnrollmentReader instead of BookingReader,
+// and checks EnrollmentGrantsResource instead of GetBookingResourceByPair —
+// there is no separate "attach" step for courses: the resource IS the
+// curriculum item.
+func (s *Service) StartCourseSubmission(ctx context.Context, studentID, resourceID, enrollmentID uuid.UUID) (Submission, error) {
+	_, enrolledStudentID, found, err := s.enrollment(ctx, enrollmentID)
+	if err != nil {
+		return Submission{}, err
+	}
+	if !found {
+		return Submission{}, ErrEnrollmentNotFound
+	}
+	if enrolledStudentID == uuid.Nil || enrolledStudentID != studentID {
+		return Submission{}, ErrForbidden
+	}
+
+	res, err := s.repo.ByID(ctx, resourceID)
+	if err != nil {
+		return Submission{}, err
+	}
+	if !res.Type.submittable() {
+		return Submission{}, invalid("A %s resource can't be submitted.", res.Type)
+	}
+
+	if s.enrollments == nil {
+		return Submission{}, ErrEnrollmentNotFound
+	}
+	granted, err := s.enrollments.EnrollmentGrantsResource(ctx, enrollmentID, resourceID)
+	if err != nil {
+		return Submission{}, err
+	}
+	if !granted {
+		return Submission{}, ErrResourceNotInCourse
+	}
+
+	return s.repo.StartCourseSubmission(ctx, resourceID, studentID, enrollmentID)
+}
+
 // SaveAnswers persists a draft of the student's answers. Owner-only, and only
 // while the submission is still in_progress.
 func (s *Service) SaveAnswers(ctx context.Context, callerID, submissionID uuid.UUID, answers map[string][]string) (Submission, error) {
@@ -489,16 +562,42 @@ func (s *Service) Submit(ctx context.Context, callerID, submissionID uuid.UUID) 
 	}
 
 	now := s.now().UTC()
+	var result Submission
 	switch res.Type {
 	case TypeWriting:
-		return s.repo.SubmitSubmission(ctx, submissionID, SubmitParams{Status: SubmissionSubmitted, SubmittedAt: now})
+		result, err = s.repo.SubmitSubmission(ctx, submissionID, SubmitParams{Status: SubmissionSubmitted, SubmittedAt: now})
 	case TypeQuiz, TypeListening, TypeReading:
 		score, max := autoScore(res.Content, sub.Answers)
-		return s.repo.SubmitSubmission(ctx, submissionID, SubmitParams{
+		result, err = s.repo.SubmitSubmission(ctx, submissionID, SubmitParams{
 			Status: SubmissionGraded, AutoScore: &score, AutoMax: &max, SubmittedAt: now,
 		})
 	default:
 		return Submission{}, invalid("A %s resource can't be submitted.", res.Type)
+	}
+	if err != nil {
+		return Submission{}, err
+	}
+	// A course-context submission reaching submitted (writing, pending
+	// grading) or graded (auto-graded) marks its curriculum item complete —
+	// both outcomes above land here, so one call site after the switch
+	// covers it. Best-effort: logged and swallowed, never fails Submit.
+	if result.EnrollmentID != uuid.Nil {
+		s.notifyCourseProgress(ctx, result)
+	}
+	return result, nil
+}
+
+// notifyCourseProgress is the guarded, best-effort CourseProgress call. Runs
+// synchronously (unlike notifyGraded's detached goroutine) — it's a local DB
+// upsert, not a network email send, so there's no slow I/O to shield the
+// response from, and staying synchronous keeps it deterministic in tests.
+func (s *Service) notifyCourseProgress(ctx context.Context, sub Submission) {
+	if s.courseProgress == nil {
+		return
+	}
+	if err := s.courseProgress.ItemCompleted(ctx, sub.EnrollmentID, sub.ResourceID); err != nil {
+		s.log().Error("notify course progress",
+			slog.String("submission_id", sub.ID.String()), slog.Any("error", err))
 	}
 }
 
@@ -513,11 +612,18 @@ func (s *Service) Grade(ctx context.Context, teacherCallerID, submissionID uuid.
 	}
 
 	// Authorize before any state-revealing validation below — otherwise a
-	// caller who isn't even a participant on the booking could distinguish
-	// "not writing type" (400) from "not submitted yet" (409) via a valid but
-	// not-theirs submission id, learning submission state before being told
-	// they're forbidden.
-	teacherOwnerID, _, found, err := s.booking(ctx, sub.BookingID)
+	// caller who isn't even a participant on the booking/enrollment could
+	// distinguish "not writing type" (400) from "not submitted yet" (409) via
+	// a valid but not-theirs submission id, learning submission state before
+	// being told they're forbidden.
+	var teacherOwnerID uuid.UUID
+	var found bool
+	switch {
+	case sub.BookingID != uuid.Nil:
+		teacherOwnerID, _, found, err = s.booking(ctx, sub.BookingID)
+	case sub.EnrollmentID != uuid.Nil:
+		teacherOwnerID, _, found, err = s.enrollment(ctx, sub.EnrollmentID)
+	}
 	if err != nil {
 		return Submission{}, err
 	}
@@ -565,8 +671,8 @@ func (s *Service) notifyGraded(ctx context.Context, sub Submission, resourceTitl
 	}(context.WithoutCancel(ctx))
 }
 
-// GetSubmission returns one submission. The owning student or the booking's
-// teacher-owner only.
+// GetSubmission returns one submission. The owning student or the
+// booking's/enrollment's teacher-owner only.
 func (s *Service) GetSubmission(ctx context.Context, callerID, id uuid.UUID) (Submission, error) {
 	sub, err := s.repo.GetSubmission(ctx, id)
 	if err != nil {
@@ -575,7 +681,14 @@ func (s *Service) GetSubmission(ctx context.Context, callerID, id uuid.UUID) (Su
 	if sub.StudentID == callerID {
 		return sub, nil
 	}
-	teacherOwnerID, _, found, err := s.booking(ctx, sub.BookingID)
+	var teacherOwnerID uuid.UUID
+	var found bool
+	switch {
+	case sub.BookingID != uuid.Nil:
+		teacherOwnerID, _, found, err = s.booking(ctx, sub.BookingID)
+	case sub.EnrollmentID != uuid.Nil:
+		teacherOwnerID, _, found, err = s.enrollment(ctx, sub.EnrollmentID)
+	}
 	if err != nil {
 		return Submission{}, err
 	}
@@ -625,7 +738,29 @@ func (s *Service) Inbox(ctx context.Context, teacherCallerID uuid.UUID, q Submis
 }
 
 // CanAccessFile backs files.AssigneeChecker: true iff some resource carrying
-// fileAssetID is attached to a booking whose student is requesterID.
+// fileAssetID is attached to a booking whose student is requesterID, OR
+// (phase C2) carried by a resource embedded in some course requesterID is
+// enrolled in.
 func (s *Service) CanAccessFile(ctx context.Context, fileAssetID, requesterID uuid.UUID) (bool, error) {
-	return s.repo.FileAssetAccessible(ctx, fileAssetID, requesterID)
+	ok, err := s.repo.FileAssetAccessible(ctx, fileAssetID, requesterID)
+	if err != nil || ok {
+		return ok, err
+	}
+	if s.enrollments == nil {
+		return false, nil
+	}
+	resourceIDs, err := s.repo.ResourceIDsForFileAsset(ctx, fileAssetID)
+	if err != nil {
+		return false, err
+	}
+	for _, rid := range resourceIDs {
+		granted, err := s.enrollments.StudentResourceAccess(ctx, rid, requesterID)
+		if err != nil {
+			return false, err
+		}
+		if granted {
+			return true, nil
+		}
+	}
+	return false, nil
 }

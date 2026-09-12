@@ -47,6 +47,56 @@ type Repository interface {
 	// The caller (Service) has already validated orderedIDs is exactly
 	// sectionID's current item ids.
 	ReorderItems(ctx context.Context, sectionID uuid.UUID, orderedIDs []uuid.UUID) error
+
+	// --- catalog (phase C2) ---
+
+	// TeacherOwnerID resolves the account that owns a teacher profile (the
+	// reverse of TeacherIDByOwner). ok is false for an unclaimed profile.
+	TeacherOwnerID(ctx context.Context, teacherID uuid.UUID) (uuid.UUID, bool, error)
+	// TeacherSummaryByID loads the light teacher identity embedded in catalog rows.
+	TeacherSummaryByID(ctx context.Context, teacherID uuid.UUID) (TeacherSummary, error)
+	// CatalogList returns a page of published, non-archived courses from
+	// approved teachers, newest-first unless q.Sort says otherwise.
+	CatalogList(ctx context.Context, q CatalogQuery) ([]CatalogEntry, int, error)
+
+	// --- enrollment (phase C2) ---
+
+	// EnsureEnrollment inserts a new enrollment, or — on the (course_id,
+	// student_id) unique constraint's 23505 — loads and returns the existing
+	// one. Insert-first idempotency, never check-then-insert.
+	EnsureEnrollment(ctx context.Context, courseID, studentID uuid.UUID, source EnrollmentSource, amountPaidMinor int64, currency string) (Enrollment, error)
+	EnrollmentByCourseAndStudent(ctx context.Context, courseID, studentID uuid.UUID) (Enrollment, bool, error)
+	// EnrollmentParticipants resolves an enrollment's two participants
+	// directly: the course's teacher's owning account, and the enrolled
+	// student. found is false when the enrollment id is unknown (or its
+	// teacher profile is unclaimed, with no owning account to authorize).
+	EnrollmentParticipants(ctx context.Context, enrollmentID uuid.UUID) (teacherOwnerID, studentID uuid.UUID, found bool, err error)
+	// ListEnrollmentsForStudent is the "my learning" list, newest first, each
+	// row already carrying its course summary and progress counts.
+	ListEnrollmentsForStudent(ctx context.Context, studentID uuid.UUID) ([]EnrollmentSummary, error)
+	// EnrollmentGrantsResource reports whether the given enrollment's course
+	// actually embeds resourceID as a curriculum item.
+	EnrollmentGrantsResource(ctx context.Context, enrollmentID, resourceID uuid.UUID) (bool, error)
+	// StudentResourceAccess reports whether studentID has some active
+	// enrollment granting access to resourceID.
+	StudentResourceAccess(ctx context.Context, resourceID, studentID uuid.UUID) (bool, error)
+	// StudentHasVideoAccess reports whether studentID has some active
+	// enrollment whose course embeds fileAssetID as a video item.
+	StudentHasVideoAccess(ctx context.Context, fileAssetID, studentID uuid.UUID) (bool, error)
+	// ItemForEnrollmentResource resolves the curriculum item a course-context
+	// submission's resource corresponds to, scoped to the enrollment's own
+	// course. found is false when resourceID isn't actually embedded there.
+	ItemForEnrollmentResource(ctx context.Context, enrollmentID, resourceID uuid.UUID) (Item, bool, error)
+
+	// --- progress (phase C2) ---
+
+	// UpsertItemProgress merges the given optional fields into a video item's
+	// progress row (creating it on first touch).
+	UpsertItemProgress(ctx context.Context, enrollmentID, itemID uuid.UUID, positionSeconds *int, completed *bool) (ItemProgress, error)
+	// CompleteItemProgress marks an item complete unconditionally, from the
+	// course-context submission path (resources.CourseProgress).
+	CompleteItemProgress(ctx context.Context, enrollmentID, itemID uuid.UUID, completedAt time.Time) (ItemProgress, error)
+	ListItemProgressForEnrollment(ctx context.Context, enrollmentID uuid.UUID) ([]ItemProgress, error)
 }
 
 // CreateParams is the repository's course-insert payload.
@@ -84,6 +134,7 @@ type Service struct {
 	repo      Repository
 	resources ResourceReader // nil until SetResourceReader; guarded, fails closed
 	files     FileReader     // nil until SetFileReader; guarded, fails closed
+	payments  PaymentGateway // nil until SetPaymentGateway; guarded, fails closed (phase C2)
 	now       func() time.Time
 	logger    *slog.Logger
 }
@@ -103,6 +154,11 @@ func (s *Service) SetResourceReader(r ResourceReader) { s.resources = r }
 // `video`-kind AddItem call and every cover-image Update fails closed
 // (validation error) without it.
 func (s *Service) SetFileReader(f FileReader) { s.files = f }
+
+// SetPaymentGateway wires the payments module's course-purchase adapter in
+// (phase C2). Optional, but Purchase on a priced course fails closed
+// (ErrPurchaseUnavailable) without it — a free course still enrolls fine.
+func (s *Service) SetPaymentGateway(p PaymentGateway) { s.payments = p }
 
 // --- courses ---
 

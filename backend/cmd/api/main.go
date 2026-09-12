@@ -206,7 +206,6 @@ func run(logger *slog.Logger) error {
 	resourceService.SetBookingReader(bookings.NewResourceBookingGateway(bookingService))
 	resourceService.SetMailer(resourcesmail.New(mailer, cfg.AppBaseURL, logger))
 	bookingService.SetResourceReader(resources.NewBookingGateway(resourceService))
-	fileService.SetAssigneeChecker(resources.NewFileGateway(resourceService))
 
 	fileHandler := files.NewHandler(fileService, logger)
 	resourceHandler := resources.NewHandler(resourceService, logger)
@@ -222,6 +221,48 @@ func run(logger *slog.Logger) error {
 	courseService := courses.NewService(courses.NewPostgresRepository(pool), logger)
 	courseService.SetResourceReader(resources.NewCourseGateway(resourceService))
 	courseService.SetFileReader(files.NewCourseGateway(fileService))
+
+	// Phase C2: public catalog, one-time purchase, the enrolled-student
+	// player, and progress tracking.
+	//
+	// A second, independent payments.CourseService (own tables, own
+	// FakeProvider instance — unrelated to the booking flow's) drives the
+	// one-time course charge; payments.NewCourseGateway adapts it to
+	// courses.PaymentGateway, the course-purchase sibling of
+	// bookings.PaymentGateway.
+	coursePaymentService := payments.NewCourseService(
+		payments.NewCoursePostgresRepository(pool),
+		cfg.PaymentsProvider,
+		logger,
+	)
+	coursePaymentService.SetProvider(payments.NewFakeProvider(coursePaymentService.EmitCourse))
+	courseService.SetPaymentGateway(payments.NewCourseGateway(coursePaymentService))
+
+	// Two more ports cross the resources <-> courses boundary, both the other
+	// direction from ResourceReader/FileReader above: resources.EnrollmentReader
+	// (course-context submission authorization) and resources.CourseProgress
+	// (best-effort "mark this curriculum item complete" on submit) are both
+	// satisfied by *courses.Service through structural typing alone — courses
+	// already imports internal/resources (for ResourceReader's adapter), so
+	// resources declaring these ports with only uuid.UUID/bool/error avoids
+	// the reverse import that would otherwise cycle. See the doc comments on
+	// resources.EnrollmentReader / resources.CourseProgress for the full
+	// reasoning.
+	resourceService.SetEnrollmentReader(courseService)
+	resourceService.SetCourseProgress(courseService)
+
+	// files.Service's single AssigneeChecker slot needs to try both widenings
+	// now: a student assigned a resource through a lesson (resources.NewFileGateway)
+	// or actively enrolled in a course that embeds the file as a video item
+	// (*courses.Service, matching files.AssigneeChecker's CanAccess signature
+	// by structural typing — see courses.Service.CanAccess's doc comment).
+	// This composite is pure wiring glue, so it lives here, not in
+	// internal/files.
+	fileService.SetAssigneeChecker(multiAssigneeChecker{
+		resources.NewFileGateway(resourceService),
+		courseService,
+	})
+
 	courseHandler := courses.NewHandler(courseService, logger)
 
 	router := httpapi.NewRouter(httpapi.Deps{
@@ -231,6 +272,7 @@ func run(logger *slog.Logger) error {
 		Redis:               rdb,
 		AuthHandler:         authHandler,
 		AuthMiddleware:      auth.RequireAuth(tokenManager),
+		OptionalAuth:        auth.OptionalAuth(tokenManager),
 		AdminHandler:        adminHandler,
 		RBACHandler:         rbacHandler,
 		RBACGuard:           rbacGuard,

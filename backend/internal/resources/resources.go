@@ -203,14 +203,15 @@ const (
 )
 
 // Submission is one student's work against a submittable resource.
-// BookingID is uuid.Nil unless Context is "lesson" (the only context phase A3
-// writes).
+// BookingID is uuid.Nil unless Context is "lesson"; EnrollmentID is uuid.Nil
+// unless Context is "course" (phase C2) — exactly one of the two is set.
 type Submission struct {
-	ID         uuid.UUID
-	ResourceID uuid.UUID
-	StudentID  uuid.UUID
-	Context    string
-	BookingID  uuid.UUID
+	ID           uuid.UUID
+	ResourceID   uuid.UUID
+	StudentID    uuid.UUID
+	Context      string
+	BookingID    uuid.UUID
+	EnrollmentID uuid.UUID
 
 	Status  string
 	Answers map[string][]string
@@ -281,6 +282,15 @@ var (
 	// this action (e.g. saving/submitting a non-in_progress submission, or
 	// grading a non-submitted one). Rendered 409.
 	ErrInvalidSubmissionState = errors.New("resources: submission is not in a state that allows this")
+
+	// ErrEnrollmentNotFound — no enrollment has the requested id (via
+	// EnrollmentReader, or a nil EnrollmentReader failing closed). Phase C2.
+	ErrEnrollmentNotFound = errors.New("resources: enrollment not found")
+
+	// ErrResourceNotInCourse — the resource is not actually a curriculum item
+	// of the enrollment's course, so a course-context submission cannot
+	// start. Phase C2, the course-context sibling of ErrHomeworkNotAssigned.
+	ErrResourceNotInCourse = errors.New("resources: this resource is not part of the enrolled course")
 )
 
 // ValidationError is a client-fixable authoring problem, rendered 400.

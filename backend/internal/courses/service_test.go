@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +22,10 @@ type fakeRepo struct {
 	courses        map[uuid.UUID]Course
 	sections       map[uuid.UUID]Section
 	items          map[uuid.UUID]Item
+
+	// phase C2
+	enrollments map[uuid.UUID]Enrollment
+	progress    map[uuid.UUID]ItemProgress
 }
 
 func newFakeRepo() *fakeRepo {
@@ -29,6 +34,8 @@ func newFakeRepo() *fakeRepo {
 		courses:        map[uuid.UUID]Course{},
 		sections:       map[uuid.UUID]Section{},
 		items:          map[uuid.UUID]Item{},
+		enrollments:    map[uuid.UUID]Enrollment{},
+		progress:       map[uuid.UUID]ItemProgress{},
 	}
 }
 
@@ -309,6 +316,15 @@ func (f *fakeResourceReader) ResourceOwnedAndPublished(_ context.Context, resour
 	return f.owned[resourceID.String()+"|"+teacherID.String()], nil
 }
 
+// PublicResource returns a minimal stand-in view; tests only assert it gets
+// embedded, not its exact content.
+func (f *fakeResourceReader) PublicResource(_ context.Context, resourceID uuid.UUID) (CourseResourceView, error) {
+	if f.err != nil {
+		return CourseResourceView{}, f.err
+	}
+	return CourseResourceView{ID: resourceID, Type: "quiz", Title: "fake resource", Content: []byte(`{}`)}, nil
+}
+
 var _ ResourceReader = (*fakeResourceReader)(nil)
 
 // --- fakeFileReader: an in-memory FileReader ---
@@ -338,6 +354,20 @@ func (f *fakeFileReader) FileOwnedBy(_ context.Context, fileAssetID, callerID uu
 		return false, "", nil
 	}
 	return true, rec.contentType, nil
+}
+
+// PublicAsset serves unconditionally, mirroring files.Service.ServePublic's
+// no-check contract; tests only assert it gets called and its contentType
+// forwarded.
+func (f *fakeFileReader) PublicAsset(_ context.Context, fileAssetID uuid.UUID) (string, io.ReadCloser, string, error) {
+	if f.err != nil {
+		return "", nil, "", f.err
+	}
+	rec, ok := f.byID[fileAssetID]
+	if !ok {
+		return "", nil, "", errors.New("fake: no such file asset")
+	}
+	return "", io.NopCloser(strings.NewReader("fake-bytes")), rec.contentType, nil
 }
 
 var _ FileReader = (*fakeFileReader)(nil)

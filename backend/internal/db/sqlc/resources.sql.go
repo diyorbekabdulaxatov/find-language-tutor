@@ -343,7 +343,7 @@ func (q *Queries) GetResource(ctx context.Context, id uuid.UUID) (Resource, erro
 const getSubmissionByID = `-- name: GetSubmissionByID :one
 SELECT id, resource_id, student_id, context, booking_id, status, answers,
        auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
-       submitted_at, created_at, updated_at
+       submitted_at, created_at, updated_at, enrollment_id
 FROM submissions
 WHERE id = $1
 `
@@ -368,6 +368,7 @@ func (q *Queries) GetSubmissionByID(ctx context.Context, id uuid.UUID) (Submissi
 		&i.SubmittedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EnrollmentID,
 	)
 	return i, err
 }
@@ -400,7 +401,7 @@ SET teacher_score    = $1,
 WHERE id = $5
 RETURNING id, resource_id, student_id, context, booking_id, status, answers,
           auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
-          submitted_at, created_at, updated_at
+          submitted_at, created_at, updated_at, enrollment_id
 `
 
 type GradeSubmissionParams struct {
@@ -439,6 +440,7 @@ func (q *Queries) GradeSubmission(ctx context.Context, arg GradeSubmissionParams
 		&i.SubmittedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EnrollmentID,
 	)
 	return i, err
 }
@@ -521,7 +523,7 @@ func (q *Queries) ListBookingResources(ctx context.Context, bookingID uuid.UUID)
 const listSubmissionsForBooking = `-- name: ListSubmissionsForBooking :many
 SELECT id, resource_id, student_id, context, booking_id, status, answers,
        auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
-       submitted_at, created_at, updated_at
+       submitted_at, created_at, updated_at, enrollment_id
 FROM submissions
 WHERE booking_id = $1
 `
@@ -554,6 +556,7 @@ func (q *Queries) ListSubmissionsForBooking(ctx context.Context, bookingID uuid.
 			&i.SubmittedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EnrollmentID,
 		); err != nil {
 			return nil, err
 		}
@@ -625,13 +628,44 @@ func (q *Queries) ListTeacherResources(ctx context.Context, arg ListTeacherResou
 	return items, nil
 }
 
+const resourceIDsForFileAsset = `-- name: ResourceIDsForFileAsset :many
+SELECT id FROM resources
+WHERE (content ->> 'file_asset_id') = $1::text
+   OR (content ->> 'audio_asset_id') = $1::text
+`
+
+// Phase C2: which resource(s) reference this file_asset_id as their
+// material file or listening audio? Backs FileAssetAccessible's course-based
+// widening — the caller checks each returned resource id against
+// resources.EnrollmentReader.StudentResourceAccess, keeping the course-side
+// check behind that port rather than a raw join into course_items here.
+func (q *Queries) ResourceIDsForFileAsset(ctx context.Context, fileAssetID string) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, resourceIDsForFileAsset, fileAssetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const saveSubmissionAnswers = `-- name: SaveSubmissionAnswers :one
 UPDATE submissions
 SET answers = $1, updated_at = now()
 WHERE id = $2
 RETURNING id, resource_id, student_id, context, booking_id, status, answers,
           auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
-          submitted_at, created_at, updated_at
+          submitted_at, created_at, updated_at, enrollment_id
 `
 
 type SaveSubmissionAnswersParams struct {
@@ -659,6 +693,7 @@ func (q *Queries) SaveSubmissionAnswers(ctx context.Context, arg SaveSubmissionA
 		&i.SubmittedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EnrollmentID,
 	)
 	return i, err
 }
@@ -724,6 +759,51 @@ func (q *Queries) SetResourceStatus(ctx context.Context, arg SetResourceStatusPa
 	return i, err
 }
 
+const startOrGetCourseSubmission = `-- name: StartOrGetCourseSubmission :one
+INSERT INTO submissions (resource_id, student_id, enrollment_id, context)
+VALUES ($1, $2, $3, 'course')
+ON CONFLICT (resource_id, student_id, enrollment_id) WHERE enrollment_id IS NOT NULL
+DO UPDATE SET updated_at = submissions.updated_at
+RETURNING id, resource_id, student_id, context, booking_id, status, answers,
+          auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
+          submitted_at, created_at, updated_at, enrollment_id
+`
+
+type StartOrGetCourseSubmissionParams struct {
+	ResourceID   uuid.UUID
+	StudentID    uuid.UUID
+	EnrollmentID uuid.NullUUID
+}
+
+// Phase C2's course-context sibling of StartOrGetSubmission: idempotent
+// "start" against submissions_course_uniq instead of submissions_lesson_uniq.
+// There is no separate "attach" step for courses — the resource IS the
+// curriculum item, checked by the service via EnrollmentGrantsResource.
+func (q *Queries) StartOrGetCourseSubmission(ctx context.Context, arg StartOrGetCourseSubmissionParams) (Submission, error) {
+	row := q.db.QueryRow(ctx, startOrGetCourseSubmission, arg.ResourceID, arg.StudentID, arg.EnrollmentID)
+	var i Submission
+	err := row.Scan(
+		&i.ID,
+		&i.ResourceID,
+		&i.StudentID,
+		&i.Context,
+		&i.BookingID,
+		&i.Status,
+		&i.Answers,
+		&i.AutoScore,
+		&i.AutoMax,
+		&i.TeacherScore,
+		&i.TeacherFeedback,
+		&i.GradedBy,
+		&i.GradedAt,
+		&i.SubmittedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.EnrollmentID,
+	)
+	return i, err
+}
+
 const startOrGetSubmission = `-- name: StartOrGetSubmission :one
 INSERT INTO submissions (resource_id, student_id, booking_id, context)
 VALUES ($1, $2, $3, 'lesson')
@@ -731,7 +811,7 @@ ON CONFLICT (resource_id, student_id, booking_id) WHERE booking_id IS NOT NULL
 DO UPDATE SET updated_at = submissions.updated_at
 RETURNING id, resource_id, student_id, context, booking_id, status, answers,
           auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
-          submitted_at, created_at, updated_at
+          submitted_at, created_at, updated_at, enrollment_id
 `
 
 type StartOrGetSubmissionParams struct {
@@ -764,6 +844,7 @@ func (q *Queries) StartOrGetSubmission(ctx context.Context, arg StartOrGetSubmis
 		&i.SubmittedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EnrollmentID,
 	)
 	return i, err
 }
@@ -778,7 +859,7 @@ SET status       = $1,
 WHERE id = $5
 RETURNING id, resource_id, student_id, context, booking_id, status, answers,
           auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
-          submitted_at, created_at, updated_at
+          submitted_at, created_at, updated_at, enrollment_id
 `
 
 type SubmitSubmissionParams struct {
@@ -819,6 +900,7 @@ func (q *Queries) SubmitSubmission(ctx context.Context, arg SubmitSubmissionPara
 		&i.SubmittedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EnrollmentID,
 	)
 	return i, err
 }
@@ -826,7 +908,7 @@ func (q *Queries) SubmitSubmission(ctx context.Context, arg SubmitSubmissionPara
 const teacherSubmissionInbox = `-- name: TeacherSubmissionInbox :many
 SELECT s.id, s.resource_id, s.student_id, s.context, s.booking_id, s.status, s.answers,
        s.auto_score, s.auto_max, s.teacher_score, s.teacher_feedback, s.graded_by, s.graded_at,
-       s.submitted_at, s.created_at, s.updated_at
+       s.submitted_at, s.created_at, s.updated_at, s.enrollment_id
 FROM submissions s
 JOIN resources r ON r.id = s.resource_id
 WHERE r.teacher_id = $1
@@ -842,8 +924,9 @@ type TeacherSubmissionInboxParams struct {
 	PageLimit  int32
 }
 
-// The grading inbox: a teacher's own resources' submissions, filtered by
-// status (default 'submitted' in the service), newest-submitted-first.
+// The grading inbox: a teacher's own resources' submissions (lesson or
+// course context alike — both join through resources.teacher_id), filtered
+// by status (default 'submitted' in the service), newest-submitted-first.
 func (q *Queries) TeacherSubmissionInbox(ctx context.Context, arg TeacherSubmissionInboxParams) ([]Submission, error) {
 	rows, err := q.db.Query(ctx, teacherSubmissionInbox,
 		arg.TeacherID,
@@ -875,6 +958,7 @@ func (q *Queries) TeacherSubmissionInbox(ctx context.Context, arg TeacherSubmiss
 			&i.SubmittedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.EnrollmentID,
 		); err != nil {
 			return nil, err
 		}

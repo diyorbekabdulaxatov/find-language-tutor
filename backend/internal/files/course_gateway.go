@@ -2,6 +2,7 @@ package files
 
 import (
 	"context"
+	"io"
 
 	"github.com/google/uuid"
 
@@ -21,4 +22,12 @@ var _ courses.FileReader = (*CourseGateway)(nil)
 
 func (g *CourseGateway) FileOwnedBy(ctx context.Context, fileAssetID, callerID uuid.UUID) (bool, string, error) {
 	return g.svc.FileOwnedBy(ctx, fileAssetID, callerID)
+}
+
+func (g *CourseGateway) PublicAsset(ctx context.Context, fileAssetID uuid.UUID) (redirectURL string, body io.ReadCloser, contentType string, err error) {
+	redirectURL, body, a, err := g.svc.ServePublic(ctx, fileAssetID)
+	if err != nil {
+		return "", nil, "", err
+	}
+	return redirectURL, body, a.ContentType, nil
 }

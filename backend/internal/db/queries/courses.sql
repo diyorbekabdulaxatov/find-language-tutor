@@ -171,3 +171,193 @@ UPDATE course_items ci
 SET position = ordered.position
 FROM ordered
 WHERE ci.id = ordered.id AND ci.section_id = sqlc.arg('section_id');
+
+-- Phase C2: public catalog, purchase/enrollment, the student player, and
+-- progress tracking.
+
+-- name: GetTeacherOwnerID :one
+-- The account that owns a teacher profile (the reverse of GetTeacherIDByOwner).
+-- Used to resolve who to authorize as "the teacher" for a course (e.g. an
+-- enrollment's grading authorization) without joining through users elsewhere.
+SELECT user_id FROM teachers WHERE id = $1;
+
+-- name: GetTeacherSummary :one
+SELECT id, slug, display_name FROM teachers WHERE id = $1;
+
+-- Catalog: published, non-archived courses only, from an approved teacher
+-- (mirrors GetBookingTeacherContext's status = 'approved' gate — a suspended
+-- teacher's courses shouldn't surface in the public marketplace even if the
+-- course row itself is still 'published').
+
+-- name: CatalogListCourses :many
+-- sort: 'price_asc' | 'price_desc' | anything else (including "" / 'newest' /
+-- 'recommended' — there is no rating-based ranking for courses yet) falls
+-- back to newest-first. The two CASE columns are NULL for every row unless
+-- their own sort is selected, so they never affect ordering otherwise and the
+-- final created_at/id tiebreak always applies.
+SELECT
+    c.id, c.teacher_id, c.title, c.subtitle, c.description, c.cover_asset_id,
+    c.price_amount_minor, c.price_currency, c.status, c.ever_published, c.archived_at,
+    c.created_at, c.updated_at,
+    t.slug AS teacher_slug, t.display_name AS teacher_display_name,
+    (SELECT count(*) FROM course_sections cs WHERE cs.course_id = c.id) AS section_count,
+    (SELECT count(*) FROM course_items ci JOIN course_sections cs2 ON cs2.id = ci.section_id WHERE cs2.course_id = c.id) AS item_count
+FROM courses c
+JOIN teachers t ON t.id = c.teacher_id
+WHERE c.status = 'published' AND c.archived_at IS NULL AND t.status = 'approved'
+  AND (sqlc.narg('q')::text IS NULL OR c.title ILIKE '%' || sqlc.narg('q')::text || '%' OR c.subtitle ILIKE '%' || sqlc.narg('q')::text || '%')
+  AND (sqlc.narg('max_price_minor')::bigint IS NULL OR c.price_amount_minor <= sqlc.narg('max_price_minor')::bigint)
+ORDER BY
+    (CASE WHEN sqlc.arg('sort')::text = 'price_asc'  THEN c.price_amount_minor END) ASC NULLS LAST,
+    (CASE WHEN sqlc.arg('sort')::text = 'price_desc' THEN c.price_amount_minor END) DESC NULLS LAST,
+    c.created_at DESC, c.id
+LIMIT sqlc.arg('page_limit')::int OFFSET sqlc.arg('page_offset')::int;
+
+-- name: CountCatalogCourses :one
+SELECT count(*)
+FROM courses c
+JOIN teachers t ON t.id = c.teacher_id
+WHERE c.status = 'published' AND c.archived_at IS NULL AND t.status = 'approved'
+  AND (sqlc.narg('q')::text IS NULL OR c.title ILIKE '%' || sqlc.narg('q')::text || '%' OR c.subtitle ILIKE '%' || sqlc.narg('q')::text || '%')
+  AND (sqlc.narg('max_price_minor')::bigint IS NULL OR c.price_amount_minor <= sqlc.narg('max_price_minor')::bigint);
+
+-- Enrollment.
+
+-- name: InsertEnrollment :one
+-- Insert-first idempotency: a duplicate (course_id, student_id) raises
+-- SQLSTATE 23505 on the table's UNIQUE constraint, mapped by the repository
+-- to load-and-return the existing row instead — never check-then-insert.
+INSERT INTO course_enrollments (course_id, student_id, source, amount_paid_minor, currency)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, course_id, student_id, source, amount_paid_minor, currency, created_at;
+
+-- name: GetEnrollmentByCourseAndStudent :one
+SELECT id, course_id, student_id, source, amount_paid_minor, currency, created_at
+FROM course_enrollments
+WHERE course_id = $1 AND student_id = $2;
+
+-- name: GetEnrollmentByID :one
+SELECT id, course_id, student_id, source, amount_paid_minor, currency, created_at
+FROM course_enrollments
+WHERE id = $1;
+
+-- name: ListEnrollmentsForStudent :many
+-- "My learning": the student's enrollments, newest first, each with its
+-- course summary and a progress percent computed from two correlated
+-- subqueries (total curriculum items for the course; completed rows for this
+-- specific enrollment) — cheap since a course has at most a few dozen items.
+SELECT
+    e.id, e.course_id, e.student_id, e.source, e.amount_paid_minor, e.currency, e.created_at,
+    c.teacher_id AS course_teacher_id, c.title AS course_title, c.subtitle AS course_subtitle,
+    c.description AS course_description, c.cover_asset_id AS course_cover_asset_id,
+    c.price_amount_minor AS course_price_amount_minor, c.price_currency AS course_price_currency,
+    c.status AS course_status, c.ever_published AS course_ever_published, c.archived_at AS course_archived_at,
+    c.created_at AS course_created_at, c.updated_at AS course_updated_at,
+    (SELECT count(*) FROM course_items ci JOIN course_sections cs ON cs.id = ci.section_id WHERE cs.course_id = c.id) AS total_items,
+    (SELECT count(*) FROM course_item_progress cip WHERE cip.enrollment_id = e.id AND cip.status = 'completed') AS completed_items
+FROM course_enrollments e
+JOIN courses c ON c.id = e.course_id
+WHERE e.student_id = sqlc.arg('student_id')
+ORDER BY e.created_at DESC, e.id;
+
+-- name: EnrollmentGrantsResource :one
+-- Does this enrollment's course actually embed resourceID as a curriculum
+-- item? The course-context equivalent of GetBookingResourceByPair's "is this
+-- actually attached" check.
+SELECT EXISTS(
+    SELECT 1
+    FROM course_enrollments e
+    JOIN course_sections cs ON cs.course_id = e.course_id
+    JOIN course_items ci ON ci.section_id = cs.id
+    WHERE e.id = sqlc.arg('enrollment_id') AND ci.resource_id = sqlc.arg('resource_id')
+) AS granted;
+
+-- name: StudentHasResourceAccess :one
+-- Does studentID have SOME active enrollment granting access to resourceID,
+-- independent of which specific enrollment? Backs the course-based widening
+-- of a course-embedded resource's material/audio file.
+SELECT EXISTS(
+    SELECT 1
+    FROM course_enrollments e
+    JOIN course_sections cs ON cs.course_id = e.course_id
+    JOIN course_items ci ON ci.section_id = cs.id
+    WHERE e.student_id = sqlc.arg('student_id') AND ci.resource_id = sqlc.arg('resource_id')
+) AS accessible;
+
+-- name: StudentHasVideoAccess :one
+-- Backs files.AssigneeChecker's course-based widening: is fileAssetID a video
+-- item's asset in some course the student is actively enrolled in?
+SELECT EXISTS(
+    SELECT 1
+    FROM course_enrollments e
+    JOIN course_sections cs ON cs.course_id = e.course_id
+    JOIN course_items ci ON ci.section_id = cs.id
+    WHERE e.student_id = sqlc.arg('student_id') AND ci.video_asset_id = sqlc.arg('file_asset_id')
+) AS accessible;
+
+-- name: GetEnrollmentParticipants :one
+-- Resolves an enrollment's two participants for authorization: the course's
+-- teacher's owning account, and the enrolled student.
+SELECT t.user_id AS teacher_owner_id, e.student_id AS student_id
+FROM course_enrollments e
+JOIN courses c ON c.id = e.course_id
+JOIN teachers t ON t.id = c.teacher_id
+WHERE e.id = sqlc.arg('id');
+
+-- name: GetCourseItemForEnrollmentResource :one
+-- Resolves the curriculum item a course-context submission's resource
+-- corresponds to, scoped to the enrollment's own course. Backs
+-- resources.CourseProgress.ItemCompleted.
+SELECT ci.id, ci.section_id, ci.kind, ci.title, ci.video_asset_id, ci.resource_id, ci.position, ci.created_at
+FROM course_enrollments e
+JOIN course_sections cs ON cs.course_id = e.course_id
+JOIN course_items ci ON ci.section_id = cs.id
+WHERE e.id = sqlc.arg('enrollment_id') AND ci.resource_id = sqlc.arg('resource_id')
+LIMIT 1;
+
+-- Progress.
+
+-- name: UpsertItemProgress :one
+-- Merges the given fields into a video item's progress row for a student
+-- driving the player (position updates as they watch; explicit
+-- complete/uncomplete). NULL args (a field the client didn't send) leave the
+-- stored value unchanged. completed=true stamps completed_at once (COALESCE
+-- keeps the first time it was ever set); completed=false clears it.
+INSERT INTO course_item_progress (enrollment_id, item_id, video_position_seconds, status, completed_at)
+VALUES (
+    sqlc.arg('enrollment_id'), sqlc.arg('item_id'),
+    COALESCE(sqlc.narg('video_position_seconds')::int, 0),
+    CASE WHEN sqlc.narg('completed')::bool IS TRUE THEN 'completed' ELSE 'in_progress' END,
+    CASE WHEN sqlc.narg('completed')::bool IS TRUE THEN now() ELSE NULL END
+)
+ON CONFLICT (enrollment_id, item_id) DO UPDATE SET
+    video_position_seconds = COALESCE(sqlc.narg('video_position_seconds')::int, course_item_progress.video_position_seconds),
+    status = CASE
+        WHEN sqlc.narg('completed')::bool IS TRUE  THEN 'completed'
+        WHEN sqlc.narg('completed')::bool IS FALSE THEN 'in_progress'
+        ELSE course_item_progress.status
+    END,
+    completed_at = CASE
+        WHEN sqlc.narg('completed')::bool IS TRUE  THEN COALESCE(course_item_progress.completed_at, now())
+        WHEN sqlc.narg('completed')::bool IS FALSE THEN NULL
+        ELSE course_item_progress.completed_at
+    END,
+    updated_at = now()
+RETURNING id, enrollment_id, item_id, status, video_position_seconds, completed_at, updated_at;
+
+-- name: CompleteItemProgress :one
+-- Marks an item complete unconditionally (a course-embedded resource's
+-- submission reaching submitted/graded, via resources.CourseProgress). Never
+-- regresses video_position_seconds or an already-recorded completed_at.
+INSERT INTO course_item_progress (enrollment_id, item_id, status, completed_at)
+VALUES (sqlc.arg('enrollment_id'), sqlc.arg('item_id'), 'completed', sqlc.arg('completed_at'))
+ON CONFLICT (enrollment_id, item_id) DO UPDATE SET
+    status = 'completed',
+    completed_at = COALESCE(course_item_progress.completed_at, sqlc.arg('completed_at')),
+    updated_at = now()
+RETURNING id, enrollment_id, item_id, status, video_position_seconds, completed_at, updated_at;
+
+-- name: ListItemProgressForEnrollment :many
+SELECT id, enrollment_id, item_id, status, video_position_seconds, completed_at, updated_at
+FROM course_item_progress
+WHERE enrollment_id = $1;

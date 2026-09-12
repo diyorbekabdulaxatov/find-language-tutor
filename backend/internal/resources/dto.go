@@ -138,9 +138,12 @@ func toAttachedResourceListDTO(items []AttachedResource) attachedResourceListDTO
 
 // --- phase A3: submissions ---
 
+// startSubmissionRequest accepts exactly one of booking_id (lesson-context
+// homework, phase A3) or enrollment_id (course-context, phase C2).
 type startSubmissionRequest struct {
-	ResourceID string `json:"resource_id"`
-	BookingID  string `json:"booking_id"`
+	ResourceID   string `json:"resource_id"`
+	BookingID    string `json:"booking_id"`
+	EnrollmentID string `json:"enrollment_id"`
 }
 
 type saveAnswersRequest struct {
@@ -156,6 +159,7 @@ type submissionDTO struct {
 	ID              string              `json:"id"`
 	ResourceID      string              `json:"resource_id"`
 	BookingID       string              `json:"booking_id,omitempty"`
+	EnrollmentID    string              `json:"enrollment_id,omitempty"`
 	Status          string              `json:"status"`
 	Answers         map[string][]string `json:"answers"`
 	AutoScore       *int                `json:"auto_score"`
@@ -189,6 +193,9 @@ func toSubmissionDTO(s Submission) submissionDTO {
 	}
 	if s.BookingID != uuid.Nil {
 		dto.BookingID = s.BookingID.String()
+	}
+	if s.EnrollmentID != uuid.Nil {
+		dto.EnrollmentID = s.EnrollmentID.String()
 	}
 	return dto
 }

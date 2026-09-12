@@ -119,7 +119,20 @@ ON CONFLICT (resource_id, student_id, booking_id) WHERE booking_id IS NOT NULL
 DO UPDATE SET updated_at = submissions.updated_at
 RETURNING id, resource_id, student_id, context, booking_id, status, answers,
           auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
-          submitted_at, created_at, updated_at;
+          submitted_at, created_at, updated_at, enrollment_id;
+
+-- name: StartOrGetCourseSubmission :one
+-- Phase C2's course-context sibling of StartOrGetSubmission: idempotent
+-- "start" against submissions_course_uniq instead of submissions_lesson_uniq.
+-- There is no separate "attach" step for courses — the resource IS the
+-- curriculum item, checked by the service via EnrollmentGrantsResource.
+INSERT INTO submissions (resource_id, student_id, enrollment_id, context)
+VALUES (sqlc.arg('resource_id'), sqlc.arg('student_id'), sqlc.arg('enrollment_id'), 'course')
+ON CONFLICT (resource_id, student_id, enrollment_id) WHERE enrollment_id IS NOT NULL
+DO UPDATE SET updated_at = submissions.updated_at
+RETURNING id, resource_id, student_id, context, booking_id, status, answers,
+          auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
+          submitted_at, created_at, updated_at, enrollment_id;
 
 -- name: SaveSubmissionAnswers :one
 UPDATE submissions
@@ -127,7 +140,7 @@ SET answers = sqlc.arg('answers'), updated_at = now()
 WHERE id = sqlc.arg('id')
 RETURNING id, resource_id, student_id, context, booking_id, status, answers,
           auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
-          submitted_at, created_at, updated_at;
+          submitted_at, created_at, updated_at, enrollment_id;
 
 -- name: SubmitSubmission :one
 -- Writes the outcome of POST /v1/submissions/{id}/submit. For an
@@ -143,7 +156,7 @@ SET status       = sqlc.arg('status'),
 WHERE id = sqlc.arg('id')
 RETURNING id, resource_id, student_id, context, booking_id, status, answers,
           auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
-          submitted_at, created_at, updated_at;
+          submitted_at, created_at, updated_at, enrollment_id;
 
 -- name: GradeSubmission :one
 -- Only a `writing` submission reaches this (enforced in the service);
@@ -158,12 +171,12 @@ SET teacher_score    = sqlc.narg('teacher_score'),
 WHERE id = sqlc.arg('id')
 RETURNING id, resource_id, student_id, context, booking_id, status, answers,
           auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
-          submitted_at, created_at, updated_at;
+          submitted_at, created_at, updated_at, enrollment_id;
 
 -- name: GetSubmissionByID :one
 SELECT id, resource_id, student_id, context, booking_id, status, answers,
        auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
-       submitted_at, created_at, updated_at
+       submitted_at, created_at, updated_at, enrollment_id
 FROM submissions
 WHERE id = $1;
 
@@ -172,16 +185,17 @@ WHERE id = $1;
 -- exactly one student, so this never needs a student filter of its own.
 SELECT id, resource_id, student_id, context, booking_id, status, answers,
        auto_score, auto_max, teacher_score, teacher_feedback, graded_by, graded_at,
-       submitted_at, created_at, updated_at
+       submitted_at, created_at, updated_at, enrollment_id
 FROM submissions
 WHERE booking_id = $1;
 
 -- name: TeacherSubmissionInbox :many
--- The grading inbox: a teacher's own resources' submissions, filtered by
--- status (default 'submitted' in the service), newest-submitted-first.
+-- The grading inbox: a teacher's own resources' submissions (lesson or
+-- course context alike — both join through resources.teacher_id), filtered
+-- by status (default 'submitted' in the service), newest-submitted-first.
 SELECT s.id, s.resource_id, s.student_id, s.context, s.booking_id, s.status, s.answers,
        s.auto_score, s.auto_max, s.teacher_score, s.teacher_feedback, s.graded_by, s.graded_at,
-       s.submitted_at, s.created_at, s.updated_at
+       s.submitted_at, s.created_at, s.updated_at, s.enrollment_id
 FROM submissions s
 JOIN resources r ON r.id = s.resource_id
 WHERE r.teacher_id = sqlc.arg('teacher_id')
@@ -211,6 +225,16 @@ SELECT EXISTS(
           OR (res.content ->> 'audio_asset_id') = sqlc.arg('file_asset_id')::text
       )
 ) AS accessible;
+
+-- name: ResourceIDsForFileAsset :many
+-- Phase C2: which resource(s) reference this file_asset_id as their
+-- material file or listening audio? Backs FileAssetAccessible's course-based
+-- widening — the caller checks each returned resource id against
+-- resources.EnrollmentReader.StudentResourceAccess, keeping the course-side
+-- check behind that port rather than a raw join into course_items here.
+SELECT id FROM resources
+WHERE (content ->> 'file_asset_id') = sqlc.arg('file_asset_id')::text
+   OR (content ->> 'audio_asset_id') = sqlc.arg('file_asset_id')::text;
 
 -- name: GetUserContact :one
 -- A plain contact lookup, used only for the grading-done email.

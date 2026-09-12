@@ -235,6 +235,16 @@ func (r *repositoryPostgres) StartSubmission(ctx context.Context, resourceID, st
 	return toSubmission(row)
 }
 
+func (r *repositoryPostgres) StartCourseSubmission(ctx context.Context, resourceID, studentID, enrollmentID uuid.UUID) (Submission, error) {
+	row, err := r.q.StartOrGetCourseSubmission(ctx, sqlc.StartOrGetCourseSubmissionParams{
+		ResourceID: resourceID, StudentID: studentID, EnrollmentID: toNullUUID(enrollmentID),
+	})
+	if err != nil {
+		return Submission{}, fmt.Errorf("start course submission: %w", err)
+	}
+	return toSubmission(row)
+}
+
 func (r *repositoryPostgres) SaveSubmissionAnswers(ctx context.Context, id uuid.UUID, answers map[string][]string) (Submission, error) {
 	blob, err := marshalAnswers(answers)
 	if err != nil {
@@ -339,6 +349,14 @@ func (r *repositoryPostgres) FileAssetAccessible(ctx context.Context, fileAssetI
 	return ok, nil
 }
 
+func (r *repositoryPostgres) ResourceIDsForFileAsset(ctx context.Context, fileAssetID uuid.UUID) ([]uuid.UUID, error) {
+	ids, err := r.q.ResourceIDsForFileAsset(ctx, fileAssetID.String())
+	if err != nil {
+		return nil, fmt.Errorf("resource ids for file asset: %w", err)
+	}
+	return ids, nil
+}
+
 func (r *repositoryPostgres) UserContact(ctx context.Context, userID uuid.UUID) (string, string, error) {
 	row, err := r.q.GetUserContact(ctx, userID)
 	if err != nil {
@@ -413,8 +431,8 @@ func toSubmission(row sqlc.Submission) (Submission, error) {
 	}
 	return Submission{
 		ID: row.ID, ResourceID: row.ResourceID, StudentID: row.StudentID, Context: row.Context,
-		BookingID: fromNullUUID(row.BookingID),
-		Status:    row.Status, Answers: answers,
+		BookingID: fromNullUUID(row.BookingID), EnrollmentID: fromNullUUID(row.EnrollmentID),
+		Status: row.Status, Answers: answers,
 		AutoScore: fromInt4(row.AutoScore), AutoMax: fromInt4(row.AutoMax),
 		TeacherScore: fromInt4(row.TeacherScore), TeacherFeedback: row.TeacherFeedback,
 		GradedBy: fromNullUUID(row.GradedBy), GradedAt: fromTimestamptz(row.GradedAt),
