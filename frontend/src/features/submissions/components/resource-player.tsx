@@ -20,14 +20,19 @@ const AUTOSAVE_MS = 800;
  * `material` / `article` are static (no submission). `quiz` / `listening` /
  * `reading` / `writing` start (or resume — idempotent) a submission on mount,
  * autosave answers, and submit for grading.
+ *
+ * Exactly one of `bookingId` (lesson homework) / `enrollmentId` (a
+ * resource-kind item inside a course, phase C2) must be set.
  */
 export function ResourcePlayer({
   attachment,
   bookingId,
+  enrollmentId,
   onSubmissionChange,
 }: {
   attachment: AttachedResource;
-  bookingId: string;
+  bookingId?: string;
+  enrollmentId?: string;
   onSubmissionChange?: (submission: Submission) => void;
 }) {
   const needsSubmission = hasSubmissionFlow(attachment.type);
@@ -55,6 +60,7 @@ export function ResourcePlayer({
         const s = await startSubmission({
           resourceId: attachment.resourceId,
           bookingId,
+          enrollmentId,
         });
         if (!alive) return;
         setSubmission(s);
@@ -73,7 +79,7 @@ export function ResourcePlayer({
     return () => {
       alive = false;
     };
-  }, [attachment.resourceId, bookingId, needsSubmission]);
+  }, [attachment.resourceId, bookingId, enrollmentId, needsSubmission]);
 
   useEffect(() => {
     return () => {

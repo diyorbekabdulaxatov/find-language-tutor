@@ -4,16 +4,30 @@
  * `features/resources/api.ts`'s conventions.
  */
 
+import { api } from "@/lib/api/client";
 import { browserApi } from "@/features/auth/browser-client";
+import { toContent } from "@/features/resources/api";
 import type { components } from "@/lib/api/schema";
 import type { Money } from "@/types/teacher";
 import type {
   Course,
+  CourseCatalogDetail,
+  CourseCatalogEntry,
+  CourseCatalogItemOutline,
+  CourseCatalogSectionOutline,
   CourseDetail,
+  CourseEnrollment,
   CourseItem,
   CourseItemKind,
+  CourseItemProgress,
+  CourseLearnDetail,
+  CourseLearnItem,
+  CourseLearnSection,
+  CourseResourceView,
   CourseSection,
+  CourseSort,
   CourseStatus,
+  CourseTeacherSummary,
 } from "./types";
 
 export class CourseError extends Error {
@@ -292,4 +306,223 @@ export async function reorderItems(
   );
   if (error || !data) throw toErr(error, response.status, "Could not reorder the items.");
   return toCourseDetail(data);
+}
+
+/* ===================== Phase C2 — catalog, purchase, player ===================== */
+
+const PUBLIC_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+
+/** Direct, unauthenticated URL for a course's cover image — usable straight
+ *  in an `<img src>` from either a server- or client-rendered page. */
+export function courseCoverUrl(courseId: string): string {
+  return `${PUBLIC_BASE_URL}/v1/courses/${courseId}/cover`;
+}
+
+type WireTeacherSummary = components["schemas"]["CourseTeacherSummary"];
+type WireCatalogEntry = components["schemas"]["CourseCatalogEntry"];
+type WireCatalogItemOutline = components["schemas"]["CourseCatalogItemOutline"];
+type WireCatalogSectionOutline = components["schemas"]["CourseCatalogSectionOutline"];
+type WireCatalogDetail = components["schemas"]["CourseCatalogDetail"];
+type WireEnrollment = components["schemas"]["CourseEnrollment"];
+type WireItemProgress = components["schemas"]["CourseItemProgress"];
+type WireResourceView = components["schemas"]["CourseResourceView"];
+type WireLearnItem = components["schemas"]["CourseLearnItem"];
+type WireLearnSection = components["schemas"]["CourseLearnSection"];
+type WireLearnDetail = components["schemas"]["CourseLearnDetail"];
+
+function toTeacherSummary(t: WireTeacherSummary): CourseTeacherSummary {
+  return { id: t.id, displayName: t.display_name, slug: t.slug };
+}
+
+function toCatalogEntry(c: WireCatalogEntry): CourseCatalogEntry {
+  return {
+    id: c.id,
+    title: c.title,
+    subtitle: c.subtitle,
+    coverAssetId: c.cover_asset_id,
+    price: toMoney(c.price),
+    teacher: toTeacherSummary(c.teacher),
+    sectionCount: c.section_count,
+    itemCount: c.item_count,
+  };
+}
+
+function toCatalogItemOutline(i: WireCatalogItemOutline): CourseCatalogItemOutline {
+  return { id: i.id, kind: i.kind, title: i.title, position: i.position };
+}
+
+function toCatalogSectionOutline(s: WireCatalogSectionOutline): CourseCatalogSectionOutline {
+  return {
+    id: s.id,
+    title: s.title,
+    position: s.position,
+    items: s.items.map(toCatalogItemOutline),
+  };
+}
+
+function toCatalogDetail(c: WireCatalogDetail): CourseCatalogDetail {
+  return {
+    id: c.id,
+    title: c.title,
+    subtitle: c.subtitle,
+    description: c.description,
+    coverAssetId: c.cover_asset_id,
+    price: toMoney(c.price),
+    teacher: toTeacherSummary(c.teacher),
+    sections: c.sections.map(toCatalogSectionOutline),
+    isEnrolled: c.is_enrolled,
+    isOwner: c.is_owner,
+  };
+}
+
+function toEnrollment(e: WireEnrollment): CourseEnrollment {
+  return {
+    id: e.id,
+    course: toCourse(e.course),
+    source: e.source,
+    amountPaid: toMoney(e.amount_paid),
+    progressPercent: e.progress_percent,
+    createdAt: e.created_at,
+  };
+}
+
+function toItemProgress(p: WireItemProgress): CourseItemProgress {
+  return {
+    status: p.status,
+    videoPositionSeconds: p.video_position_seconds,
+    completedAt: p.completed_at,
+  };
+}
+
+function toResourceView(r: WireResourceView): CourseResourceView {
+  return {
+    id: r.id,
+    type: r.type,
+    title: r.title,
+    instructions: r.instructions,
+    content: toContent(r.content),
+  };
+}
+
+function toLearnItem(i: WireLearnItem): CourseLearnItem {
+  return {
+    id: i.id,
+    kind: i.kind,
+    title: i.title,
+    position: i.position,
+    videoAssetId: i.video_asset_id,
+    resource: i.resource ? toResourceView(i.resource) : null,
+    progress: toItemProgress(i.progress),
+  };
+}
+
+function toLearnSection(s: WireLearnSection): CourseLearnSection {
+  return { id: s.id, title: s.title, items: s.items.map(toLearnItem) };
+}
+
+function toLearnDetail(c: WireLearnDetail): CourseLearnDetail {
+  return {
+    id: c.id,
+    title: c.title,
+    enrollmentId: c.enrollment_id,
+    sections: c.sections.map(toLearnSection),
+  };
+}
+
+export interface CourseCatalogParams {
+  q?: string;
+  maxPriceMinor?: number;
+  page?: number;
+  pageSize?: number;
+  sort?: CourseSort;
+}
+
+/** Public catalog list. Unauthenticated — for Server Component reads. */
+export async function listCourseCatalog(
+  params: CourseCatalogParams = {},
+): Promise<{ courses: CourseCatalogEntry[]; total: number }> {
+  const { data, error } = await api.GET("/v1/courses/catalog", {
+    params: {
+      query: {
+        q: params.q,
+        max_price_minor: params.maxPriceMinor,
+        page: params.page,
+        page_size: params.pageSize,
+        sort: params.sort,
+      },
+    },
+  });
+  if (!data) throw new Error(`Failed to load the course catalog: ${JSON.stringify(error)}`);
+  return { courses: data.courses.map(toCatalogEntry), total: data.total };
+}
+
+/** A course's public landing page, unauthenticated (Server Component reads —
+ *  `is_enrolled`/`is_owner` always read false; use `getMyCourseCatalogDetail`
+ *  from a client component to personalise them). Returns null on a 404. */
+export async function getCourseCatalogDetail(id: string): Promise<CourseCatalogDetail | null> {
+  const { data, error, response } = await api.GET("/v1/courses/catalog/{id}", {
+    params: { path: { id } },
+  });
+  if (response.status === 404) return null;
+  if (!data) throw new Error(`Failed to load course "${id}": ${JSON.stringify(error)}`);
+  return toCatalogDetail(data);
+}
+
+/** Same landing page, but through the browser client so a signed-in viewer's
+ *  bearer token personalises `isEnrolled` / `isOwner`. Works logged out too. */
+export async function getMyCourseCatalogDetail(id: string): Promise<CourseCatalogDetail | null> {
+  const { data, error, response } = await browserApi.GET("/v1/courses/catalog/{id}", {
+    params: { path: { id } },
+  });
+  if (response.status === 404) return null;
+  if (error || !data) throw toErr(error, response.status, "Could not load that course.");
+  return toCatalogDetail(data);
+}
+
+/** Buys (or free-enrolls in) a course. `methodToken` is ignored for a free
+ *  course. Returns the enrollment plus whether this call created it fresh
+ *  (201) vs. the caller was already enrolled / it's free (200). */
+export async function purchaseCourse(
+  id: string,
+  methodToken?: string,
+): Promise<{ enrollment: CourseEnrollment; created: boolean }> {
+  const { data, error, response } = await browserApi.POST("/v1/courses/{id}/purchase", {
+    params: { path: { id } },
+    body: methodToken ? { method_token: methodToken } : {},
+  });
+  if (error || !data) throw toErr(error, response.status, "Could not complete the purchase.");
+  return { enrollment: toEnrollment(data), created: response.status === 201 };
+}
+
+/** The caller's "my learning" list, newest first. */
+export async function listEnrollments(): Promise<CourseEnrollment[]> {
+  const { data, error, response } = await browserApi.GET("/v1/enrollments", {});
+  if (error || !data) throw toErr(error, response.status, "Could not load your enrollments.");
+  return data.enrollments.map(toEnrollment);
+}
+
+/** The enrolled-student (or owner-preview) curriculum player. */
+export async function getCourseLearn(id: string): Promise<CourseLearnDetail> {
+  const { data, error, response } = await browserApi.GET("/v1/courses/{id}/learn", {
+    params: { path: { id } },
+  });
+  if (error || !data) throw toErr(error, response.status, "Could not load this course.");
+  return toLearnDetail(data);
+}
+
+/** Records playback progress / completion on a video item. */
+export async function recordCourseItemProgress(
+  courseId: string,
+  itemId: string,
+  input: { positionSeconds?: number; completed?: boolean },
+): Promise<CourseItemProgress> {
+  const { data, error, response } = await browserApi.POST(
+    "/v1/courses/{id}/items/{itemId}/progress",
+    {
+      params: { path: { id: courseId, itemId } },
+      body: { position_seconds: input.positionSeconds, completed: input.completed },
+    },
+  );
+  if (error || !data) throw toErr(error, response.status, "Could not save your progress.");
+  return toItemProgress(data);
 }

@@ -39,7 +39,9 @@ function toErr(e: unknown, status: number, fallback: string): ResourceError {
 type WireResource = components["schemas"]["Resource"];
 type WireContent = components["schemas"]["ResourceContent"];
 
-function toContent(c: WireContent): ResourceContent {
+/** Exported so other modules embedding resource content (e.g. the course
+ *  player's `CourseResourceView`) share this one wire ↔ view-model mapping. */
+export function toContent(c: WireContent): ResourceContent {
   return {
     fileAssetId: c.file_asset_id,
     url: c.url,

@@ -17,6 +17,7 @@ import {
   LogOut,
   PenLine,
   Shield,
+  Sparkles,
   User as UserIcon,
 } from "lucide-react";
 import { useAuth } from "@/features/auth/auth-context";
@@ -95,6 +96,12 @@ export function AccountMenu() {
           <Link href="/bookings">
             <CalendarDays />
             My bookings
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/learn">
+            <Sparkles />
+            My learning
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
