@@ -201,6 +201,23 @@ type Querier interface {
 	// Seed-only. bookings.teacher_id / student_id reference teachers / users with
 	// no ON DELETE CASCADE, so the seed must clear bookings before those tables.
 	DeleteAllBookings(ctx context.Context) error
+	DeleteAllCourseEnrollments(ctx context.Context) error
+	// Seed-only. FK order (deepest first): course_item_progress -> course_items/
+	// course_enrollments; submissions.enrollment_id -> course_enrollments (cleared
+	// by resources.DeleteAllSubmissions, called by cmd/seed before
+	// DeleteAllCourseEnrollments); course_enrollments -> courses/users;
+	// course_items -> course_sections; course_sections -> courses; courses ->
+	// teachers. cmd/seed clears all of these before DeleteAllTeachers/
+	// DeleteAllUsers, same "explicit, deepest-first" discipline as its existing
+	// booking/payment clearing.
+	DeleteAllCourseItemProgress(ctx context.Context) error
+	DeleteAllCourseItems(ctx context.Context) error
+	// Seed-only. course_payment_events -> course_payments -> courses/users; clear
+	// events before payments, and both before courses.DeleteAllCourses.
+	DeleteAllCoursePaymentEvents(ctx context.Context) error
+	DeleteAllCoursePayments(ctx context.Context) error
+	DeleteAllCourseSections(ctx context.Context) error
+	DeleteAllCourses(ctx context.Context) error
 	// Seed-only. disputes.booking_id cascades, but raised_by / resolved_by
 	// reference users with no cascade, so the seed clears disputes explicitly
 	// before bookings and users.
@@ -461,6 +478,15 @@ type Querier interface {
 	// locked rather than blocking on them or settling them a second time — and the
 	// loser typically ends up with nothing to pay (409 nothing_to_pay).
 	LockPayablePayoutLedger(ctx context.Context) ([]LockPayablePayoutLedgerRow, error)
+	// The course sibling of MarkLedgerReversed. A refunded course_payment carries
+	// no enrollment id of its own (the enrollment is created by courses.Service
+	// only after a successful capture, see InsertCourseLedgerHeld's doc comment),
+	// so the reversal is keyed by (course_id, student_id) instead — at most one
+	// enrollment exists per (course, student) pair (course_enrollments' own
+	// unique constraint), so this reverses exactly the one ledger row a refund on
+	// that course payment could ever correspond to. Same "not already
+	// paid/reversed" guard as MarkLedgerReversed.
+	MarkCourseLedgerReversedByCourseAndStudent(ctx context.Context, arg MarkCourseLedgerReversedByCourseAndStudentParams) error
 	MarkCoursePaymentAuthorized(ctx context.Context, arg MarkCoursePaymentAuthorizedParams) error
 	MarkCoursePaymentCaptured(ctx context.Context, id uuid.UUID) error
 	MarkCoursePaymentFailed(ctx context.Context, arg MarkCoursePaymentFailedParams) error

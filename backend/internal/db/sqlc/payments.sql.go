@@ -322,6 +322,34 @@ func (q *Queries) ListTeacherEarnings(ctx context.Context, teacherID uuid.UUID) 
 	return items, nil
 }
 
+const markCourseLedgerReversedByCourseAndStudent = `-- name: MarkCourseLedgerReversedByCourseAndStudent :exec
+UPDATE payout_ledger pl
+SET state = 'reversed', updated_at = now()
+FROM course_enrollments ce
+WHERE pl.course_enrollment_id = ce.id
+  AND ce.course_id = $1
+  AND ce.student_id = $2
+  AND pl.state NOT IN ('reversed', 'paid')
+`
+
+type MarkCourseLedgerReversedByCourseAndStudentParams struct {
+	CourseID  uuid.UUID
+	StudentID uuid.UUID
+}
+
+// The course sibling of MarkLedgerReversed. A refunded course_payment carries
+// no enrollment id of its own (the enrollment is created by courses.Service
+// only after a successful capture, see InsertCourseLedgerHeld's doc comment),
+// so the reversal is keyed by (course_id, student_id) instead — at most one
+// enrollment exists per (course, student) pair (course_enrollments' own
+// unique constraint), so this reverses exactly the one ledger row a refund on
+// that course payment could ever correspond to. Same "not already
+// paid/reversed" guard as MarkLedgerReversed.
+func (q *Queries) MarkCourseLedgerReversedByCourseAndStudent(ctx context.Context, arg MarkCourseLedgerReversedByCourseAndStudentParams) error {
+	_, err := q.db.Exec(ctx, markCourseLedgerReversedByCourseAndStudent, arg.CourseID, arg.StudentID)
+	return err
+}
+
 const markLedgerReversed = `-- name: MarkLedgerReversed :exec
 UPDATE payout_ledger
 SET state = 'reversed', updated_at = now()

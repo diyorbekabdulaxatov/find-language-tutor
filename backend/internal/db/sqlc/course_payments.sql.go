@@ -64,6 +64,27 @@ func (q *Queries) CreateCoursePayment(ctx context.Context, arg CreateCoursePayme
 	return i, err
 }
 
+const deleteAllCoursePaymentEvents = `-- name: DeleteAllCoursePaymentEvents :exec
+
+DELETE FROM course_payment_events
+`
+
+// Seed-only. course_payment_events -> course_payments -> courses/users; clear
+// events before payments, and both before courses.DeleteAllCourses.
+func (q *Queries) DeleteAllCoursePaymentEvents(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteAllCoursePaymentEvents)
+	return err
+}
+
+const deleteAllCoursePayments = `-- name: DeleteAllCoursePayments :exec
+DELETE FROM course_payments
+`
+
+func (q *Queries) DeleteAllCoursePayments(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteAllCoursePayments)
+	return err
+}
+
 const getCoursePaymentByCourseAndStudent = `-- name: GetCoursePaymentByCourseAndStudent :one
 SELECT id, course_id, student_id, provider, provider_ref, status, amount_minor, currency,
        last_error, authorized_at, captured_at, refunded_at, created_at, updated_at

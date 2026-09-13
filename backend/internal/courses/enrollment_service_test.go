@@ -505,6 +505,50 @@ func TestService_Purchase_AlreadyEnrolled_Idempotent(t *testing.T) {
 	if pay.calls != 1 {
 		t.Errorf("the gateway should not be charged again once enrolled, got %d calls", pay.calls)
 	}
+	if pay.creditCalls != 2 {
+		t.Errorf("retrying an already-enrolled purchase should retry the ledger credit too (idempotent on the payments side), got %d calls", pay.creditCalls)
+	}
+}
+
+// A purchase that captures payment, creates the enrollment, but fails to
+// credit the teacher's payout ledger (e.g. a transient DB error) must not
+// lose that revenue permanently: retrying the same purchase call — the
+// client's only recourse, since the charge already succeeded — has to retry
+// the credit too, not just short-circuit on "already enrolled".
+func TestService_Purchase_RetryHealsAFailedLedgerCredit(t *testing.T) {
+	e := newTestEnv()
+	ctx := context.Background()
+	owner, _ := e.seedTeacher()
+	d, _ := e.publishWithOneVideoItem(t, owner, 50000)
+	pay := &fakePaymentGateway{creditErr: errors.New("transient ledger write failure")}
+	e.svc.SetPaymentGateway(pay)
+
+	student := uuid.New()
+	first, created1, err := e.svc.Purchase(ctx, student, d.Course.ID, "pm_ok")
+	if err != nil || !created1 {
+		t.Fatalf("first purchase: %+v err=%v", first, err)
+	}
+	if pay.creditCalls != 1 {
+		t.Fatalf("expected the first (failing) credit attempt, got %d calls", pay.creditCalls)
+	}
+
+	pay.creditErr = nil // the transient failure clears before the retry
+	second, created2, err := e.svc.Purchase(ctx, student, d.Course.ID, "pm_ok")
+	if err != nil {
+		t.Fatalf("retry purchase: %v", err)
+	}
+	if created2 {
+		t.Error("the retry should still report justPurchased=false — it's the same enrollment")
+	}
+	if pay.calls != 1 {
+		t.Errorf("the retry must not charge the student again, got %d gateway calls", pay.calls)
+	}
+	if pay.creditCalls != 2 {
+		t.Errorf("the retry should re-attempt the ledger credit, got %d calls", pay.creditCalls)
+	}
+	if second.Enrollment.ID != first.Enrollment.ID {
+		t.Error("retry should return the same enrollment")
+	}
 }
 
 func TestService_Purchase_CannotBuyOwnCourse(t *testing.T) {

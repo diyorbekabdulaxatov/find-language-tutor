@@ -111,6 +111,23 @@ JOIN courses co ON co.id = ce.course_id
 WHERE ce.id = sqlc.arg('course_enrollment_id')
 ON CONFLICT (course_enrollment_id) DO NOTHING;
 
+-- name: MarkCourseLedgerReversedByCourseAndStudent :exec
+-- The course sibling of MarkLedgerReversed. A refunded course_payment carries
+-- no enrollment id of its own (the enrollment is created by courses.Service
+-- only after a successful capture, see InsertCourseLedgerHeld's doc comment),
+-- so the reversal is keyed by (course_id, student_id) instead — at most one
+-- enrollment exists per (course, student) pair (course_enrollments' own
+-- unique constraint), so this reverses exactly the one ledger row a refund on
+-- that course payment could ever correspond to. Same "not already
+-- paid/reversed" guard as MarkLedgerReversed.
+UPDATE payout_ledger pl
+SET state = 'reversed', updated_at = now()
+FROM course_enrollments ce
+WHERE pl.course_enrollment_id = ce.id
+  AND ce.course_id = sqlc.arg('course_id')
+  AND ce.student_id = sqlc.arg('student_id')
+  AND pl.state NOT IN ('reversed', 'paid');
+
 -- name: ListTeacherEarnings :many
 -- Phase C3 widens this to a teacher's course-sale earnings alongside their
 -- lesson earnings: LEFT JOIN both sources (a row's booking_id XOR

@@ -419,3 +419,27 @@ RETURNING id, enrollment_id, item_id, status, video_position_seconds, completed_
 SELECT id, enrollment_id, item_id, status, video_position_seconds, completed_at, updated_at
 FROM course_item_progress
 WHERE enrollment_id = $1;
+
+-- Seed-only. FK order (deepest first): course_item_progress -> course_items/
+-- course_enrollments; submissions.enrollment_id -> course_enrollments (cleared
+-- by resources.DeleteAllSubmissions, called by cmd/seed before
+-- DeleteAllCourseEnrollments); course_enrollments -> courses/users;
+-- course_items -> course_sections; course_sections -> courses; courses ->
+-- teachers. cmd/seed clears all of these before DeleteAllTeachers/
+-- DeleteAllUsers, same "explicit, deepest-first" discipline as its existing
+-- booking/payment clearing.
+
+-- name: DeleteAllCourseItemProgress :exec
+DELETE FROM course_item_progress;
+
+-- name: DeleteAllCourseEnrollments :exec
+DELETE FROM course_enrollments;
+
+-- name: DeleteAllCourseItems :exec
+DELETE FROM course_items;
+
+-- name: DeleteAllCourseSections :exec
+DELETE FROM course_sections;
+
+-- name: DeleteAllCourses :exec
+DELETE FROM courses;

@@ -44,3 +44,12 @@ UPDATE course_payments SET status = 'refunded', refunded_at = now(), updated_at 
 UPDATE course_payments
 SET status = 'failed', last_error = sqlc.arg('last_error'), updated_at = now()
 WHERE id = sqlc.arg('id');
+
+-- Seed-only. course_payment_events -> course_payments -> courses/users; clear
+-- events before payments, and both before courses.DeleteAllCourses.
+
+-- name: DeleteAllCoursePaymentEvents :exec
+DELETE FROM course_payment_events;
+
+-- name: DeleteAllCoursePayments :exec
+DELETE FROM course_payments;

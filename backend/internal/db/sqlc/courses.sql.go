@@ -450,6 +450,60 @@ func (q *Queries) CreateCourse(ctx context.Context, arg CreateCourseParams) (Cou
 	return i, err
 }
 
+const deleteAllCourseEnrollments = `-- name: DeleteAllCourseEnrollments :exec
+DELETE FROM course_enrollments
+`
+
+func (q *Queries) DeleteAllCourseEnrollments(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteAllCourseEnrollments)
+	return err
+}
+
+const deleteAllCourseItemProgress = `-- name: DeleteAllCourseItemProgress :exec
+
+DELETE FROM course_item_progress
+`
+
+// Seed-only. FK order (deepest first): course_item_progress -> course_items/
+// course_enrollments; submissions.enrollment_id -> course_enrollments (cleared
+// by resources.DeleteAllSubmissions, called by cmd/seed before
+// DeleteAllCourseEnrollments); course_enrollments -> courses/users;
+// course_items -> course_sections; course_sections -> courses; courses ->
+// teachers. cmd/seed clears all of these before DeleteAllTeachers/
+// DeleteAllUsers, same "explicit, deepest-first" discipline as its existing
+// booking/payment clearing.
+func (q *Queries) DeleteAllCourseItemProgress(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteAllCourseItemProgress)
+	return err
+}
+
+const deleteAllCourseItems = `-- name: DeleteAllCourseItems :exec
+DELETE FROM course_items
+`
+
+func (q *Queries) DeleteAllCourseItems(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteAllCourseItems)
+	return err
+}
+
+const deleteAllCourseSections = `-- name: DeleteAllCourseSections :exec
+DELETE FROM course_sections
+`
+
+func (q *Queries) DeleteAllCourseSections(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteAllCourseSections)
+	return err
+}
+
+const deleteAllCourses = `-- name: DeleteAllCourses :exec
+DELETE FROM courses
+`
+
+func (q *Queries) DeleteAllCourses(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteAllCourses)
+	return err
+}
+
 const deleteCourse = `-- name: DeleteCourse :exec
 DELETE FROM courses WHERE id = $1
 `

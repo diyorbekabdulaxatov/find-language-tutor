@@ -141,6 +141,20 @@ func (s *Service) Purchase(ctx context.Context, callerID, courseID uuid.UUID, me
 	if existing, ok, eErr := s.repo.EnrollmentByCourseAndStudent(ctx, courseID, callerID); eErr != nil {
 		return EnrollmentSummary{}, false, eErr
 	} else if ok {
+		// Self-heals a purchase that captured payment, created the enrollment,
+		// and then failed to credit the teacher's payout ledger (see the
+		// CreditCourseSale call below): a client retrying the same purchase
+		// call lands here instead of re-running the charge, so retry it here
+		// too. CreditCourseSale's own ON CONFLICT (course_enrollment_id) DO
+		// NOTHING keeps an already-credited enrollment a no-op.
+		if existing.Source == EnrollmentPurchase && s.payments != nil {
+			if cErr := s.payments.CreditCourseSale(ctx, existing.ID, existing.AmountPaidMinor, existing.Currency); cErr != nil {
+				s.logger.Error("credit course sale to teacher payout ledger (retry path)",
+					slog.String("enrollment_id", existing.ID.String()),
+					slog.String("course_id", courseID.String()),
+					slog.Any("error", cErr))
+			}
+		}
 		result, sErr := s.enrollmentSummary(ctx, existing, c)
 		return result, false, sErr
 	}

@@ -82,9 +82,13 @@ func (r *courseRepositoryPostgres) CoursePaymentByCourse(ctx context.Context, co
 }
 
 // ApplyCourseEvent — see the CourseRepository interface doc. Mirrors
-// repositoryPostgres.ApplyEvent exactly, minus the payout-ledger write on
-// capture and the booking-confirm on authorize (a course purchase has no
-// booking to move, and course revenue-share is a future phase).
+// repositoryPostgres.ApplyEvent, minus the booking-confirm on authorize (a
+// course purchase has no booking to move) and the payout-ledger write on
+// capture: unlike a booking, a course_enrollment doesn't exist yet at capture
+// time (courses.Service creates it only after Purchase's capture returns), so
+// crediting the teacher happens separately via CreditCourseSale/
+// InsertCourseLedgerHeld, not here. A refund DOES reverse that credit from
+// here, via MarkCourseLedgerReversedByCourseAndStudent below.
 func (r *courseRepositoryPostgres) ApplyCourseEvent(ctx context.Context, e Event) (bool, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -137,6 +141,12 @@ func (r *courseRepositoryPostgres) ApplyCourseEvent(ctx context.Context, e Event
 	case EventRefunded:
 		if err := qtx.MarkCoursePaymentRefunded(ctx, p.ID); err != nil {
 			return false, fmt.Errorf("mark refunded: %w", err)
+		}
+		if err := qtx.MarkCourseLedgerReversedByCourseAndStudent(ctx, sqlc.MarkCourseLedgerReversedByCourseAndStudentParams{
+			CourseID:  p.CourseID,
+			StudentID: p.StudentID,
+		}); err != nil {
+			return false, fmt.Errorf("reverse course ledger: %w", err)
 		}
 
 	case EventFailed:
