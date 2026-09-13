@@ -220,14 +220,24 @@ function GradingRow({
             <p className="text-sm font-medium">{title}</p>
             <p className="text-xs text-muted-foreground">
               {s.status === "graded" ? "Graded" : "Submitted"} {fmtDate(s.submittedAt ?? s.gradedAt)}
-              {" · "}
-              <Link
-                href={`/bookings/${s.bookingId}`}
-                className="underline hover:text-foreground"
-                onClick={(e) => e.stopPropagation()}
-              >
-                View lesson
-              </Link>
+              {s.bookingId && (
+                <>
+                  {" · "}
+                  <Link
+                    href={`/bookings/${s.bookingId}`}
+                    className="underline hover:text-foreground"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    View lesson
+                  </Link>
+                </>
+              )}
+              {!s.bookingId && (
+                <>
+                  {" · "}
+                  <span className="text-muted-foreground/70">Course homework</span>
+                </>
+              )}
             </p>
           </div>
         </div>

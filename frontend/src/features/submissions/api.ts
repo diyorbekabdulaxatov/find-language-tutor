@@ -32,7 +32,8 @@ function toSubmission(s: WireSubmission): Submission {
   return {
     id: s.id,
     resourceId: s.resource_id,
-    bookingId: s.booking_id,
+    bookingId: s.booking_id ?? null,
+    enrollmentId: s.enrollment_id ?? null,
     status: s.status,
     answers: s.answers ?? {},
     autoScore: s.auto_score,
@@ -47,13 +48,20 @@ function toSubmission(s: WireSubmission): Submission {
 }
 
 /** Starts (or resumes — idempotent) the caller's submission for a homework
- *  attachment. The caller must be the booking's student. */
+ *  attachment (lesson context) or a course curriculum resource item (course
+ *  context, phase C2) — exactly one of `bookingId` / `enrollmentId` must be
+ *  set. The caller must be the booking's student, or the enrollment's owner. */
 export async function startSubmission(input: {
   resourceId: string;
-  bookingId: string;
+  bookingId?: string;
+  enrollmentId?: string;
 }): Promise<Submission> {
   const { data, error, response } = await browserApi.POST("/v1/submissions", {
-    body: { resource_id: input.resourceId, booking_id: input.bookingId },
+    body: {
+      resource_id: input.resourceId,
+      booking_id: input.bookingId,
+      enrollment_id: input.enrollmentId,
+    },
   });
   if (error || !data) throw toErr(error, response.status, "Could not start that homework.");
   return toSubmission(data);

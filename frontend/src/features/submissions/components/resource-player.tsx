@@ -20,17 +20,27 @@ const AUTOSAVE_MS = 800;
  * `material` / `article` are static (no submission). `quiz` / `listening` /
  * `reading` / `writing` start (or resume — idempotent) a submission on mount,
  * autosave answers, and submit for grading.
+ *
+ * Exactly one of `bookingId` (lesson homework) / `enrollmentId` (a
+ * resource-kind item inside a course, phase C2) must be set — unless
+ * `previewOnly` is set (a course owner previewing their own curriculum, which
+ * has no enrollment to start a submission against), in which case neither is
+ * passed and no submission is attempted at all.
  */
 export function ResourcePlayer({
   attachment,
   bookingId,
+  enrollmentId,
+  previewOnly,
   onSubmissionChange,
 }: {
   attachment: AttachedResource;
-  bookingId: string;
+  bookingId?: string;
+  enrollmentId?: string;
+  previewOnly?: boolean;
   onSubmissionChange?: (submission: Submission) => void;
 }) {
-  const needsSubmission = hasSubmissionFlow(attachment.type);
+  const needsSubmission = hasSubmissionFlow(attachment.type) && !previewOnly;
 
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
@@ -55,6 +65,7 @@ export function ResourcePlayer({
         const s = await startSubmission({
           resourceId: attachment.resourceId,
           bookingId,
+          enrollmentId,
         });
         if (!alive) return;
         setSubmission(s);
@@ -73,7 +84,7 @@ export function ResourcePlayer({
     return () => {
       alive = false;
     };
-  }, [attachment.resourceId, bookingId, needsSubmission]);
+  }, [attachment.resourceId, bookingId, enrollmentId, needsSubmission]);
 
   useEffect(() => {
     return () => {
@@ -122,6 +133,12 @@ export function ResourcePlayer({
 
       {attachment.type === "material" && <MaterialView attachment={attachment} />}
       {attachment.type === "article" && <ArticleView attachment={attachment} />}
+
+      {previewOnly && hasSubmissionFlow(attachment.type) && (
+        <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
+          Preview only — enrolled students answer this as {attachment.type}.
+        </p>
+      )}
 
       {needsSubmission && (
         <>

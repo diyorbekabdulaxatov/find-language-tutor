@@ -588,8 +588,11 @@ export interface paths {
         get: operations["listSubmissionInbox"];
         put?: never;
         /**
-         * Start (or resume) a homework submission
-         * @description Idempotent: a second call for the same resource/booking returns the existing submission rather than erroring. The resource must be attached to the booking as `homework`, the caller must be the booking's student, and the resource type must carry a submission flow (`quiz` / `listening` / `reading` / `writing`).
+         * Start (or resume) a submission
+         * @description Body must carry exactly one of `booking_id` (lesson-context homework) or `enrollment_id` (phase C2, a course-embedded resource). Idempotent: a second call for the same resource/booking (or resource/enrollment) returns the existing submission rather than erroring.
+         *     Lesson context: the resource must be attached to the booking as `homework`, and the caller must be the booking's student (409 `homework_not_assigned` / 403 otherwise).
+         *     Course context: the resource must actually be a curriculum item of the enrollment's course (409 `resource_not_in_course` otherwise), and the caller must be the enrollment's student.
+         *     Either way the resource type must carry a submission flow (`quiz` / `listening` / `reading` / `writing`).
          */
         post: operations["startSubmission"];
         delete?: never;
@@ -1085,6 +1088,144 @@ export interface paths {
          * @description ids must be exactly the section's current item ids, each once, in the new order.
          */
         put: operations["reorderCourseItems"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public course catalog
+         * @description Published, non-archived courses from approved teachers only. No auth required.
+         */
+        get: operations["courseCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/catalog/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A course's public landing page
+         * @description Course + teacher summary + curriculum outline only (no video URLs, no resource content). 404 unless the course is published. An Authorization header, if present and valid, personalises is_enrolled / is_owner; omitted or invalid, both read false.
+         */
+        get: operations["courseCatalogDetail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/{id}/cover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A course's cover image
+         * @description Streams (or redirects to) the cover image's bytes. No auth. 404 unless the course is published and has a cover set.
+         */
+        get: operations["courseCover"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/{id}/purchase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enroll in (buy) a course
+         * @description method_token is omitted/ignored for a free course (price_amount_minor 0). Otherwise the same deterministic fake payment provider as the booking flow: `pm_ok` captures, `pm_decline` is refused (402 `payment_failed`), `pm_capture_fail` authorizes but fails the first capture (502 `capture_failed`, retry by purchasing again).
+         *     200 if the caller is already enrolled or the course is free; 201 on a brand-new paid purchase.
+         */
+        post: operations["purchaseCourse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/{id}/learn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The enrolled-student (or owner-preview) curriculum player
+         * @description Full curriculum tree: video items carry video_asset_id (fetch bytes via GET /v1/files/{id}); resource items embed the student-safe content (answers already stripped). Every item carries the caller's progress. Enrolled-or-owner only.
+         */
+        get: operations["learnCourse"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/{id}/items/{itemId}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record playback progress / completion on a video item
+         * @description Enrolled only. 400 for a resource item — submit against it via /v1/submissions instead.
+         */
+        post: operations["recordCourseItemProgress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/enrollments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's "my learning" list */
+        get: operations["myEnrollments"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -2303,8 +2444,16 @@ export interface components {
             id: string;
             /** Format: uuid */
             resource_id: string;
-            /** Format: uuid */
-            booking_id: string;
+            /**
+             * Format: uuid
+             * @description Present only for a lesson-context submission (mutually exclusive with enrollment_id).
+             */
+            booking_id?: string;
+            /**
+             * Format: uuid
+             * @description Present only for a course-context submission (phase C2, mutually exclusive with booking_id).
+             */
+            enrollment_id?: string;
             /** @enum {string} */
             status: "in_progress" | "submitted" | "graded";
             /** @description Question id -> the student's chosen choice ids (single/multi) or free-text answer (text, one-element array). */
@@ -2330,11 +2479,20 @@ export interface components {
             /** @description Total matches */
             total: number;
         };
+        /** @description Exactly one of booking_id / enrollment_id must be set. */
         StartSubmissionRequest: {
             /** Format: uuid */
             resource_id: string;
-            /** Format: uuid */
-            booking_id: string;
+            /**
+             * Format: uuid
+             * @description Lesson context.
+             */
+            booking_id?: string;
+            /**
+             * Format: uuid
+             * @description Course context (phase C2).
+             */
+            enrollment_id?: string;
         };
         SaveAnswersRequest: {
             answers: {
@@ -2473,6 +2631,134 @@ export interface components {
         ReorderItemsRequest: {
             /** @description Exactly the section's current item ids, each once, in the new order. */
             item_ids: string[];
+        };
+        /** @description Light teacher summary embedded in catalog rows. */
+        CourseTeacherSummary: {
+            /** Format: uuid */
+            id: string;
+            display_name: string;
+            slug: string;
+        };
+        /** @description One public catalog row — course summary + teacher summary + curriculum size, no curriculum detail. */
+        CourseCatalogEntry: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            subtitle: string;
+            /** Format: uuid */
+            cover_asset_id: string | null;
+            price: components["schemas"]["Money"];
+            teacher: components["schemas"]["CourseTeacherSummary"];
+            section_count: number;
+            item_count: number;
+        };
+        CourseCatalogList: {
+            courses: components["schemas"]["CourseCatalogEntry"][];
+            /** @description Total matches */
+            total: number;
+        };
+        /** @description A curriculum item's pre-purchase outline — no video_asset_id, no resource content. */
+        CourseCatalogItemOutline: {
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["CourseItemKind"];
+            title: string;
+            position: number;
+        };
+        CourseCatalogSectionOutline: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            position: number;
+            items: components["schemas"]["CourseCatalogItemOutline"][];
+        };
+        /** @description A course's public landing page — course + teacher summary, curriculum outline only, and the viewer's relationship to it. */
+        CourseCatalogDetail: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            subtitle: string;
+            description: string;
+            /** Format: uuid */
+            cover_asset_id: string | null;
+            price: components["schemas"]["Money"];
+            teacher: components["schemas"]["CourseTeacherSummary"];
+            sections: components["schemas"]["CourseCatalogSectionOutline"][];
+            /** @description False when unauthenticated. */
+            is_enrolled: boolean;
+            /** @description False when unauthenticated. */
+            is_owner: boolean;
+        };
+        PurchaseCourseRequest: {
+            /** @description Omitted/ignored for a free course. */
+            method_token?: string;
+        };
+        CourseEnrollment: {
+            /** Format: uuid */
+            id: string;
+            course: components["schemas"]["Course"];
+            /** @enum {string} */
+            source: "purchase" | "free";
+            amount_paid: components["schemas"]["Money"];
+            /** @description completed_items / total_items * 100 */
+            progress_percent: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CourseEnrollmentList: {
+            enrollments: components["schemas"]["CourseEnrollment"][];
+        };
+        CourseItemProgress: {
+            /** @enum {string} */
+            status: "in_progress" | "completed";
+            video_position_seconds: number;
+            /** Format: date-time */
+            completed_at: string | null;
+        };
+        RecordProgressRequest: {
+            position_seconds?: number;
+            completed?: boolean;
+        };
+        /** @description A published resource's student-safe view (correct answers already stripped), embedded in the course player. */
+        CourseResourceView: {
+            /** Format: uuid */
+            id: string;
+            type: components["schemas"]["ResourceType"];
+            title: string;
+            instructions: string;
+            content: components["schemas"]["ResourceContent"];
+        };
+        CourseLearnItem: {
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["CourseItemKind"];
+            title: string;
+            position: number;
+            /**
+             * Format: uuid
+             * @description Set for a `video` item; fetch bytes via GET /v1/files/{id}.
+             */
+            video_asset_id: string | null;
+            /** @description Set for a `resource` item. */
+            resource: components["schemas"]["CourseResourceView"] | null;
+            progress: components["schemas"]["CourseItemProgress"];
+        };
+        CourseLearnSection: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            items: components["schemas"]["CourseLearnItem"][];
+        };
+        CourseLearnDetail: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /**
+             * Format: uuid
+             * @description Null for the owner-preview view (no enrollment to start a submission against); set for an enrolled student — pass it as `enrollment_id` to POST /v1/submissions for a resource item.
+             */
+            enrollment_id: string | null;
+            sections: components["schemas"]["CourseLearnSection"][];
         };
         AdminReviewList: {
             reviews: components["schemas"]["AdminReview"][];
@@ -4086,7 +4372,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            /** @description The caller is not the booking's student (`forbidden`). */
+            /** @description The caller is not the booking's/enrollment's student (`forbidden`). */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4095,8 +4381,16 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            404: components["responses"]["NotFound"];
-            /** @description `homework_not_assigned` — the resource isn't attached to this booking as homework. */
+            /** @description No booking/enrollment with that id (`not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `homework_not_assigned` — the resource isn't attached to this booking as homework — or `resource_not_in_course` — the resource isn't part of the enrolled course. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5147,6 +5441,236 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    courseCatalog: {
+        parameters: {
+            query?: {
+                /** @description Filters by title/subtitle substring. */
+                q?: string;
+                max_price_minor?: number;
+                page?: number;
+                page_size?: number;
+                sort?: "newest" | "price_asc" | "price_desc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the catalog. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseCatalogList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    courseCatalogDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The course's public landing page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseCatalogDetail"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    courseCover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The cover image bytes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Redirect to a presigned URL for the image (R2-backed storage). */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    purchaseCourse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PurchaseCourseRequest"];
+            };
+        };
+        responses: {
+            /** @description Already enrolled, or newly enrolled in a free course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseEnrollment"];
+                };
+            };
+            /** @description Newly purchased. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseEnrollment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The payment method was declined (`payment_failed`). */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `courses: you can't buy your own course` — the caller's own teacher profile owns it. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The provider could not capture the hold (`capture_failed`). Retryable — purchase again. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `purchase_unavailable` — no payment provider is wired up server-side. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    learnCourse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The curriculum tree. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseLearnDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    recordCourseItemProgress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RecordProgressRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated item progress. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseItemProgress"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    myEnrollments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's enrollments, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseEnrollmentList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
     adminMetrics: {

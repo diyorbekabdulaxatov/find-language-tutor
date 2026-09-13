@@ -25,6 +25,9 @@ export function SiteHeader() {
           <Link href="/teachers" className="transition-colors hover:text-foreground">
             Find a teacher
           </Link>
+          <Link href="/courses/catalog" className="transition-colors hover:text-foreground">
+            Find a course
+          </Link>
           <Link href="/#how-it-works" className="transition-colors hover:text-foreground">
             How it works
           </Link>

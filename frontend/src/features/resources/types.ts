@@ -126,11 +126,14 @@ export interface AttachedResource {
 
 export type SubmissionFullStatus = "in_progress" | "submitted" | "graded";
 
-/** A homework submission — the full record, including answers. */
+/** A homework submission — the full record, including answers. Exactly one
+ *  of `bookingId` (lesson context) / `enrollmentId` (course context, phase
+ *  C2) is set. */
 export interface Submission {
   id: string;
   resourceId: string;
-  bookingId: string;
+  bookingId: string | null;
+  enrollmentId: string | null;
   status: SubmissionFullStatus;
   /** Question id -> chosen choice ids (single/multi) or free-text answer
    *  (text, one-element array); writing tasks use the single key "text". */
