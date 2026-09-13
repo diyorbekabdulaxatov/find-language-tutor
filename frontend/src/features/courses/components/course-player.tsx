@@ -243,6 +243,7 @@ function CourseItemView({
           <ResourcePlayer
             attachment={toAttachedResource(item.resource)}
             enrollmentId={enrollmentId ?? undefined}
+            previewOnly={!enrollmentId}
           />
         </div>
       </div>
@@ -281,6 +282,7 @@ function VideoItem({
   const { url, state } = useFileObjectUrl(videoAssetId);
   const videoRef = useRef<HTMLVideoElement>(null);
   const lastSaveRef = useRef(0);
+  const saveSeqRef = useRef(0);
   const seekedRef = useRef(false);
   const [marking, setMarking] = useState(false);
   const completed = item.progress.status === "completed";
@@ -297,11 +299,17 @@ function VideoItem({
   }
 
   async function saveProgress(positionSeconds: number, markComplete?: boolean) {
+    const seq = ++saveSeqRef.current;
     try {
       const p = await recordCourseItemProgress(courseId, item.id, {
         positionSeconds: Math.floor(positionSeconds),
         completed: markComplete,
       });
+      // Drop a response that lost the race to a save started after it — e.g.
+      // `pause` then `ended` fire back-to-back, and the `pause` request (no
+      // `completed` flag) must never clobber `ended`'s "completed" result if
+      // it resolves later.
+      if (seq !== saveSeqRef.current) return;
       onProgress(p);
     } catch {
       // best-effort; the next tick or an explicit "mark complete" will retry

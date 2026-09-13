@@ -5,7 +5,7 @@
  */
 
 import { api } from "@/lib/api/client";
-import { browserApi } from "@/features/auth/browser-client";
+import { baseUrl, browserApi } from "@/features/auth/browser-client";
 import { toContent } from "@/features/resources/api";
 import type { components } from "@/lib/api/schema";
 import type { Money } from "@/types/teacher";
@@ -310,12 +310,10 @@ export async function reorderItems(
 
 /* ===================== Phase C2 — catalog, purchase, player ===================== */
 
-const PUBLIC_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
-
 /** Direct, unauthenticated URL for a course's cover image — usable straight
  *  in an `<img src>` from either a server- or client-rendered page. */
 export function courseCoverUrl(courseId: string): string {
-  return `${PUBLIC_BASE_URL}/v1/courses/${courseId}/cover`;
+  return `${baseUrl}/v1/courses/${courseId}/cover`;
 }
 
 type WireTeacherSummary = components["schemas"]["CourseTeacherSummary"];

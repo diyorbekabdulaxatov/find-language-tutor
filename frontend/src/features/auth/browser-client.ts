@@ -16,7 +16,10 @@ import type { paths } from "@/lib/api/schema";
 import { clearSession, getAccessToken, setSession } from "./auth-store";
 import { fromWireUser } from "./mappers";
 
-const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+/** The browser-reachable API origin. Exported so other modules that need to
+ *  build a URL by hand (rather than call `browserApi`/`authedFetch`) don't
+ *  each redeclare the same fallback. */
+export const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 const REFRESH_PATH = "/v1/auth/refresh";
 
