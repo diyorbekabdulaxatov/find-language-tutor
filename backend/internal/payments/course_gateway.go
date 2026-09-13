@@ -32,6 +32,10 @@ func (g *CourseGateway) Purchase(ctx context.Context, courseID, studentID uuid.U
 	}, nil
 }
 
+func (g *CourseGateway) CreditCourseSale(ctx context.Context, enrollmentID uuid.UUID, priceAmountMinor int64, currency string) error {
+	return g.svc.CreditCourseSale(ctx, enrollmentID, priceAmountMinor, currency)
+}
+
 // translateCourse maps payments-domain errors onto the sentinels the courses
 // handler knows how to render, so courses stays free of any payments import.
 func translateCourse(err error) error {

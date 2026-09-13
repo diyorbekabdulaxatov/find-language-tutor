@@ -159,6 +159,55 @@ func (q *Queries) GetPaymentByID(ctx context.Context, id uuid.UUID) (Payment, er
 	return i, err
 }
 
+const insertCourseLedgerHeld = `-- name: InsertCourseLedgerHeld :exec
+INSERT INTO payout_ledger (teacher_id, course_enrollment_id, amount_minor, currency, state, available_at)
+SELECT co.teacher_id, ce.id,
+       $1::bigint,
+       $2::text,
+       'held',
+       now() + make_interval(days => $3::int)
+FROM course_enrollments ce
+JOIN courses co ON co.id = ce.course_id
+WHERE ce.id = $4
+ON CONFLICT (course_enrollment_id) DO NOTHING
+`
+
+type InsertCourseLedgerHeldParams struct {
+	AmountMinor        int64
+	Currency           string
+	ClearingDays       int32
+	CourseEnrollmentID uuid.UUID
+}
+
+// Phase C3: the course-purchase sibling of InsertLedgerHeld. One row per
+// captured course sale, keyed on course_enrollment_id instead of booking_id
+// (see payout_ledger's booking_id/course_enrollment_id CHECK, migration
+// 000018). teacher_id is derived by joining the enrollment to its course;
+// amount_minor is the teacher's already-computed revenue-share (Go arithmetic
+// in payments.CourseService.CreditCourseSale, never derived here), and
+// available_at opens the same clearing window as a lesson's earning: capture
+// time + PAYOUTS_CLEARING_DAYS.
+//
+// Called by courses.Service.Purchase (via the courses.PaymentGateway port)
+// right after the enrollment row is created, NOT from this package's own
+// ApplyCourseEvent webhook handler on payment.captured — unlike a booking
+// (which exists before its payment), a course_enrollment does not exist yet
+// at capture time, so there is no enrollment id to attach a ledger row to
+// until courses.Service creates one. See CreditCourseSale's doc comment.
+//
+// ON CONFLICT (course_enrollment_id) DO NOTHING is the idempotency guard: a
+// retried/duplicate call for the same enrollment (e.g. a concurrent
+// double-submit racing EnsureEnrollment) never double-credits the teacher.
+func (q *Queries) InsertCourseLedgerHeld(ctx context.Context, arg InsertCourseLedgerHeldParams) error {
+	_, err := q.db.Exec(ctx, insertCourseLedgerHeld,
+		arg.AmountMinor,
+		arg.Currency,
+		arg.ClearingDays,
+		arg.CourseEnrollmentID,
+	)
+	return err
+}
+
 const insertLedgerHeld = `-- name: InsertLedgerHeld :exec
 INSERT INTO payout_ledger (teacher_id, booking_id, amount_minor, currency, state, available_at)
 SELECT b.teacher_id, b.id,
@@ -211,26 +260,38 @@ func (q *Queries) InsertPaymentEvent(ctx context.Context, arg InsertPaymentEvent
 }
 
 const listTeacherEarnings = `-- name: ListTeacherEarnings :many
-SELECT pl.booking_id, pl.amount_minor, pl.currency, pl.state, pl.available_at,
-       b.start_at,
-       u.display_name AS student_display_name
+SELECT pl.booking_id, pl.course_enrollment_id, pl.amount_minor, pl.currency, pl.state, pl.available_at,
+       coalesce(b.start_at, ce.created_at) AS start_at,
+       coalesce(bu.display_name, cu.display_name) AS student_display_name,
+       co.title AS course_title
 FROM payout_ledger pl
-JOIN bookings b ON b.id = pl.booking_id
-JOIN users    u ON u.id = b.student_id
+LEFT JOIN bookings b ON b.id = pl.booking_id
+LEFT JOIN users bu ON bu.id = b.student_id
+LEFT JOIN course_enrollments ce ON ce.id = pl.course_enrollment_id
+LEFT JOIN courses co ON co.id = ce.course_id
+LEFT JOIN users cu ON cu.id = ce.student_id
 WHERE pl.teacher_id = $1
-ORDER BY b.start_at DESC, pl.booking_id
+ORDER BY coalesce(b.start_at, ce.created_at) DESC, pl.id
 `
 
 type ListTeacherEarningsRow struct {
-	BookingID          uuid.UUID
+	BookingID          uuid.NullUUID
+	CourseEnrollmentID uuid.NullUUID
 	AmountMinor        int64
 	Currency           string
 	State              string
 	AvailableAt        pgtype.Timestamptz
 	StartAt            pgtype.Timestamptz
 	StudentDisplayName string
+	CourseTitle        pgtype.Text
 }
 
+// Phase C3 widens this to a teacher's course-sale earnings alongside their
+// lesson earnings: LEFT JOIN both sources (a row's booking_id XOR
+// course_enrollment_id is set, per the ledger's own CHECK) and coalesce the
+// "when" and "counterparty name" columns so a client sees one uniform shape.
+// course_title is NULL for a lesson row, non-NULL for a course row — the
+// discriminator a client uses to render each line differently.
 func (q *Queries) ListTeacherEarnings(ctx context.Context, teacherID uuid.UUID) ([]ListTeacherEarningsRow, error) {
 	rows, err := q.db.Query(ctx, listTeacherEarnings, teacherID)
 	if err != nil {
@@ -242,12 +303,14 @@ func (q *Queries) ListTeacherEarnings(ctx context.Context, teacherID uuid.UUID) 
 		var i ListTeacherEarningsRow
 		if err := rows.Scan(
 			&i.BookingID,
+			&i.CourseEnrollmentID,
 			&i.AmountMinor,
 			&i.Currency,
 			&i.State,
 			&i.AvailableAt,
 			&i.StartAt,
 			&i.StudentDisplayName,
+			&i.CourseTitle,
 		); err != nil {
 			return nil, err
 		}
@@ -267,7 +330,7 @@ WHERE booking_id = $1 AND state NOT IN ('reversed', 'paid')
 
 // A refund reverses the teacher's earning — unless a payout batch already paid
 // it out, which cannot be un-paid from here (the money has left the platform).
-func (q *Queries) MarkLedgerReversed(ctx context.Context, bookingID uuid.UUID) error {
+func (q *Queries) MarkLedgerReversed(ctx context.Context, bookingID uuid.NullUUID) error {
 	_, err := q.db.Exec(ctx, markLedgerReversed, bookingID)
 	return err
 }

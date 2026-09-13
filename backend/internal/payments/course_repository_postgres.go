@@ -17,12 +17,20 @@ import (
 type courseRepositoryPostgres struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
+
+	// clearingDays is the payout clearing window (PAYOUTS_CLEARING_DAYS),
+	// mirroring repositoryPostgres.clearingDays for the booking flow.
+	clearingDays int
 }
 
 // NewCoursePostgresRepository builds a CourseRepository backed by the given
-// pgx pool.
-func NewCoursePostgresRepository(pool *pgxpool.Pool) CourseRepository {
-	return &courseRepositoryPostgres{pool: pool, q: sqlc.New(pool)}
+// pgx pool. clearingDays is the payout clearing window in days (0 = payable
+// immediately) — see InsertCourseLedgerHeld.
+func NewCoursePostgresRepository(pool *pgxpool.Pool, clearingDays int) CourseRepository {
+	if clearingDays < 0 {
+		clearingDays = 0
+	}
+	return &courseRepositoryPostgres{pool: pool, q: sqlc.New(pool), clearingDays: clearingDays}
 }
 
 func rowToCoursePayment(r sqlc.CoursePayment) CoursePayment {
@@ -147,4 +155,19 @@ func (r *courseRepositoryPostgres) ApplyCourseEvent(ctx context.Context, e Event
 		return false, fmt.Errorf("commit: %w", err)
 	}
 	return true, nil
+}
+
+// InsertCourseLedgerHeld — see the CourseRepository interface doc and
+// CreditCourseSale's doc comment for why this is called outside
+// ApplyCourseEvent, unlike the booking flow's InsertLedgerHeld.
+func (r *courseRepositoryPostgres) InsertCourseLedgerHeld(ctx context.Context, enrollmentID uuid.UUID, teacherShareMinor int64, currency string) error {
+	if err := r.q.InsertCourseLedgerHeld(ctx, sqlc.InsertCourseLedgerHeldParams{
+		CourseEnrollmentID: enrollmentID,
+		AmountMinor:        teacherShareMinor,
+		Currency:           currency,
+		ClearingDays:       int32(r.clearingDays),
+	}); err != nil {
+		return fmt.Errorf("insert course ledger held: %w", err)
+	}
+	return nil
 }

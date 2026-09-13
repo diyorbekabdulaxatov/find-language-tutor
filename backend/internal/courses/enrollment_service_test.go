@@ -3,6 +3,8 @@ package courses
 import (
 	"context"
 	"errors"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,12 +29,79 @@ func (r *fakeRepo) TeacherSummaryByID(_ context.Context, teacherID uuid.UUID) (T
 func (r *fakeRepo) CatalogList(_ context.Context, q CatalogQuery) ([]CatalogEntry, int, error) {
 	var out []CatalogEntry
 	for _, c := range r.courses {
-		if c.Status != StatusPublished || c.ArchivedAt != nil {
+		if c.Status != StatusPublished || c.ArchivedAt != nil || c.SuspendedAt != nil {
 			continue
 		}
 		out = append(out, CatalogEntry{Course: c, Teacher: TeacherSummary{ID: c.TeacherID}})
 	}
 	return out, len(out), nil
+}
+
+// --- phase C3: admin moderation ---
+
+func (r *fakeRepo) AdminList(_ context.Context, q AdminCourseQuery, limit, offset int) ([]AdminCourse, int, error) {
+	var out []AdminCourse
+	for _, c := range r.courses {
+		switch q.Status {
+		case "":
+		case "archived":
+			if c.ArchivedAt == nil {
+				continue
+			}
+		default:
+			if c.ArchivedAt != nil || string(c.Status) != q.Status {
+				continue
+			}
+		}
+		switch q.Suspended {
+		case "":
+		case "true":
+			if c.SuspendedAt == nil {
+				continue
+			}
+		case "false":
+			if c.SuspendedAt != nil {
+				continue
+			}
+		}
+		teacher := TeacherSummary{ID: c.TeacherID}
+		if q.TeacherSlug != "" && teacher.Slug != q.TeacherSlug {
+			continue
+		}
+		if q.Q != "" && !strings.Contains(strings.ToLower(c.Title), strings.ToLower(q.Q)) {
+			continue
+		}
+		out = append(out, AdminCourse{Course: c, Teacher: teacher})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Course.CreatedAt.After(out[j].Course.CreatedAt) })
+	total := len(out)
+	start := offset
+	if start > len(out) {
+		start = len(out)
+	}
+	end := start + limit
+	if end > len(out) {
+		end = len(out)
+	}
+	return out[start:end], total, nil
+}
+
+func (r *fakeRepo) SetSuspended(_ context.Context, id uuid.UUID, suspended bool) (AdminCourse, error) {
+	c, ok := r.courses[id]
+	if !ok {
+		return AdminCourse{}, ErrNotFound
+	}
+	if suspended {
+		if c.SuspendedAt == nil {
+			now := time.Now()
+			c.SuspendedAt = &now
+		}
+	} else {
+		c.SuspendedAt = nil
+	}
+	c.UpdatedAt = time.Now()
+	r.courses[id] = c
+	return AdminCourse{Course: c, Teacher: TeacherSummary{ID: c.TeacherID}}, nil
 }
 
 func (r *fakeRepo) EnsureEnrollment(_ context.Context, courseID, studentID uuid.UUID, source EnrollmentSource, amountPaidMinor int64, currency string) (Enrollment, error) {
@@ -235,6 +304,12 @@ type fakePaymentGateway struct {
 	calls       int
 	lastAmount  int64
 	lastCurr    string
+
+	// phase C3
+	creditCalls  int
+	creditErr    error
+	lastCreditID uuid.UUID
+	lastCredited int64
 }
 
 func (f *fakePaymentGateway) Purchase(_ context.Context, _, _ uuid.UUID, amountMinor int64, currency, _ string) (PurchaseSnapshot, error) {
@@ -249,6 +324,13 @@ func (f *fakePaymentGateway) Purchase(_ context.Context, _, _ uuid.UUID, amountM
 		return PurchaseSnapshot{}, ErrCaptureFailed
 	}
 	return PurchaseSnapshot{Status: "captured", AmountMinor: amountMinor, Currency: currency}, nil
+}
+
+func (f *fakePaymentGateway) CreditCourseSale(_ context.Context, enrollmentID uuid.UUID, priceAmountMinor int64, _ string) error {
+	f.creditCalls++
+	f.lastCreditID = enrollmentID
+	f.lastCredited = priceAmountMinor
+	return f.creditErr
 }
 
 var _ PaymentGateway = (*fakePaymentGateway)(nil)
@@ -324,6 +406,32 @@ func TestService_Purchase_Paid_HappyPath(t *testing.T) {
 	}
 	if pay.calls != 1 {
 		t.Errorf("expected exactly one gateway call, got %d", pay.calls)
+	}
+	if pay.creditCalls != 1 {
+		t.Errorf("expected exactly one CreditCourseSale call once the enrollment exists, got %d", pay.creditCalls)
+	}
+	if pay.lastCreditID != summary.Enrollment.ID {
+		t.Errorf("CreditCourseSale should be called with the new enrollment's id: got %v, want %v", pay.lastCreditID, summary.Enrollment.ID)
+	}
+	if pay.lastCredited != 50000 {
+		t.Errorf("CreditCourseSale should be called with the full price paid (share math lives in payments): got %d, want 50000", pay.lastCredited)
+	}
+}
+
+func TestService_Purchase_FreeCourse_NeverCreditsLedger(t *testing.T) {
+	e := newTestEnv()
+	ctx := context.Background()
+	owner, _ := e.seedTeacher()
+	d, _ := e.publishWithOneVideoItem(t, owner, 0)
+	pay := &fakePaymentGateway{}
+	e.svc.SetPaymentGateway(pay) // wired, but a free course never reaches it
+
+	student := uuid.New()
+	if _, _, err := e.svc.Purchase(ctx, student, d.Course.ID, ""); err != nil {
+		t.Fatalf("purchase free course: %v", err)
+	}
+	if pay.calls != 0 || pay.creditCalls != 0 {
+		t.Errorf("a free course must never call the payment gateway or credit a ledger: calls=%d creditCalls=%d", pay.calls, pay.creditCalls)
 	}
 }
 
@@ -663,5 +771,108 @@ func TestService_Catalog_PublishedOnly(t *testing.T) {
 	}
 	if page.Total != 1 {
 		t.Errorf("expected only the published course to be listed, got total=%d entries=%+v", page.Total, page.Entries)
+	}
+}
+
+// --- phase C3: suspension's effect on the storefront ---
+
+func TestService_Catalog_ExcludesSuspended(t *testing.T) {
+	e := newTestEnv()
+	ctx := context.Background()
+	owner, _ := e.seedTeacher()
+	d, _ := e.publishWithOneVideoItem(t, owner, 1000)
+
+	if _, err := e.svc.AdminSuspend(ctx, d.Course.ID); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+
+	page, err := e.svc.Catalog(ctx, CatalogQuery{})
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+	if page.Total != 0 {
+		t.Errorf("a suspended course must not appear in the catalog: total=%d entries=%+v", page.Total, page.Entries)
+	}
+}
+
+func TestService_CatalogDetail_404WhenSuspended(t *testing.T) {
+	e := newTestEnv()
+	ctx := context.Background()
+	owner, _ := e.seedTeacher()
+	d, _ := e.publishWithOneVideoItem(t, owner, 1000)
+
+	if _, err := e.svc.AdminSuspend(ctx, d.Course.ID); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+	if _, err := e.svc.CatalogDetail(ctx, uuid.Nil, d.Course.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("want ErrNotFound for a suspended course's catalog detail, got %v", err)
+	}
+}
+
+func TestService_CoverImage_404WhenSuspended(t *testing.T) {
+	e := newTestEnv()
+	ctx := context.Background()
+	owner, _ := e.seedTeacher()
+	d, _ := e.publishWithOneVideoItem(t, owner, 0)
+	coverID := uuid.New()
+	e.file.put(coverID, owner, "image/png")
+	if _, err := e.svc.Update(ctx, owner, d.Course.ID, d.Course.Title, d.Course.Subtitle, d.Course.Description,
+		&coverID, d.Course.PriceAmountMinor, d.Course.PriceCurrency); err != nil {
+		t.Fatalf("set cover: %v", err)
+	}
+
+	if _, err := e.svc.AdminSuspend(ctx, d.Course.ID); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+	if _, _, _, err := e.svc.CoverImage(ctx, d.Course.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("want ErrNotFound for a suspended course's cover, got %v", err)
+	}
+}
+
+func TestService_Purchase_RejectsNewPurchaseOnSuspendedCourse(t *testing.T) {
+	e := newTestEnv()
+	ctx := context.Background()
+	owner, _ := e.seedTeacher()
+	d, _ := e.publishWithOneVideoItem(t, owner, 50000)
+	pay := &fakePaymentGateway{}
+	e.svc.SetPaymentGateway(pay)
+
+	if _, err := e.svc.AdminSuspend(ctx, d.Course.ID); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+
+	student := uuid.New()
+	if _, _, err := e.svc.Purchase(ctx, student, d.Course.ID, "pm_ok"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("want ErrNotFound for a new purchase on a suspended course, got %v", err)
+	}
+	if pay.calls != 0 {
+		t.Errorf("the gateway must not be charged for a rejected purchase, got %d calls", pay.calls)
+	}
+}
+
+// TestService_Learn_StillWorksAfterSuspension is the flip side of the above:
+// suspension is a storefront takedown, not a revocation — a student enrolled
+// before the suspension keeps their access via GET /v1/courses/{id}/learn.
+func TestService_Learn_StillWorksAfterSuspension(t *testing.T) {
+	e := newTestEnv()
+	ctx := context.Background()
+	owner, _ := e.seedTeacher()
+	d, _ := e.publishWithOneVideoItem(t, owner, 0)
+
+	student := uuid.New()
+	if _, _, err := e.svc.Purchase(ctx, student, d.Course.ID, ""); err != nil {
+		t.Fatalf("purchase: %v", err)
+	}
+
+	if _, err := e.svc.AdminSuspend(ctx, d.Course.ID); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+
+	learn, err := e.svc.Learn(ctx, student, d.Course.ID)
+	if err != nil {
+		t.Fatalf("an already-enrolled student's Learn() must keep working after suspension: %v", err)
+	}
+	if learn.EnrollmentID == nil {
+		t.Error("expected the student's enrollment id to still be present")
 	}
 }

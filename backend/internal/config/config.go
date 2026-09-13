@@ -67,6 +67,12 @@ type Config struct {
 	// PAYOUTS_CLEARING_DAYS, default 7; 0 makes earnings payable immediately.
 	PayoutsClearingDays int
 
+	// CoursesTeacherSharePercent is the teacher's cut of a course sale (the
+	// rest is the platform's take) — distinct from the 100%-passthrough
+	// lesson-booking ledger, where the whole captured price becomes the
+	// teacher's earning. COURSES_TEACHER_SHARE_PERCENT, default 70.
+	CoursesTeacherSharePercent int
+
 	// Email. ResendAPIKey selects the transactional-email backend: when empty
 	// (the dev default) a logging emailer is used; when set, mail is POSTed to
 	// the Resend API. EmailFrom is the From header.
@@ -93,13 +99,13 @@ func Load() (*Config, error) {
 	env := getenv("APP_ENV", "development")
 
 	cfg := &Config{
-		Env:             env,
-		Port:            getenv("PORT", "8080"),
-		AllowedOrigins:  splitAndTrim(getenv("ALLOWED_ORIGINS", "http://localhost:3000")),
-		AppBaseURL:      getenv("APP_BASE_URL", "http://localhost:3000"),
+		Env:            env,
+		Port:           getenv("PORT", "8080"),
+		AllowedOrigins: splitAndTrim(getenv("ALLOWED_ORIGINS", "http://localhost:3000")),
+		AppBaseURL:     getenv("APP_BASE_URL", "http://localhost:3000"),
 
-		FilesStore:    getenv("FILES_STORE", "disk"),
-		FilesDiskPath: getenv("FILES_DISK_PATH", ".localdata/uploads"),
+		FilesStore:      getenv("FILES_STORE", "disk"),
+		FilesDiskPath:   getenv("FILES_DISK_PATH", ".localdata/uploads"),
 		DatabaseURL:     os.Getenv("DATABASE_URL"),
 		RedisURL:        getenv("REDIS_URL", "redis://localhost:6379/0"),
 		JWTSecret:       os.Getenv("AUTH_JWT_SECRET"),
@@ -109,10 +115,11 @@ func Load() (*Config, error) {
 		CookieSecure:    getenvBool("AUTH_COOKIE_SECURE", env == "production"),
 		ShutdownTimeout: getenvDuration("SHUTDOWN_TIMEOUT", 10*time.Second),
 
-		PaymentsProvider:       getenv("PAYMENTS_PROVIDER", "fake"),
-		PaymentsWebhookSecret:  os.Getenv("PAYMENTS_WEBHOOK_SECRET"),
-		PaymentsWebhookMaxSkew: getenvDuration("PAYMENTS_WEBHOOK_MAX_SKEW", 5*time.Minute),
-		PayoutsClearingDays:    getenvInt("PAYOUTS_CLEARING_DAYS", 7),
+		PaymentsProvider:           getenv("PAYMENTS_PROVIDER", "fake"),
+		PaymentsWebhookSecret:      os.Getenv("PAYMENTS_WEBHOOK_SECRET"),
+		PaymentsWebhookMaxSkew:     getenvDuration("PAYMENTS_WEBHOOK_MAX_SKEW", 5*time.Minute),
+		PayoutsClearingDays:        getenvInt("PAYOUTS_CLEARING_DAYS", 7),
+		CoursesTeacherSharePercent: getenvInt("COURSES_TEACHER_SHARE_PERCENT", 70),
 
 		ResendAPIKey: os.Getenv("RESEND_API_KEY"),
 		EmailFrom:    getenv("EMAIL_FROM", "FindTutor <noreply@findtutor.local>"),

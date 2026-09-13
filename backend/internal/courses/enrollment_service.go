@@ -3,6 +3,7 @@ package courses
 import (
 	"context"
 	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
@@ -52,7 +53,7 @@ func (s *Service) CatalogDetail(ctx context.Context, callerID, courseID uuid.UUI
 	if err != nil {
 		return CatalogDetail{}, err
 	}
-	if c.Status != StatusPublished || c.ArchivedAt != nil {
+	if c.Status != StatusPublished || c.ArchivedAt != nil || c.SuspendedAt != nil {
 		return CatalogDetail{}, ErrNotFound
 	}
 	teacher, err := s.repo.TeacherSummaryByID(ctx, c.TeacherID)
@@ -102,7 +103,7 @@ func (s *Service) CoverImage(ctx context.Context, courseID uuid.UUID) (redirectU
 	if err != nil {
 		return "", nil, "", err
 	}
-	if c.Status != StatusPublished || c.ArchivedAt != nil || c.CoverAssetID == nil {
+	if c.Status != StatusPublished || c.ArchivedAt != nil || c.SuspendedAt != nil || c.CoverAssetID == nil {
 		return "", nil, "", ErrNotFound
 	}
 	if s.files == nil {
@@ -113,11 +114,14 @@ func (s *Service) CoverImage(ctx context.Context, courseID uuid.UUID) (redirectU
 
 // --- purchase / enrollment ---
 
-// Purchase enrolls callerID in courseID: 404 unless the course is published
-// and not archived; 403 if callerID's own teacher profile owns the course;
-// idempotent if already enrolled (returns the existing enrollment unchanged,
-// no error); a 0-priced course enrolls directly with no payment step;
-// otherwise the PaymentGateway is charged before the enrollment is created.
+// Purchase enrolls callerID in courseID: 404 unless the course is published,
+// not archived, and not suspended (phase C3 — an operator takedown reads the
+// same as an unpublished course to a would-be new buyer; see courses.go's
+// SuspendedAt doc comment); 403 if callerID's own teacher profile owns the
+// course; idempotent if already enrolled (returns the existing enrollment
+// unchanged, no error); a 0-priced course enrolls directly with no payment
+// step; otherwise the PaymentGateway is charged before the enrollment is
+// created.
 //
 // justPurchased is true only for a brand-new PAID purchase (the handler's 201
 // case) — false for an idempotent already-enrolled return or a fresh free
@@ -127,7 +131,7 @@ func (s *Service) Purchase(ctx context.Context, callerID, courseID uuid.UUID, me
 	if err != nil {
 		return EnrollmentSummary{}, false, err
 	}
-	if c.Status != StatusPublished || c.ArchivedAt != nil {
+	if c.Status != StatusPublished || c.ArchivedAt != nil || c.SuspendedAt != nil {
 		return EnrollmentSummary{}, false, ErrNotFound
 	}
 	if s.isCourseOwner(ctx, callerID, c.TeacherID) {
@@ -161,6 +165,26 @@ func (s *Service) Purchase(ctx context.Context, callerID, courseID uuid.UUID, me
 	if eErr != nil {
 		return EnrollmentSummary{}, false, eErr
 	}
+
+	// Phase C3: credit the teacher's revenue-share into the shared payout
+	// ledger, now that the enrollment (and so a course_enrollment_id to attach
+	// the row to) exists — unlike a booking, which exists before its payment,
+	// a course_enrollment is created only after Purchase above already
+	// captured the charge, so this can't happen inside the payments module's
+	// own capture-webhook handling (see payments.CourseService.CreditCourseSale's
+	// doc comment for the full reasoning). Best-effort: a ledger-write failure
+	// must never turn an otherwise-successful purchase into an error response,
+	// so it is logged and swallowed, same "caller-side, non-fatal" idiom as
+	// ItemCompleted below. EnsureEnrollment's own idempotency plus this call's
+	// ON CONFLICT (course_enrollment_id) DO NOTHING keep a retried Purchase
+	// (or a concurrent double-submit) from ever double-crediting the teacher.
+	if cErr := s.payments.CreditCourseSale(ctx, enrolled.ID, snap.AmountMinor, snap.Currency); cErr != nil {
+		s.logger.Error("credit course sale to teacher payout ledger",
+			slog.String("enrollment_id", enrolled.ID.String()),
+			slog.String("course_id", courseID.String()),
+			slog.Any("error", cErr))
+	}
+
 	result, sErr := s.enrollmentSummary(ctx, enrolled, c)
 	return result, sErr == nil, sErr
 }

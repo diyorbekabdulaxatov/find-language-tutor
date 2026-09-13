@@ -87,18 +87,150 @@ func (q *Queries) AddCourseSection(ctx context.Context, arg AddCourseSectionPara
 	return i, err
 }
 
+const adminCountCourses = `-- name: AdminCountCourses :one
+SELECT count(*)
+FROM courses c
+JOIN teachers t ON t.id = c.teacher_id
+WHERE ($1::text IS NULL
+        OR ($1::text = 'archived' AND c.archived_at IS NOT NULL)
+        OR ($1::text <> 'archived' AND c.status = $1::text AND c.archived_at IS NULL))
+  AND ($2::bool IS NULL
+        OR ($2::bool AND c.suspended_at IS NOT NULL)
+        OR (NOT $2::bool AND c.suspended_at IS NULL))
+  AND ($3::text IS NULL OR t.slug = $3::text)
+  AND ($4::text IS NULL OR c.title ILIKE '%' || $4::text || '%')
+`
+
+type AdminCountCoursesParams struct {
+	Status      pgtype.Text
+	Suspended   pgtype.Bool
+	TeacherSlug pgtype.Text
+	Q           pgtype.Text
+}
+
+func (q *Queries) AdminCountCourses(ctx context.Context, arg AdminCountCoursesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountCourses,
+		arg.Status,
+		arg.Suspended,
+		arg.TeacherSlug,
+		arg.Q,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const adminListCourses = `-- name: AdminListCourses :many
+
+SELECT
+    c.id, c.teacher_id, c.title, c.subtitle, c.description, c.cover_asset_id,
+    c.price_amount_minor, c.price_currency, c.status, c.ever_published, c.archived_at,
+    c.suspended_at, c.created_at, c.updated_at,
+    t.slug AS teacher_slug, t.display_name AS teacher_display_name
+FROM courses c
+JOIN teachers t ON t.id = c.teacher_id
+WHERE ($1::text IS NULL
+        OR ($1::text = 'archived' AND c.archived_at IS NOT NULL)
+        OR ($1::text <> 'archived' AND c.status = $1::text AND c.archived_at IS NULL))
+  AND ($2::bool IS NULL
+        OR ($2::bool AND c.suspended_at IS NOT NULL)
+        OR (NOT $2::bool AND c.suspended_at IS NULL))
+  AND ($3::text IS NULL OR t.slug = $3::text)
+  AND ($4::text IS NULL OR c.title ILIKE '%' || $4::text || '%')
+ORDER BY c.created_at DESC, c.id
+LIMIT $6::int OFFSET $5::int
+`
+
+type AdminListCoursesParams struct {
+	Status      pgtype.Text
+	Suspended   pgtype.Bool
+	TeacherSlug pgtype.Text
+	Q           pgtype.Text
+	PageOffset  int32
+	PageLimit   int32
+}
+
+type AdminListCoursesRow struct {
+	ID                 uuid.UUID
+	TeacherID          uuid.UUID
+	Title              string
+	Subtitle           string
+	Description        string
+	CoverAssetID       uuid.NullUUID
+	PriceAmountMinor   int64
+	PriceCurrency      CurrencyCode
+	Status             string
+	EverPublished      bool
+	ArchivedAt         pgtype.Timestamptz
+	SuspendedAt        pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+	TeacherSlug        string
+	TeacherDisplayName string
+}
+
+// Phase C3: admin moderation.
+// The operator moderation queue: every course regardless of status/teacher/
+// suspension, newest first. Filters mirror reviews' ModerationQuery shape:
+// status ('draft'|'published'|'archived', "archived" meaning archived_at IS NOT
+// NULL regardless of the underlying status column), suspended ('true'|'false'),
+// teacher_slug, and a title substring q — each NULL/empty means "any".
+func (q *Queries) AdminListCourses(ctx context.Context, arg AdminListCoursesParams) ([]AdminListCoursesRow, error) {
+	rows, err := q.db.Query(ctx, adminListCourses,
+		arg.Status,
+		arg.Suspended,
+		arg.TeacherSlug,
+		arg.Q,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminListCoursesRow{}
+	for rows.Next() {
+		var i AdminListCoursesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeacherID,
+			&i.Title,
+			&i.Subtitle,
+			&i.Description,
+			&i.CoverAssetID,
+			&i.PriceAmountMinor,
+			&i.PriceCurrency,
+			&i.Status,
+			&i.EverPublished,
+			&i.ArchivedAt,
+			&i.SuspendedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TeacherSlug,
+			&i.TeacherDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const catalogListCourses = `-- name: CatalogListCourses :many
 
 SELECT
     c.id, c.teacher_id, c.title, c.subtitle, c.description, c.cover_asset_id,
     c.price_amount_minor, c.price_currency, c.status, c.ever_published, c.archived_at,
-    c.created_at, c.updated_at,
+    c.suspended_at, c.created_at, c.updated_at,
     t.slug AS teacher_slug, t.display_name AS teacher_display_name,
     (SELECT count(*) FROM course_sections cs WHERE cs.course_id = c.id) AS section_count,
     (SELECT count(*) FROM course_items ci JOIN course_sections cs2 ON cs2.id = ci.section_id WHERE cs2.course_id = c.id) AS item_count
 FROM courses c
 JOIN teachers t ON t.id = c.teacher_id
-WHERE c.status = 'published' AND c.archived_at IS NULL AND t.status = 'approved'
+WHERE c.status = 'published' AND c.archived_at IS NULL AND c.suspended_at IS NULL AND t.status = 'approved'
   AND ($1::text IS NULL OR c.title ILIKE '%' || $1::text || '%' OR c.subtitle ILIKE '%' || $1::text || '%')
   AND ($2::bigint IS NULL OR c.price_amount_minor <= $2::bigint)
 ORDER BY
@@ -128,6 +260,7 @@ type CatalogListCoursesRow struct {
 	Status             string
 	EverPublished      bool
 	ArchivedAt         pgtype.Timestamptz
+	SuspendedAt        pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
 	TeacherSlug        string
@@ -136,10 +269,12 @@ type CatalogListCoursesRow struct {
 	ItemCount          int64
 }
 
-// Catalog: published, non-archived courses only, from an approved teacher
-// (mirrors GetBookingTeacherContext's status = 'approved' gate — a suspended
-// teacher's courses shouldn't surface in the public marketplace even if the
-// course row itself is still 'published').
+// Catalog: published, non-archived, non-suspended courses only, from an
+// approved teacher (mirrors GetBookingTeacherContext's status = 'approved'
+// gate — a suspended teacher's courses shouldn't surface in the public
+// marketplace even if the course row itself is still 'published'). Phase C3
+// adds suspended_at IS NULL: an operator takedown must 404 the storefront the
+// same way an unpublished/archived course already does.
 // sort: 'price_asc' | 'price_desc' | anything else (including "" / 'newest' /
 // 'recommended' — there is no rating-based ranking for courses yet) falls
 // back to newest-first. The two CASE columns are NULL for every row unless
@@ -172,6 +307,7 @@ func (q *Queries) CatalogListCourses(ctx context.Context, arg CatalogListCourses
 			&i.Status,
 			&i.EverPublished,
 			&i.ArchivedAt,
+			&i.SuspendedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.TeacherSlug,
@@ -227,7 +363,7 @@ const countCatalogCourses = `-- name: CountCatalogCourses :one
 SELECT count(*)
 FROM courses c
 JOIN teachers t ON t.id = c.teacher_id
-WHERE c.status = 'published' AND c.archived_at IS NULL AND t.status = 'approved'
+WHERE c.status = 'published' AND c.archived_at IS NULL AND c.suspended_at IS NULL AND t.status = 'approved'
   AND ($1::text IS NULL OR c.title ILIKE '%' || $1::text || '%' OR c.subtitle ILIKE '%' || $1::text || '%')
   AND ($2::bigint IS NULL OR c.price_amount_minor <= $2::bigint)
 `
@@ -271,7 +407,7 @@ INSERT INTO courses (teacher_id, title, subtitle, description, price_amount_mino
 VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
           price_amount_minor, price_currency, status, ever_published, archived_at,
-          created_at, updated_at
+          created_at, updated_at, suspended_at
 `
 
 type CreateCourseParams struct {
@@ -309,6 +445,7 @@ func (q *Queries) CreateCourse(ctx context.Context, arg CreateCourseParams) (Cou
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SuspendedAt,
 	)
 	return i, err
 }
@@ -368,7 +505,7 @@ func (q *Queries) EnrollmentGrantsResource(ctx context.Context, arg EnrollmentGr
 const getCourse = `-- name: GetCourse :one
 SELECT id, teacher_id, title, subtitle, description, cover_asset_id,
        price_amount_minor, price_currency, status, ever_published, archived_at,
-       created_at, updated_at
+       created_at, updated_at, suspended_at
 FROM courses
 WHERE id = $1
 `
@@ -390,6 +527,7 @@ func (q *Queries) GetCourse(ctx context.Context, id uuid.UUID) (Course, error) {
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SuspendedAt,
 	)
 	return i, err
 }
@@ -845,7 +983,7 @@ func (q *Queries) ListItemProgressForEnrollment(ctx context.Context, enrollmentI
 const listTeacherCourses = `-- name: ListTeacherCourses :many
 SELECT id, teacher_id, title, subtitle, description, cover_asset_id,
        price_amount_minor, price_currency, status, ever_published, archived_at,
-       created_at, updated_at
+       created_at, updated_at, suspended_at
 FROM courses
 WHERE teacher_id = $1
   AND ($2::text IS NULL OR status = $2::text)
@@ -893,6 +1031,7 @@ func (q *Queries) ListTeacherCourses(ctx context.Context, arg ListTeacherCourses
 			&i.ArchivedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SuspendedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1019,7 +1158,7 @@ SET archived_at = CASE WHEN $1::bool THEN now() ELSE NULL END,
 WHERE id = $2
 RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
           price_amount_minor, price_currency, status, ever_published, archived_at,
-          created_at, updated_at
+          created_at, updated_at, suspended_at
 `
 
 type SetCourseArchivedParams struct {
@@ -1044,6 +1183,7 @@ func (q *Queries) SetCourseArchived(ctx context.Context, arg SetCourseArchivedPa
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SuspendedAt,
 	)
 	return i, err
 }
@@ -1056,7 +1196,7 @@ SET status = $1,
 WHERE id = $2
 RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
           price_amount_minor, price_currency, status, ever_published, archived_at,
-          created_at, updated_at
+          created_at, updated_at, suspended_at
 `
 
 type SetCourseStatusParams struct {
@@ -1084,6 +1224,52 @@ func (q *Queries) SetCourseStatus(ctx context.Context, arg SetCourseStatusParams
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SuspendedAt,
+	)
+	return i, err
+}
+
+const setCourseSuspended = `-- name: SetCourseSuspended :one
+UPDATE courses
+SET suspended_at = CASE WHEN $1::bool THEN COALESCE(suspended_at, now()) ELSE NULL END,
+    updated_at = now()
+WHERE id = $2
+RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
+          price_amount_minor, price_currency, status, ever_published, archived_at,
+          created_at, updated_at, suspended_at
+`
+
+type SetCourseSuspendedParams struct {
+	Suspended bool
+	CourseID  uuid.UUID
+}
+
+// Idempotent: suspending an already-suspended course (or unsuspending an
+// already-active one) is a no-op that still returns the current row — COALESCE
+// keeps the original suspended_at instead of sliding it forward on a repeat
+// call, same "don't move a timestamp that's already set" idiom as
+// UpsertItemProgress's completed_at. Returns the course row only; the
+// repository loads the teacher summary separately with GetTeacherSummary
+// (same two-query shape avoids a CTE-scoped ambiguous-column parse sqlc
+// rejects when the same query both updates and re-joins the touched row).
+func (q *Queries) SetCourseSuspended(ctx context.Context, arg SetCourseSuspendedParams) (Course, error) {
+	row := q.db.QueryRow(ctx, setCourseSuspended, arg.Suspended, arg.CourseID)
+	var i Course
+	err := row.Scan(
+		&i.ID,
+		&i.TeacherID,
+		&i.Title,
+		&i.Subtitle,
+		&i.Description,
+		&i.CoverAssetID,
+		&i.PriceAmountMinor,
+		&i.PriceCurrency,
+		&i.Status,
+		&i.EverPublished,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SuspendedAt,
 	)
 	return i, err
 }
@@ -1144,7 +1330,7 @@ SET title = $2, subtitle = $3, description = $4, cover_asset_id = $5,
 WHERE id = $1
 RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
           price_amount_minor, price_currency, status, ever_published, archived_at,
-          created_at, updated_at
+          created_at, updated_at, suspended_at
 `
 
 type UpdateCourseParams struct {
@@ -1185,6 +1371,7 @@ func (q *Queries) UpdateCourse(ctx context.Context, arg UpdateCourseParams) (Cou
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SuspendedAt,
 	)
 	return i, err
 }

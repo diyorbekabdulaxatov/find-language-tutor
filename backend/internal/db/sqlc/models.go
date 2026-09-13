@@ -240,6 +240,7 @@ type Course struct {
 	ArchivedAt       pgtype.Timestamptz
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
+	SuspendedAt      pgtype.Timestamptz
 }
 
 type CourseEnrollment struct {
@@ -365,17 +366,18 @@ type PayoutBatch struct {
 }
 
 type PayoutLedger struct {
-	ID            uuid.UUID
-	TeacherID     uuid.UUID
-	BookingID     uuid.UUID
-	AmountMinor   int64
-	Currency      string
-	State         string
-	CreatedAt     pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
-	AvailableAt   pgtype.Timestamptz
-	PaidAt        pgtype.Timestamptz
-	PayoutBatchID uuid.NullUUID
+	ID                 uuid.UUID
+	TeacherID          uuid.UUID
+	BookingID          uuid.NullUUID
+	AmountMinor        int64
+	Currency           string
+	State              string
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+	AvailableAt        pgtype.Timestamptz
+	PaidAt             pgtype.Timestamptz
+	PayoutBatchID      uuid.NullUUID
+	CourseEnrollmentID uuid.NullUUID
 }
 
 type Resource struct {

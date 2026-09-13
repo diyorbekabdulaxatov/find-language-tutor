@@ -231,9 +231,10 @@ func run(logger *slog.Logger) error {
 	// courses.PaymentGateway, the course-purchase sibling of
 	// bookings.PaymentGateway.
 	coursePaymentService := payments.NewCourseService(
-		payments.NewCoursePostgresRepository(pool),
+		payments.NewCoursePostgresRepository(pool, cfg.PayoutsClearingDays),
 		cfg.PaymentsProvider,
 		logger,
+		cfg.CoursesTeacherSharePercent,
 	)
 	coursePaymentService.SetProvider(payments.NewFakeProvider(coursePaymentService.EmitCourse))
 	courseService.SetPaymentGateway(payments.NewCourseGateway(coursePaymentService))

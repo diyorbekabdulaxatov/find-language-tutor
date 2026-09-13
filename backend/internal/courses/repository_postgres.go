@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -131,6 +132,76 @@ func (r *repositoryPostgres) Delete(ctx context.Context, id uuid.UUID) error {
 		return fmt.Errorf("delete course: %w", err)
 	}
 	return nil
+}
+
+// --- admin moderation (phase C3) ---
+
+func (r *repositoryPostgres) AdminList(ctx context.Context, q AdminCourseQuery, limit, offset int) ([]AdminCourse, int, error) {
+	statusArg := nullText(q.Status)
+	teacherSlugArg := nullText(q.TeacherSlug)
+	qArg := nullText(q.Q)
+	var suspendedArg pgtype.Bool
+	if q.Suspended != "" {
+		suspendedArg = pgtype.Bool{Bool: q.Suspended == "true", Valid: true}
+	}
+
+	rows, err := r.q.AdminListCourses(ctx, sqlc.AdminListCoursesParams{
+		Status:      statusArg,
+		Suspended:   suspendedArg,
+		TeacherSlug: teacherSlugArg,
+		Q:           qArg,
+		PageLimit:   int32(limit),
+		PageOffset:  int32(offset),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("admin list courses: %w", err)
+	}
+	total, err := r.q.AdminCountCourses(ctx, sqlc.AdminCountCoursesParams{
+		Status:      statusArg,
+		Suspended:   suspendedArg,
+		TeacherSlug: teacherSlugArg,
+		Q:           qArg,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("admin count courses: %w", err)
+	}
+
+	out := make([]AdminCourse, len(rows))
+	for i, row := range rows {
+		out[i] = adminCourseFromListRow(row)
+	}
+	return out, int(total), nil
+}
+
+func (r *repositoryPostgres) SetSuspended(ctx context.Context, id uuid.UUID, suspended bool) (AdminCourse, error) {
+	row, err := r.q.SetCourseSuspended(ctx, sqlc.SetCourseSuspendedParams{CourseID: id, Suspended: suspended})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AdminCourse{}, ErrNotFound
+		}
+		return AdminCourse{}, fmt.Errorf("set course suspended: %w", err)
+	}
+	teacher, err := r.q.GetTeacherSummary(ctx, row.TeacherID)
+	if err != nil {
+		return AdminCourse{}, fmt.Errorf("get teacher summary: %w", err)
+	}
+	return AdminCourse{
+		Course:  toCourse(row),
+		Teacher: TeacherSummary{ID: teacher.ID, Slug: teacher.Slug, DisplayName: teacher.DisplayName},
+	}, nil
+}
+
+func adminCourseFromListRow(row sqlc.AdminListCoursesRow) AdminCourse {
+	return AdminCourse{
+		Course: Course{
+			ID: row.ID, TeacherID: row.TeacherID, Title: row.Title, Subtitle: row.Subtitle, Description: row.Description,
+			PriceAmountMinor: row.PriceAmountMinor, PriceCurrency: string(row.PriceCurrency),
+			Status: Status(row.Status), EverPublished: row.EverPublished,
+			CoverAssetID: nullUUIDPtr(row.CoverAssetID), ArchivedAt: nullTimePtr(row.ArchivedAt), SuspendedAt: nullTimePtr(row.SuspendedAt),
+			CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
+		},
+		Teacher: TeacherSummary{ID: row.TeacherID, Slug: row.TeacherSlug, DisplayName: row.TeacherDisplayName},
+	}
 }
 
 // --- sections ---
@@ -289,7 +360,30 @@ func toCourse(row sqlc.Course) Course {
 		t := row.ArchivedAt.Time.UTC()
 		c.ArchivedAt = &t
 	}
+	if row.SuspendedAt.Valid {
+		t := row.SuspendedAt.Time.UTC()
+		c.SuspendedAt = &t
+	}
 	return c
+}
+
+// nullUUIDPtr and nullTimePtr adapt a nullable sqlc scalar to this package's
+// *uuid.UUID / *time.Time convention, used by the admin mapping helpers above
+// (toCourse inlines the same checks for its own hot path).
+func nullUUIDPtr(v uuid.NullUUID) *uuid.UUID {
+	if !v.Valid {
+		return nil
+	}
+	id := v.UUID
+	return &id
+}
+
+func nullTimePtr(v pgtype.Timestamptz) *time.Time {
+	if !v.Valid {
+		return nil
+	}
+	t := v.Time.UTC()
+	return &t
 }
 
 func toSection(row sqlc.CourseSection) Section {

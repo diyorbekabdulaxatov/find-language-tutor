@@ -154,8 +154,8 @@ func TestHandler_Earnings_OK(t *testing.T) {
 	repo.teacherByOwner[owner] = tid
 	cleared := time.Now().UTC().Add(-24 * time.Hour)
 	repo.earnings[tid] = []EarningLine{
-		{BookingID: uuid.New(), StudentDisplayName: "Aziz", AmountMinor: 9_000_000, Currency: "UZS", State: LedgerHeld, AvailableAt: cleared},
-		{BookingID: uuid.New(), StudentDisplayName: "Bek", AmountMinor: 4_000_000, Currency: "UZS", State: LedgerPaid, AvailableAt: cleared},
+		{BookingID: uuidPtr(uuid.New()), StudentDisplayName: "Aziz", AmountMinor: 9_000_000, Currency: "UZS", State: LedgerHeld, AvailableAt: cleared},
+		{BookingID: uuidPtr(uuid.New()), StudentDisplayName: "Bek", AmountMinor: 4_000_000, Currency: "UZS", State: LedgerPaid, AvailableAt: cleared},
 	}
 	tm := testTokenManager()
 	r := newTestRouter(s, nil, tm)
