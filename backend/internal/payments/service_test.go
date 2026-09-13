@@ -167,12 +167,12 @@ func TestService_Earnings_Math(t *testing.T) {
 	future := time.Now().UTC().Add(72 * time.Hour) // still inside the window
 	past := time.Now().UTC().Add(-24 * time.Hour)  // cleared
 	repo.earnings[tid] = []EarningLine{
-		{BookingID: uuid.New(), AmountMinor: 5_000_000, Currency: "UZS", State: LedgerHeld, AvailableAt: future},
-		{BookingID: uuid.New(), AmountMinor: 7_000_000, Currency: "UZS", State: LedgerHeld, AvailableAt: past},
+		{BookingID: uuidPtr(uuid.New()), AmountMinor: 5_000_000, Currency: "UZS", State: LedgerHeld, AvailableAt: future},
+		{BookingID: uuidPtr(uuid.New()), AmountMinor: 7_000_000, Currency: "UZS", State: LedgerHeld, AvailableAt: past},
 		// A pre-000011 row: stored `available`, read exactly like a cleared one.
-		{BookingID: uuid.New(), AmountMinor: 9_000_000, Currency: "UZS", State: LedgerAvailable, AvailableAt: past},
-		{BookingID: uuid.New(), AmountMinor: 4_000_000, Currency: "UZS", State: LedgerPaid, AvailableAt: past},
-		{BookingID: uuid.New(), AmountMinor: 3_000_000, Currency: "UZS", State: LedgerReversed, AvailableAt: past},
+		{BookingID: uuidPtr(uuid.New()), AmountMinor: 9_000_000, Currency: "UZS", State: LedgerAvailable, AvailableAt: past},
+		{BookingID: uuidPtr(uuid.New()), AmountMinor: 4_000_000, Currency: "UZS", State: LedgerPaid, AvailableAt: past},
+		{BookingID: uuidPtr(uuid.New()), AmountMinor: 3_000_000, Currency: "UZS", State: LedgerReversed, AvailableAt: past},
 	}
 
 	e, err := s.Earnings(ctx(), owner)
@@ -203,6 +203,65 @@ func TestService_Earnings_Math(t *testing.T) {
 	}
 }
 
+// TestService_Earnings_MixesBookingAndCourseLines covers phase C3: a
+// teacher's earnings summary aggregates lesson-booking rows and course-sale
+// rows identically — a course line is just another EarningLine, discriminated
+// by CourseEnrollmentID/CourseTitle being set instead of BookingID.
+func TestService_Earnings_MixesBookingAndCourseLines(t *testing.T) {
+	s, repo := newTestService()
+	owner := uuid.New()
+	tid := uuid.New()
+	repo.teacherByOwner[owner] = tid
+
+	past := time.Now().UTC().Add(-24 * time.Hour) // cleared
+	courseTitle := "Uzbek for Beginners"
+	enrollmentID := uuid.New()
+	repo.earnings[tid] = []EarningLine{
+		{BookingID: uuidPtr(uuid.New()), StudentDisplayName: "Aziz", AmountMinor: 5_000_000, Currency: "UZS", State: LedgerHeld, AvailableAt: past},
+		{CourseEnrollmentID: uuidPtr(enrollmentID), CourseTitle: &courseTitle, StudentDisplayName: "Bek", AmountMinor: 7_000_000, Currency: "UZS", State: LedgerPaid, AvailableAt: past},
+	}
+
+	e, err := s.Earnings(ctx(), owner)
+	if err != nil {
+		t.Fatalf("earnings: %v", err)
+	}
+	if len(e.Lines) != 2 {
+		t.Fatalf("lines = %d, want 2", len(e.Lines))
+	}
+	if e.TotalEarnedMinor != 12_000_000 {
+		t.Errorf("total = %d, want 12_000_000 (booking + course)", e.TotalEarnedMinor)
+	}
+	if e.AvailableMinor != 5_000_000 || e.PaidMinor != 7_000_000 {
+		t.Errorf("available=%d paid=%d, want 5_000_000 / 7_000_000", e.AvailableMinor, e.PaidMinor)
+	}
+
+	// The booking line carries a BookingID and no course fields; the course
+	// line is the other way around.
+	var sawBooking, sawCourse bool
+	for _, l := range e.Lines {
+		switch {
+		case l.BookingID != nil:
+			sawBooking = true
+			if l.CourseEnrollmentID != nil || l.CourseTitle != nil {
+				t.Errorf("a booking line must not carry course fields: %+v", l)
+			}
+		case l.CourseEnrollmentID != nil:
+			sawCourse = true
+			if l.CourseEnrollmentID.String() != enrollmentID.String() {
+				t.Errorf("course_enrollment_id = %s, want %s", l.CourseEnrollmentID, enrollmentID)
+			}
+			if l.CourseTitle == nil || *l.CourseTitle != courseTitle {
+				t.Errorf("course_title = %v, want %q", l.CourseTitle, courseTitle)
+			}
+		default:
+			t.Errorf("line has neither BookingID nor CourseEnrollmentID: %+v", l)
+		}
+	}
+	if !sawBooking || !sawCourse {
+		t.Errorf("expected one booking line and one course line, sawBooking=%v sawCourse=%v", sawBooking, sawCourse)
+	}
+}
+
 // TestService_Capture_HoldsUntilClearingWindow is the end-to-end version: a
 // freshly captured lesson is held money, not available money.
 func TestService_Capture_HoldsUntilClearingWindow(t *testing.T) {
@@ -218,7 +277,7 @@ func TestService_Capture_HoldsUntilClearingWindow(t *testing.T) {
 	}
 	// The repository would stamp available_at = now + PAYOUTS_CLEARING_DAYS.
 	repo.earnings[tid] = []EarningLine{{
-		BookingID: bid, AmountMinor: 9_000_000, Currency: "UZS",
+		BookingID: uuidPtr(bid), AmountMinor: 9_000_000, Currency: "UZS",
 		State: repo.ledger[bid], AvailableAt: time.Now().UTC().Add(7 * 24 * time.Hour),
 	}}
 

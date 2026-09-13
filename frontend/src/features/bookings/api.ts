@@ -133,7 +133,12 @@ export interface EarningsSummary {
   available: Money;
   paid: Money;
   lessons: {
-    bookingId: string;
+    /** Set for a lesson-booking row; null for a course-sale row (phase C3). */
+    bookingId: string | null;
+    /** Set for a course-sale row; null for a lesson-booking row. */
+    courseEnrollmentId: string | null;
+    /** Non-null only for a course-sale row — the simplest row-kind discriminator. */
+    courseTitle: string | null;
     studentDisplayName: string;
     startAt: string;
     amount: Money;
@@ -357,7 +362,9 @@ export async function getEarnings(): Promise<EarningsSummary> {
     available: { amountMinor: data.available_minor, currency: cur },
     paid: { amountMinor: data.paid_minor, currency: cur },
     lessons: data.lessons.map((l) => ({
-      bookingId: l.booking_id,
+      bookingId: l.booking_id ?? null,
+      courseEnrollmentId: l.course_enrollment_id ?? null,
+      courseTitle: l.course_title ?? null,
       studentDisplayName: l.student_display_name,
       startAt: l.start_at,
       amount: { amountMinor: l.amount_minor, currency: cur },

@@ -78,25 +78,31 @@ func toSectionDTO(sd SectionDetail) sectionDTO {
 
 // courseDTO is the lightweight library-list row: course fields only, no curriculum.
 type courseDTO struct {
-	ID           string    `json:"id"`
-	Title        string    `json:"title"`
-	Subtitle     string    `json:"subtitle"`
-	Description  string    `json:"description"`
-	CoverAssetID *string   `json:"cover_asset_id"`
-	Price        moneyDTO  `json:"price"`
-	Status       string    `json:"status"`
-	Archived     bool      `json:"archived"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           string   `json:"id"`
+	Title        string   `json:"title"`
+	Subtitle     string   `json:"subtitle"`
+	Description  string   `json:"description"`
+	CoverAssetID *string  `json:"cover_asset_id"`
+	Price        moneyDTO `json:"price"`
+	Status       string   `json:"status"`
+	Archived     bool     `json:"archived"`
+	// IsSuspended (phase C3) is true when an operator has pulled this course
+	// from the storefront. Surfaced here so the teacher's own authoring
+	// library/editor can show a "suspended by admin" banner; it never changes
+	// what the teacher is allowed to edit in this phase.
+	IsSuspended bool      `json:"is_suspended"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func toCourseDTO(c Course) courseDTO {
 	dto := courseDTO{
 		ID: c.ID.String(), Title: c.Title, Subtitle: c.Subtitle, Description: c.Description,
-		Price:     moneyDTO{AmountMinor: c.PriceAmountMinor, Currency: c.PriceCurrency},
-		Status:    string(c.Status),
-		Archived:  c.ArchivedAt != nil,
-		CreatedAt: c.CreatedAt.UTC(), UpdatedAt: c.UpdatedAt.UTC(),
+		Price:       moneyDTO{AmountMinor: c.PriceAmountMinor, Currency: c.PriceCurrency},
+		Status:      string(c.Status),
+		Archived:    c.ArchivedAt != nil,
+		IsSuspended: c.SuspendedAt != nil,
+		CreatedAt:   c.CreatedAt.UTC(), UpdatedAt: c.UpdatedAt.UTC(),
 	}
 	if c.CoverAssetID != nil {
 		v := c.CoverAssetID.String()
@@ -130,6 +136,7 @@ type courseDetailDTO struct {
 	Price        moneyDTO     `json:"price"`
 	Status       string       `json:"status"`
 	Archived     bool         `json:"archived"`
+	IsSuspended  bool         `json:"is_suspended"` // phase C3 — see courseDTO.IsSuspended
 	Sections     []sectionDTO `json:"sections"`
 	CreatedAt    time.Time    `json:"created_at"`
 	UpdatedAt    time.Time    `json:"updated_at"`
@@ -142,11 +149,12 @@ func toCourseDetailDTO(d CourseDetail) courseDetailDTO {
 	}
 	dto := courseDetailDTO{
 		ID: d.Course.ID.String(), Title: d.Course.Title, Subtitle: d.Course.Subtitle, Description: d.Course.Description,
-		Price:     moneyDTO{AmountMinor: d.Course.PriceAmountMinor, Currency: d.Course.PriceCurrency},
-		Status:    string(d.Course.Status),
-		Archived:  d.Course.ArchivedAt != nil,
-		Sections:  sections,
-		CreatedAt: d.Course.CreatedAt.UTC(), UpdatedAt: d.Course.UpdatedAt.UTC(),
+		Price:       moneyDTO{AmountMinor: d.Course.PriceAmountMinor, Currency: d.Course.PriceCurrency},
+		Status:      string(d.Course.Status),
+		Archived:    d.Course.ArchivedAt != nil,
+		IsSuspended: d.Course.SuspendedAt != nil,
+		Sections:    sections,
+		CreatedAt:   d.Course.CreatedAt.UTC(), UpdatedAt: d.Course.UpdatedAt.UTC(),
 	}
 	if d.Course.CoverAssetID != nil {
 		v := d.Course.CoverAssetID.String()

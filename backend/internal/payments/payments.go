@@ -88,19 +88,30 @@ type Payment struct {
 	UpdatedAt    time.Time
 }
 
-// EarningLine is one captured (or reversed) lesson in a teacher's earnings
-// summary.
+// EarningLine is one captured (or reversed) earning in a teacher's earnings
+// summary — a lesson booking or (phase C3) a course sale. Exactly one of
+// BookingID / CourseEnrollmentID is set, mirroring payout_ledger's own CHECK.
 //
 // State is the STORED ledger state as loaded; summarize rewrites it to the
 // effective one (a `held` row past AvailableAt reads as `available`), so
 // everything above the repository sees the state the teacher is shown.
 type EarningLine struct {
-	BookingID          uuid.UUID
+	// BookingID is set for a lesson-booking earning, nil for a course sale.
+	BookingID *uuid.UUID
+	// CourseEnrollmentID / CourseTitle are set for a course-sale earning, nil
+	// for a lesson booking. CourseTitle is the discriminator a client uses to
+	// tell the two apart without inspecting which id is nil.
+	CourseEnrollmentID *uuid.UUID
+	CourseTitle        *string
+	// StudentDisplayName is the counterparty's name either way: the student
+	// on a lesson booking, or the buyer of a course.
 	StudentDisplayName string
-	StartAt            time.Time
-	AmountMinor        int64
-	Currency           string
-	State              LedgerState
+	// StartAt is the date this earning is dated by: a lesson's start time, or
+	// a course sale's purchase (enrollment) time.
+	StartAt     time.Time
+	AmountMinor int64
+	Currency    string
+	State       LedgerState
 	// AvailableAt is when the clearing window closes and the money becomes
 	// payable. Meaningless once the row is paid or reversed.
 	AvailableAt time.Time

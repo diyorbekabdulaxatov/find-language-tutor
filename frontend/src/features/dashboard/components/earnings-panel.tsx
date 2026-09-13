@@ -93,22 +93,26 @@ export function EarningsPanel() {
           <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
             <tr>
               <th className="px-4 py-2 font-medium">Student</th>
-              <th className="px-4 py-2 font-medium">Lesson</th>
+              <th className="px-4 py-2 font-medium">Lesson / course</th>
               <th className="px-4 py-2 text-right font-medium">Amount</th>
               <th className="px-4 py-2 text-right font-medium">Status</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {data.lessons.map((l) => (
-              <tr key={l.bookingId}>
+              <tr key={l.bookingId ?? l.courseEnrollmentId}>
                 <td className="px-4 py-3">{l.studentDisplayName}</td>
                 <td className="px-4 py-3 text-muted-foreground">
-                  <Link
-                    href={`/bookings/${l.bookingId}`}
-                    className="hover:text-foreground hover:underline"
-                  >
-                    {formatDayLabel(l.startAt, viewerTz)}
-                  </Link>
+                  {l.bookingId ? (
+                    <Link
+                      href={`/bookings/${l.bookingId}`}
+                      className="hover:text-foreground hover:underline"
+                    >
+                      {formatDayLabel(l.startAt, viewerTz)}
+                    </Link>
+                  ) : (
+                    <span>{l.courseTitle} · course sale</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-right font-medium">
                   {formatMoney(l.amount)}

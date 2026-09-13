@@ -11,6 +11,7 @@ package payments
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -52,9 +53,20 @@ type CourseRepository interface {
 	// ApplyCourseEvent processes one webhook event exactly once,
 	// transactionally — the same idempotency idiom as Repository.ApplyEvent
 	// (insert into course_payment_events first; a duplicate event_id means
-	// already processed, applied=false/err=nil). No payout-ledger write:
-	// revenue-share for course sales is a future phase.
+	// already processed, applied=false/err=nil). No payout-ledger write here:
+	// see InsertCourseLedgerHeld / CreditCourseSale below for why the
+	// revenue-share credit happens on a different call path than the
+	// booking flow's ApplyEvent-on-capture.
 	ApplyCourseEvent(ctx context.Context, e Event) (applied bool, err error)
+
+	// InsertCourseLedgerHeld writes one payout_ledger row (phase C3) for a
+	// captured course sale: teacher_id is derived by joining enrollmentID to
+	// its course, and the row opens the same PAYOUTS_CLEARING_DAYS window a
+	// lesson's earning does. teacherShareMinor is already the teacher's
+	// computed cut, not the full price — see CreditCourseSale.
+	// ON CONFLICT (course_enrollment_id) DO NOTHING makes a repeat call for
+	// the same enrollment a no-op.
+	InsertCourseLedgerHeld(ctx context.Context, enrollmentID uuid.UUID, teacherShareMinor int64, currency string) error
 }
 
 // CourseService drives a course purchase. Unlike the booking flow's separate
@@ -66,13 +78,26 @@ type CourseService struct {
 	provider     Provider
 	providerName string
 	logger       *slog.Logger
+
+	// teacherSharePercent is the teacher's cut of a course sale
+	// (COURSES_TEACHER_SHARE_PERCENT, default 70) — see CreditCourseSale.
+	teacherSharePercent int
 }
 
 // NewCourseService builds the service. The provider is attached separately
 // with SetProvider, same two-step construction as NewService (the in-process
 // FakeProvider needs the service's own webhook handler as its event sink).
-func NewCourseService(repo CourseRepository, providerName string, logger *slog.Logger) *CourseService {
-	return &CourseService{repo: repo, providerName: providerName, logger: logger}
+// teacherSharePercent must be in [0, 100]; an out-of-range value is clamped so
+// a misconfigured env var can never pay out more than 100% or a negative
+// amount.
+func NewCourseService(repo CourseRepository, providerName string, logger *slog.Logger, teacherSharePercent int) *CourseService {
+	if teacherSharePercent < 0 {
+		teacherSharePercent = 0
+	}
+	if teacherSharePercent > 100 {
+		teacherSharePercent = 100
+	}
+	return &CourseService{repo: repo, providerName: providerName, logger: logger, teacherSharePercent: teacherSharePercent}
 }
 
 // SetProvider attaches the payment provider. Must be called once before any
@@ -158,4 +183,43 @@ func (s *CourseService) Purchase(ctx context.Context, courseID, studentID uuid.U
 	}
 
 	return s.repo.CoursePaymentByCourse(ctx, courseID, studentID)
+}
+
+// CreditCourseSale credits the course's teacher their revenue-share of a
+// captured course purchase into the shared payout_ledger (phase C3),
+// satisfying courses.PaymentGateway.CreditCourseSale.
+//
+// Placement note: the booking flow writes its payout_ledger row
+// (InsertLedgerHeld) inside ApplyEvent's EventCaptured branch, because a
+// booking row already exists before its payment is even created. A course
+// purchase is the other way around — courses.Service creates the
+// course_enrollment only AFTER this package's Purchase (above) has already
+// authorized and captured the charge — so there is no course_enrollment_id
+// for ApplyCourseEvent's EventCaptured branch to attach a ledger row to.
+// courses.Service.Purchase therefore calls this method itself, through the
+// courses.PaymentGateway port, right after EnsureEnrollment succeeds.
+//
+// priceAmountMinor is the FULL price the student paid, not the teacher's cut
+// — the revenue-share arithmetic happens here, in Go (never in SQL), using
+// integer round-half-up so money is never a float. priceAmountMinor <= 0 is a
+// no-op (nothing to pay a teacher for a free course — Purchase never actually
+// reaches here for one, but this stays defensive). Idempotent: repository's
+// InsertCourseLedgerHeld is ON CONFLICT (course_enrollment_id) DO NOTHING, so
+// a retried/duplicate call for the same enrollment never double-credits.
+func (s *CourseService) CreditCourseSale(ctx context.Context, enrollmentID uuid.UUID, priceAmountMinor int64, currency string) error {
+	if priceAmountMinor <= 0 {
+		return nil
+	}
+	teacherShare := teacherShareMinor(priceAmountMinor, s.teacherSharePercent)
+	if err := s.repo.InsertCourseLedgerHeld(ctx, enrollmentID, teacherShare, currency); err != nil {
+		return fmt.Errorf("credit course sale: %w", err)
+	}
+	return nil
+}
+
+// teacherShareMinor computes the teacher's cut of a course sale using
+// round-half-up integer arithmetic — money is integer minor units everywhere
+// in this codebase, never a float.
+func teacherShareMinor(priceAmountMinor int64, percent int) int64 {
+	return (priceAmountMinor*int64(percent) + 50) / 100
 }

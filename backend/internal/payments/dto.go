@@ -22,13 +22,23 @@ type webhookResponse struct {
 	Applied  bool `json:"applied"`
 }
 
+// earningLineDTO is one earning row: a lesson booking, or (phase C3) a course
+// sale. booking_id is now nullable (nil for a course row) since it can no
+// longer be assumed present on every row — an unavoidable widening of an
+// existing field, called out in the openapi schema; course_enrollment_id /
+// course_title are new, additive, and nullable for a course row, nil for a
+// lesson row.
 type earningLineDTO struct {
-	BookingID          string    `json:"booking_id"`
+	BookingID          *string `json:"booking_id"`
+	CourseEnrollmentID *string `json:"course_enrollment_id"`
+	CourseTitle        *string `json:"course_title"`
+	// StudentDisplayName is the counterparty's name either way: the student
+	// on a lesson booking, or the buyer of a course.
 	StudentDisplayName string    `json:"student_display_name"`
 	StartAt            time.Time `json:"start_at"`
 	AmountMinor        int64     `json:"amount_minor"`
 	State              string    `json:"state"`
-	// AvailableAt is when the clearing window closes on a `held` lesson — the
+	// AvailableAt is when the clearing window closes on a `held` earning — the
 	// date a teacher is waiting for. Already in the past for every other state.
 	AvailableAt time.Time `json:"available_at"`
 }
@@ -46,13 +56,21 @@ func toEarningsDTO(e Earnings) earningsDTO {
 	lessons := make([]earningLineDTO, len(e.Lines))
 	for i, l := range e.Lines {
 		lessons[i] = earningLineDTO{
-			BookingID:          l.BookingID.String(),
 			StudentDisplayName: l.StudentDisplayName,
 			StartAt:            l.StartAt.UTC(),
 			AmountMinor:        l.AmountMinor,
 			State:              string(l.State),
 			AvailableAt:        l.AvailableAt.UTC(),
 		}
+		if l.BookingID != nil {
+			id := l.BookingID.String()
+			lessons[i].BookingID = &id
+		}
+		if l.CourseEnrollmentID != nil {
+			id := l.CourseEnrollmentID.String()
+			lessons[i].CourseEnrollmentID = &id
+		}
+		lessons[i].CourseTitle = l.CourseTitle
 	}
 	return earningsDTO{
 		TotalEarnedMinor: e.TotalEarnedMinor,

@@ -2952,6 +2952,91 @@ paths:
           description: "`not_found` — no review with that id."
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
 
+  /v1/admin/courses:
+    get:
+      tags: [courses]
+      summary: The course moderation queue
+      description: >
+        Permission: `courses.moderate`. Every course on the platform,
+        regardless of status/teacher/suspension, newest first. Filters are
+        optional: `status` (draft / published / archived — "archived" means
+        the course's `archived_at` is set, independent of the underlying
+        draft/published status), `suspended` (true / false), a teacher
+        `teacher_slug`, and `q` (title substring).
+      operationId: adminCourseQueue
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [draft, published, archived] }
+          description: Omit for any.
+        - name: suspended
+          in: query
+          schema: { type: boolean }
+          description: Omit for any.
+        - { name: teacher_slug, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string }, description: Title substring, case-insensitive. }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: A page of the moderation queue.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminCourseList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/courses/{id}/suspend:
+    post:
+      tags: [courses]
+      summary: Suspend a course
+      description: >
+        Permission: `courses.moderate`. Pulls the course from the storefront
+        (catalog, catalog detail, cover image, and new purchases 404 the same
+        way an unpublished course would) without touching the teacher's own
+        draft/published/archived state and without revoking an
+        already-enrolled student's access — a takedown, not a deletion or
+        refund. Idempotent. No request body.
+      operationId: adminSuspendCourse
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The updated course.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminCourse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`not_found` — no course with that id."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/courses/{id}/unsuspend:
+    post:
+      tags: [courses]
+      summary: Restore a suspended course to the storefront
+      description: >
+        Permission: `courses.moderate`. Idempotent. No request body.
+      operationId: adminUnsuspendCourse
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The updated course.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminCourse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: "`not_found` — no course with that id."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -3609,19 +3694,48 @@ components:
 
     EarningLesson:
       type: object
-      required: [booking_id, student_display_name, start_at, amount_minor, state, available_at]
+      required: [student_display_name, start_at, amount_minor, state, available_at]
+      description: >
+        One earning line: a lesson booking, or (phase C3) a course sale.
+        Exactly one of `booking_id` / `course_enrollment_id` is set —
+        `course_title` is the simplest discriminator, since it is non-null
+        only for a course row. `booking_id` was required prior to phase C3;
+        it is now nullable since a course-sourced row has none, an
+        unavoidable (additive-otherwise) widening of this schema.
       properties:
-        booking_id: { type: string, format: uuid }
-        student_display_name: { type: string }
-        start_at: { type: string, format: date-time, description: RFC3339 UTC. }
+        booking_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Set for a lesson-booking earning; null for a course sale.
+        course_enrollment_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: (Phase C3) Set for a course-sale earning; null for a lesson booking.
+        course_title:
+          type: string
+          nullable: true
+          description: (Phase C3) The purchased course's title; null for a lesson booking.
+        student_display_name:
+          type: string
+          description: >
+            The counterparty's display name either way: the student on a
+            lesson booking, or the buyer of a course.
+        start_at:
+          type: string
+          format: date-time
+          description: >
+            RFC3339 UTC. The date this earning is dated by: a lesson's start
+            time, or a course sale's purchase time.
         amount_minor: { type: integer, format: int64 }
         state:
           type: string
           description: >
             Effective state, resolved against the clearing window at read time:
-            a captured lesson is `held` until its `available_at` passes, then
+            a captured earning is `held` until its `available_at` passes, then
             `available` until a payout run settles it as `paid`. `reversed` is a
-            refunded lesson.
+            refunded/reversed earning.
           enum: [held, available, paid, reversed]
         available_at:
           type: string
@@ -4017,7 +4131,7 @@ components:
     Course:
       type: object
       description: A library-list row — course fields only, no curriculum. See CourseDetail for the full tree.
-      required: [id, title, subtitle, description, cover_asset_id, price, status, archived, created_at, updated_at]
+      required: [id, title, subtitle, description, cover_asset_id, price, status, archived, is_suspended, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -4027,6 +4141,13 @@ components:
         price: { $ref: "#/components/schemas/Money" }
         status: { type: string, enum: [draft, published] }
         archived: { type: boolean }
+        is_suspended:
+          type: boolean
+          description: >
+            (Phase C3) True when an operator has pulled this course from the
+            storefront — independent of `status`/`archived`. Shown here so the
+            teacher's own authoring views can surface a "suspended by admin"
+            banner.
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -4098,7 +4219,7 @@ components:
         every course- and curriculum-mutating endpoint (create/get/update/
         publish/archive, and every section/item mutation), so a client can
         re-render its whole authoring view from one response.
-      required: [id, title, subtitle, description, cover_asset_id, price, status, archived, sections, created_at, updated_at]
+      required: [id, title, subtitle, description, cover_asset_id, price, status, archived, is_suspended, sections, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -4108,6 +4229,7 @@ components:
         price: { $ref: "#/components/schemas/Money" }
         status: { type: string, enum: [draft, published] }
         archived: { type: boolean }
+        is_suspended: { type: boolean, description: "(Phase C3) See Course.is_suspended." }
         sections: { type: array, items: { $ref: "#/components/schemas/CourseSection" } }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
@@ -4313,6 +4435,39 @@ components:
             submission against); set for an enrolled student — pass it as
             `enrollment_id` to POST /v1/submissions for a resource item.
         sections: { type: array, items: { $ref: "#/components/schemas/CourseLearnSection" } }
+
+    # --- Courses (phase C3): admin moderation ---
+
+    AdminCourse:
+      description: One course in the operator moderation queue, with the teacher it belongs to.
+      type: object
+      required: [id, title, teacher, price, status, archived, suspended, suspended_at, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        teacher:
+          type: object
+          required: [slug, display_name]
+          properties:
+            slug: { type: string }
+            display_name: { type: string }
+        price: { $ref: "#/components/schemas/Money" }
+        status: { type: string, enum: [draft, published] }
+        archived: { type: boolean }
+        suspended: { type: boolean }
+        suspended_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: RFC3339 UTC. Null unless `suspended` is true.
+        created_at: { type: string, format: date-time }
+
+    AdminCourseList:
+      type: object
+      required: [courses, total]
+      properties:
+        courses: { type: array, items: { $ref: "#/components/schemas/AdminCourse" } }
+        total: { type: integer, description: Total matches, not just this page. }
 
     AdminReviewList:
       type: object

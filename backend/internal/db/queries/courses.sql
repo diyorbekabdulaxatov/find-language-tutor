@@ -6,12 +6,12 @@ INSERT INTO courses (teacher_id, title, subtitle, description, price_amount_mino
 VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
           price_amount_minor, price_currency, status, ever_published, archived_at,
-          created_at, updated_at;
+          created_at, updated_at, suspended_at;
 
 -- name: GetCourse :one
 SELECT id, teacher_id, title, subtitle, description, cover_asset_id,
        price_amount_minor, price_currency, status, ever_published, archived_at,
-       created_at, updated_at
+       created_at, updated_at, suspended_at
 FROM courses
 WHERE id = $1;
 
@@ -20,7 +20,7 @@ WHERE id = $1;
 -- and whether to include archived rows.
 SELECT id, teacher_id, title, subtitle, description, cover_asset_id,
        price_amount_minor, price_currency, status, ever_published, archived_at,
-       created_at, updated_at
+       created_at, updated_at, suspended_at
 FROM courses
 WHERE teacher_id = $1
   AND (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status')::text)
@@ -45,7 +45,7 @@ SET title = $2, subtitle = $3, description = $4, cover_asset_id = $5,
 WHERE id = $1
 RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
           price_amount_minor, price_currency, status, ever_published, archived_at,
-          created_at, updated_at;
+          created_at, updated_at, suspended_at;
 
 -- name: SetCourseStatus :one
 -- ever_published is a one-way latch: OR'd with "is this setting `published`",
@@ -58,7 +58,7 @@ SET status = sqlc.arg('status'),
 WHERE id = sqlc.arg('id')
 RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
           price_amount_minor, price_currency, status, ever_published, archived_at,
-          created_at, updated_at;
+          created_at, updated_at, suspended_at;
 
 -- name: SetCourseArchived :one
 UPDATE courses
@@ -67,10 +67,66 @@ SET archived_at = CASE WHEN sqlc.arg('archived')::bool THEN now() ELSE NULL END,
 WHERE id = sqlc.arg('id')
 RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
           price_amount_minor, price_currency, status, ever_published, archived_at,
-          created_at, updated_at;
+          created_at, updated_at, suspended_at;
 
 -- name: DeleteCourse :exec
 DELETE FROM courses WHERE id = $1;
+
+-- Phase C3: admin moderation.
+
+-- name: AdminListCourses :many
+-- The operator moderation queue: every course regardless of status/teacher/
+-- suspension, newest first. Filters mirror reviews' ModerationQuery shape:
+-- status ('draft'|'published'|'archived', "archived" meaning archived_at IS NOT
+-- NULL regardless of the underlying status column), suspended ('true'|'false'),
+-- teacher_slug, and a title substring q — each NULL/empty means "any".
+SELECT
+    c.id, c.teacher_id, c.title, c.subtitle, c.description, c.cover_asset_id,
+    c.price_amount_minor, c.price_currency, c.status, c.ever_published, c.archived_at,
+    c.suspended_at, c.created_at, c.updated_at,
+    t.slug AS teacher_slug, t.display_name AS teacher_display_name
+FROM courses c
+JOIN teachers t ON t.id = c.teacher_id
+WHERE (sqlc.narg('status')::text IS NULL
+        OR (sqlc.narg('status')::text = 'archived' AND c.archived_at IS NOT NULL)
+        OR (sqlc.narg('status')::text <> 'archived' AND c.status = sqlc.narg('status')::text AND c.archived_at IS NULL))
+  AND (sqlc.narg('suspended')::bool IS NULL
+        OR (sqlc.narg('suspended')::bool AND c.suspended_at IS NOT NULL)
+        OR (NOT sqlc.narg('suspended')::bool AND c.suspended_at IS NULL))
+  AND (sqlc.narg('teacher_slug')::text IS NULL OR t.slug = sqlc.narg('teacher_slug')::text)
+  AND (sqlc.narg('q')::text IS NULL OR c.title ILIKE '%' || sqlc.narg('q')::text || '%')
+ORDER BY c.created_at DESC, c.id
+LIMIT sqlc.arg('page_limit')::int OFFSET sqlc.arg('page_offset')::int;
+
+-- name: AdminCountCourses :one
+SELECT count(*)
+FROM courses c
+JOIN teachers t ON t.id = c.teacher_id
+WHERE (sqlc.narg('status')::text IS NULL
+        OR (sqlc.narg('status')::text = 'archived' AND c.archived_at IS NOT NULL)
+        OR (sqlc.narg('status')::text <> 'archived' AND c.status = sqlc.narg('status')::text AND c.archived_at IS NULL))
+  AND (sqlc.narg('suspended')::bool IS NULL
+        OR (sqlc.narg('suspended')::bool AND c.suspended_at IS NOT NULL)
+        OR (NOT sqlc.narg('suspended')::bool AND c.suspended_at IS NULL))
+  AND (sqlc.narg('teacher_slug')::text IS NULL OR t.slug = sqlc.narg('teacher_slug')::text)
+  AND (sqlc.narg('q')::text IS NULL OR c.title ILIKE '%' || sqlc.narg('q')::text || '%');
+
+-- name: SetCourseSuspended :one
+-- Idempotent: suspending an already-suspended course (or unsuspending an
+-- already-active one) is a no-op that still returns the current row — COALESCE
+-- keeps the original suspended_at instead of sliding it forward on a repeat
+-- call, same "don't move a timestamp that's already set" idiom as
+-- UpsertItemProgress's completed_at. Returns the course row only; the
+-- repository loads the teacher summary separately with GetTeacherSummary
+-- (same two-query shape avoids a CTE-scoped ambiguous-column parse sqlc
+-- rejects when the same query both updates and re-joins the touched row).
+UPDATE courses
+SET suspended_at = CASE WHEN sqlc.arg('suspended')::bool THEN COALESCE(suspended_at, now()) ELSE NULL END,
+    updated_at = now()
+WHERE id = sqlc.arg('course_id')
+RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
+          price_amount_minor, price_currency, status, ever_published, archived_at,
+          created_at, updated_at, suspended_at;
 
 -- Sections.
 
@@ -184,10 +240,12 @@ SELECT user_id FROM teachers WHERE id = $1;
 -- name: GetTeacherSummary :one
 SELECT id, slug, display_name FROM teachers WHERE id = $1;
 
--- Catalog: published, non-archived courses only, from an approved teacher
--- (mirrors GetBookingTeacherContext's status = 'approved' gate — a suspended
--- teacher's courses shouldn't surface in the public marketplace even if the
--- course row itself is still 'published').
+-- Catalog: published, non-archived, non-suspended courses only, from an
+-- approved teacher (mirrors GetBookingTeacherContext's status = 'approved'
+-- gate — a suspended teacher's courses shouldn't surface in the public
+-- marketplace even if the course row itself is still 'published'). Phase C3
+-- adds suspended_at IS NULL: an operator takedown must 404 the storefront the
+-- same way an unpublished/archived course already does.
 
 -- name: CatalogListCourses :many
 -- sort: 'price_asc' | 'price_desc' | anything else (including "" / 'newest' /
@@ -198,13 +256,13 @@ SELECT id, slug, display_name FROM teachers WHERE id = $1;
 SELECT
     c.id, c.teacher_id, c.title, c.subtitle, c.description, c.cover_asset_id,
     c.price_amount_minor, c.price_currency, c.status, c.ever_published, c.archived_at,
-    c.created_at, c.updated_at,
+    c.suspended_at, c.created_at, c.updated_at,
     t.slug AS teacher_slug, t.display_name AS teacher_display_name,
     (SELECT count(*) FROM course_sections cs WHERE cs.course_id = c.id) AS section_count,
     (SELECT count(*) FROM course_items ci JOIN course_sections cs2 ON cs2.id = ci.section_id WHERE cs2.course_id = c.id) AS item_count
 FROM courses c
 JOIN teachers t ON t.id = c.teacher_id
-WHERE c.status = 'published' AND c.archived_at IS NULL AND t.status = 'approved'
+WHERE c.status = 'published' AND c.archived_at IS NULL AND c.suspended_at IS NULL AND t.status = 'approved'
   AND (sqlc.narg('q')::text IS NULL OR c.title ILIKE '%' || sqlc.narg('q')::text || '%' OR c.subtitle ILIKE '%' || sqlc.narg('q')::text || '%')
   AND (sqlc.narg('max_price_minor')::bigint IS NULL OR c.price_amount_minor <= sqlc.narg('max_price_minor')::bigint)
 ORDER BY
@@ -217,7 +275,7 @@ LIMIT sqlc.arg('page_limit')::int OFFSET sqlc.arg('page_offset')::int;
 SELECT count(*)
 FROM courses c
 JOIN teachers t ON t.id = c.teacher_id
-WHERE c.status = 'published' AND c.archived_at IS NULL AND t.status = 'approved'
+WHERE c.status = 'published' AND c.archived_at IS NULL AND c.suspended_at IS NULL AND t.status = 'approved'
   AND (sqlc.narg('q')::text IS NULL OR c.title ILIKE '%' || sqlc.narg('q')::text || '%' OR c.subtitle ILIKE '%' || sqlc.narg('q')::text || '%')
   AND (sqlc.narg('max_price_minor')::bigint IS NULL OR c.price_amount_minor <= sqlc.narg('max_price_minor')::bigint);
 
@@ -361,3 +419,27 @@ RETURNING id, enrollment_id, item_id, status, video_position_seconds, completed_
 SELECT id, enrollment_id, item_id, status, video_position_seconds, completed_at, updated_at
 FROM course_item_progress
 WHERE enrollment_id = $1;
+
+-- Seed-only. FK order (deepest first): course_item_progress -> course_items/
+-- course_enrollments; submissions.enrollment_id -> course_enrollments (cleared
+-- by resources.DeleteAllSubmissions, called by cmd/seed before
+-- DeleteAllCourseEnrollments); course_enrollments -> courses/users;
+-- course_items -> course_sections; course_sections -> courses; courses ->
+-- teachers. cmd/seed clears all of these before DeleteAllTeachers/
+-- DeleteAllUsers, same "explicit, deepest-first" discipline as its existing
+-- booking/payment clearing.
+
+-- name: DeleteAllCourseItemProgress :exec
+DELETE FROM course_item_progress;
+
+-- name: DeleteAllCourseEnrollments :exec
+DELETE FROM course_enrollments;
+
+-- name: DeleteAllCourseItems :exec
+DELETE FROM course_items;
+
+-- name: DeleteAllCourseSections :exec
+DELETE FROM course_sections;
+
+-- name: DeleteAllCourses :exec
+DELETE FROM courses;

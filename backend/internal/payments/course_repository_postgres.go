@@ -17,12 +17,20 @@ import (
 type courseRepositoryPostgres struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
+
+	// clearingDays is the payout clearing window (PAYOUTS_CLEARING_DAYS),
+	// mirroring repositoryPostgres.clearingDays for the booking flow.
+	clearingDays int
 }
 
 // NewCoursePostgresRepository builds a CourseRepository backed by the given
-// pgx pool.
-func NewCoursePostgresRepository(pool *pgxpool.Pool) CourseRepository {
-	return &courseRepositoryPostgres{pool: pool, q: sqlc.New(pool)}
+// pgx pool. clearingDays is the payout clearing window in days (0 = payable
+// immediately) — see InsertCourseLedgerHeld.
+func NewCoursePostgresRepository(pool *pgxpool.Pool, clearingDays int) CourseRepository {
+	if clearingDays < 0 {
+		clearingDays = 0
+	}
+	return &courseRepositoryPostgres{pool: pool, q: sqlc.New(pool), clearingDays: clearingDays}
 }
 
 func rowToCoursePayment(r sqlc.CoursePayment) CoursePayment {
@@ -74,9 +82,13 @@ func (r *courseRepositoryPostgres) CoursePaymentByCourse(ctx context.Context, co
 }
 
 // ApplyCourseEvent — see the CourseRepository interface doc. Mirrors
-// repositoryPostgres.ApplyEvent exactly, minus the payout-ledger write on
-// capture and the booking-confirm on authorize (a course purchase has no
-// booking to move, and course revenue-share is a future phase).
+// repositoryPostgres.ApplyEvent, minus the booking-confirm on authorize (a
+// course purchase has no booking to move) and the payout-ledger write on
+// capture: unlike a booking, a course_enrollment doesn't exist yet at capture
+// time (courses.Service creates it only after Purchase's capture returns), so
+// crediting the teacher happens separately via CreditCourseSale/
+// InsertCourseLedgerHeld, not here. A refund DOES reverse that credit from
+// here, via MarkCourseLedgerReversedByCourseAndStudent below.
 func (r *courseRepositoryPostgres) ApplyCourseEvent(ctx context.Context, e Event) (bool, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -130,6 +142,12 @@ func (r *courseRepositoryPostgres) ApplyCourseEvent(ctx context.Context, e Event
 		if err := qtx.MarkCoursePaymentRefunded(ctx, p.ID); err != nil {
 			return false, fmt.Errorf("mark refunded: %w", err)
 		}
+		if err := qtx.MarkCourseLedgerReversedByCourseAndStudent(ctx, sqlc.MarkCourseLedgerReversedByCourseAndStudentParams{
+			CourseID:  p.CourseID,
+			StudentID: p.StudentID,
+		}); err != nil {
+			return false, fmt.Errorf("reverse course ledger: %w", err)
+		}
 
 	case EventFailed:
 		if err := qtx.MarkCoursePaymentFailed(ctx, sqlc.MarkCoursePaymentFailedParams{
@@ -147,4 +165,19 @@ func (r *courseRepositoryPostgres) ApplyCourseEvent(ctx context.Context, e Event
 		return false, fmt.Errorf("commit: %w", err)
 	}
 	return true, nil
+}
+
+// InsertCourseLedgerHeld — see the CourseRepository interface doc and
+// CreditCourseSale's doc comment for why this is called outside
+// ApplyCourseEvent, unlike the booking flow's InsertLedgerHeld.
+func (r *courseRepositoryPostgres) InsertCourseLedgerHeld(ctx context.Context, enrollmentID uuid.UUID, teacherShareMinor int64, currency string) error {
+	if err := r.q.InsertCourseLedgerHeld(ctx, sqlc.InsertCourseLedgerHeldParams{
+		CourseEnrollmentID: enrollmentID,
+		AmountMinor:        teacherShareMinor,
+		Currency:           currency,
+		ClearingDays:       int32(r.clearingDays),
+	}); err != nil {
+		return fmt.Errorf("insert course ledger held: %w", err)
+	}
+	return nil
 }

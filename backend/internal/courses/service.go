@@ -97,6 +97,16 @@ type Repository interface {
 	// course-context submission path (resources.CourseProgress).
 	CompleteItemProgress(ctx context.Context, enrollmentID, itemID uuid.UUID, completedAt time.Time) (ItemProgress, error)
 	ListItemProgressForEnrollment(ctx context.Context, enrollmentID uuid.UUID) ([]ItemProgress, error)
+
+	// --- admin moderation (phase C3) ---
+
+	// AdminList returns a page of the moderation queue: every course
+	// regardless of status/teacher/suspension, newest first.
+	AdminList(ctx context.Context, q AdminCourseQuery, limit, offset int) ([]AdminCourse, int, error)
+	// SetSuspended sets or clears a course's operator takedown flag.
+	// Idempotent — setting the same value twice is a no-op that still returns
+	// the current row. ErrNotFound for an unknown id.
+	SetSuspended(ctx context.Context, id uuid.UUID, suspended bool) (AdminCourse, error)
 }
 
 // CreateParams is the repository's course-insert payload.

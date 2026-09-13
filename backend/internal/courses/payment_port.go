@@ -23,6 +23,15 @@ type PaymentGateway interface {
 	// (after a successful authorize) it returns ErrCaptureFailed, retryable
 	// by calling Purchase again with the same arguments.
 	Purchase(ctx context.Context, courseID, studentID uuid.UUID, amountMinor int64, currency, methodToken string) (PurchaseSnapshot, error)
+
+	// CreditCourseSale credits the course's teacher their revenue-share of a
+	// captured purchase into the shared payout ledger (phase C3). Called by
+	// Service.Purchase right after the enrollment is created — see that call
+	// site's doc comment for why this can't happen inside Purchase above.
+	// priceAmountMinor is the full price the student paid (the teacher's cut
+	// is computed on the payments side); 0 is a no-op. Idempotent — a repeat
+	// call for the same enrollmentID never double-credits.
+	CreditCourseSale(ctx context.Context, enrollmentID uuid.UUID, priceAmountMinor int64, currency string) error
 }
 
 // PurchaseSnapshot is the read-model of a course payment's outcome.

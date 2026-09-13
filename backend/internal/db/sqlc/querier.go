@@ -29,6 +29,7 @@ type Querier interface {
 	// confirmed and not yet started. active_students = distinct people who booked.
 	AdminBookingStats(ctx context.Context) (AdminBookingStatsRow, error)
 	AdminCountBookings(ctx context.Context, arg AdminCountBookingsParams) (int64, error)
+	AdminCountCourses(ctx context.Context, arg AdminCountCoursesParams) (int64, error)
 	AdminCountDisputes(ctx context.Context, status pgtype.Text) (int64, error)
 	AdminCountPayoutBatches(ctx context.Context) (int64, error)
 	// Same filters as AdminListReviews — the total match count for pagination.
@@ -55,6 +56,13 @@ type Querier interface {
 	// booking has no intent yet (payments.booking_id is UNIQUE, so the LEFT JOIN
 	// cannot fan the row set out).
 	AdminListBookings(ctx context.Context, arg AdminListBookingsParams) ([]AdminListBookingsRow, error)
+	// Phase C3: admin moderation.
+	// The operator moderation queue: every course regardless of status/teacher/
+	// suspension, newest first. Filters mirror reviews' ModerationQuery shape:
+	// status ('draft'|'published'|'archived', "archived" meaning archived_at IS NOT
+	// NULL regardless of the underlying status column), suspended ('true'|'false'),
+	// teacher_slug, and a title substring q — each NULL/empty means "any".
+	AdminListCourses(ctx context.Context, arg AdminListCoursesParams) ([]AdminListCoursesRow, error)
 	// The operator queue: disputes filtered by status (default 'open' in the
 	// service), each with the booking + parties context the list view renders.
 	AdminListDisputes(ctx context.Context, arg AdminListDisputesParams) ([]AdminListDisputesRow, error)
@@ -123,10 +131,12 @@ type Querier interface {
 	// no-show) or 'admin' (the operator force-cancel override). The service picks
 	// the value; the column's CHECK constraint is the guard.
 	CancelBooking(ctx context.Context, arg CancelBookingParams) error
-	// Catalog: published, non-archived courses only, from an approved teacher
-	// (mirrors GetBookingTeacherContext's status = 'approved' gate — a suspended
-	// teacher's courses shouldn't surface in the public marketplace even if the
-	// course row itself is still 'published').
+	// Catalog: published, non-archived, non-suspended courses only, from an
+	// approved teacher (mirrors GetBookingTeacherContext's status = 'approved'
+	// gate — a suspended teacher's courses shouldn't surface in the public
+	// marketplace even if the course row itself is still 'published'). Phase C3
+	// adds suspended_at IS NULL: an operator takedown must 404 the storefront the
+	// same way an unpublished/archived course already does.
 	// sort: 'price_asc' | 'price_desc' | anything else (including "" / 'newest' /
 	// 'recommended' — there is no rating-based ranking for courses yet) falls
 	// back to newest-first. The two CASE columns are NULL for every row unless
@@ -191,6 +201,23 @@ type Querier interface {
 	// Seed-only. bookings.teacher_id / student_id reference teachers / users with
 	// no ON DELETE CASCADE, so the seed must clear bookings before those tables.
 	DeleteAllBookings(ctx context.Context) error
+	DeleteAllCourseEnrollments(ctx context.Context) error
+	// Seed-only. FK order (deepest first): course_item_progress -> course_items/
+	// course_enrollments; submissions.enrollment_id -> course_enrollments (cleared
+	// by resources.DeleteAllSubmissions, called by cmd/seed before
+	// DeleteAllCourseEnrollments); course_enrollments -> courses/users;
+	// course_items -> course_sections; course_sections -> courses; courses ->
+	// teachers. cmd/seed clears all of these before DeleteAllTeachers/
+	// DeleteAllUsers, same "explicit, deepest-first" discipline as its existing
+	// booking/payment clearing.
+	DeleteAllCourseItemProgress(ctx context.Context) error
+	DeleteAllCourseItems(ctx context.Context) error
+	// Seed-only. course_payment_events -> course_payments -> courses/users; clear
+	// events before payments, and both before courses.DeleteAllCourses.
+	DeleteAllCoursePaymentEvents(ctx context.Context) error
+	DeleteAllCoursePayments(ctx context.Context) error
+	DeleteAllCourseSections(ctx context.Context) error
+	DeleteAllCourses(ctx context.Context) error
 	// Seed-only. disputes.booking_id cascades, but raised_by / resolved_by
 	// reference users with no cascade, so the seed clears disputes explicitly
 	// before bookings and users.
@@ -332,6 +359,26 @@ type Querier interface {
 	// Only a `writing` submission reaches this (enforced in the service);
 	// teacher_score is nullable — a teacher may grade with feedback only.
 	GradeSubmission(ctx context.Context, arg GradeSubmissionParams) (Submission, error)
+	// Phase C3: the course-purchase sibling of InsertLedgerHeld. One row per
+	// captured course sale, keyed on course_enrollment_id instead of booking_id
+	// (see payout_ledger's booking_id/course_enrollment_id CHECK, migration
+	// 000018). teacher_id is derived by joining the enrollment to its course;
+	// amount_minor is the teacher's already-computed revenue-share (Go arithmetic
+	// in payments.CourseService.CreditCourseSale, never derived here), and
+	// available_at opens the same clearing window as a lesson's earning: capture
+	// time + PAYOUTS_CLEARING_DAYS.
+	//
+	// Called by courses.Service.Purchase (via the courses.PaymentGateway port)
+	// right after the enrollment row is created, NOT from this package's own
+	// ApplyCourseEvent webhook handler on payment.captured — unlike a booking
+	// (which exists before its payment), a course_enrollment does not exist yet
+	// at capture time, so there is no enrollment id to attach a ledger row to
+	// until courses.Service creates one. See CreditCourseSale's doc comment.
+	//
+	// ON CONFLICT (course_enrollment_id) DO NOTHING is the idempotency guard: a
+	// retried/duplicate call for the same enrollment (e.g. a concurrent
+	// double-submit racing EnsureEnrollment) never double-credits the teacher.
+	InsertCourseLedgerHeld(ctx context.Context, arg InsertCourseLedgerHeldParams) error
 	InsertCoursePaymentEvent(ctx context.Context, arg InsertCoursePaymentEventParams) error
 	// A second OPEN dispute for the same booking raises SQLSTATE 23505 on
 	// disputes_one_open_per_booking, which the repository maps to ErrDisputeExists
@@ -404,6 +451,12 @@ type Querier interface {
 	// The authoring library list. Filters are optional: status ('draft'|'published')
 	// and whether to include archived rows.
 	ListTeacherCourses(ctx context.Context, arg ListTeacherCoursesParams) ([]Course, error)
+	// Phase C3 widens this to a teacher's course-sale earnings alongside their
+	// lesson earnings: LEFT JOIN both sources (a row's booking_id XOR
+	// course_enrollment_id is set, per the ledger's own CHECK) and coalesce the
+	// "when" and "counterparty name" columns so a client sees one uniform shape.
+	// course_title is NULL for a lesson row, non-NULL for a course row — the
+	// discriminator a client uses to render each line differently.
 	ListTeacherEarnings(ctx context.Context, teacherID uuid.UUID) ([]ListTeacherEarningsRow, error)
 	// The library list. Filters are optional: type, status ('draft'|'published'),
 	// and whether to include archived rows.
@@ -425,13 +478,22 @@ type Querier interface {
 	// locked rather than blocking on them or settling them a second time — and the
 	// loser typically ends up with nothing to pay (409 nothing_to_pay).
 	LockPayablePayoutLedger(ctx context.Context) ([]LockPayablePayoutLedgerRow, error)
+	// The course sibling of MarkLedgerReversed. A refunded course_payment carries
+	// no enrollment id of its own (the enrollment is created by courses.Service
+	// only after a successful capture, see InsertCourseLedgerHeld's doc comment),
+	// so the reversal is keyed by (course_id, student_id) instead — at most one
+	// enrollment exists per (course, student) pair (course_enrollments' own
+	// unique constraint), so this reverses exactly the one ledger row a refund on
+	// that course payment could ever correspond to. Same "not already
+	// paid/reversed" guard as MarkLedgerReversed.
+	MarkCourseLedgerReversedByCourseAndStudent(ctx context.Context, arg MarkCourseLedgerReversedByCourseAndStudentParams) error
 	MarkCoursePaymentAuthorized(ctx context.Context, arg MarkCoursePaymentAuthorizedParams) error
 	MarkCoursePaymentCaptured(ctx context.Context, id uuid.UUID) error
 	MarkCoursePaymentFailed(ctx context.Context, arg MarkCoursePaymentFailedParams) error
 	MarkCoursePaymentRefunded(ctx context.Context, id uuid.UUID) error
 	// A refund reverses the teacher's earning — unless a payout batch already paid
 	// it out, which cannot be un-paid from here (the money has left the platform).
-	MarkLedgerReversed(ctx context.Context, bookingID uuid.UUID) error
+	MarkLedgerReversed(ctx context.Context, bookingID uuid.NullUUID) error
 	// Settles exactly the rows the run locked. The state guard is belt-and-braces:
 	// FOR UPDATE SKIP LOCKED already makes the set exclusive.
 	MarkLedgerRowsPaid(ctx context.Context, arg MarkLedgerRowsPaidParams) error
@@ -519,6 +581,15 @@ type Querier interface {
 	// so unpublishing (status back to draft) never clears it — Delete stays
 	// blocked forever once a course has gone live at least once.
 	SetCourseStatus(ctx context.Context, arg SetCourseStatusParams) (Course, error)
+	// Idempotent: suspending an already-suspended course (or unsuspending an
+	// already-active one) is a no-op that still returns the current row — COALESCE
+	// keeps the original suspended_at instead of sliding it forward on a repeat
+	// call, same "don't move a timestamp that's already set" idiom as
+	// UpsertItemProgress's completed_at. Returns the course row only; the
+	// repository loads the teacher summary separately with GetTeacherSummary
+	// (same two-query shape avoids a CTE-scoped ambiguous-column parse sqlc
+	// rejects when the same query both updates and re-joins the touched row).
+	SetCourseSuspended(ctx context.Context, arg SetCourseSuspendedParams) (Course, error)
 	SetResourceArchived(ctx context.Context, arg SetResourceArchivedParams) (Resource, error)
 	SetResourceStatus(ctx context.Context, arg SetResourceStatusParams) (Resource, error)
 	SetReviewHidden(ctx context.Context, arg SetReviewHiddenParams) error

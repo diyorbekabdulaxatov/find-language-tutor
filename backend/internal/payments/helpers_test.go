@@ -19,6 +19,11 @@ func testTokenManager() *auth.TokenManager {
 	return auth.NewTokenManager("payments-test-secret", time.Minute)
 }
 
+// uuidPtr is a test-only convenience for EarningLine literals, whose
+// BookingID / CourseEnrollmentID fields are *uuid.UUID (phase C3 — exactly
+// one of the two is set on a real row, mirroring payout_ledger's own CHECK).
+func uuidPtr(id uuid.UUID) *uuid.UUID { return &id }
+
 func bearerFor(tm *auth.TokenManager, id uuid.UUID) string {
 	tok, err := tm.IssueAccess(auth.User{ID: id, Email: "demo@example.com", DisplayName: "Demo"}, time.Now())
 	if err != nil {

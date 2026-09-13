@@ -50,12 +50,22 @@ func main() {
 	q := sqlc.New(tx)
 
 	// FK order: disputes -> bookings/users, reviews -> bookings/teachers/users,
-	// payout_ledger -> payout_batches / bookings / teachers, payment_events ->
-	// payments -> bookings -> teachers/users, payout_batches.created_by -> users,
-	// teachers.user_id -> users. Only disputes.booking_id cascades, so the seed
-	// clears every table explicitly deepest-first. We seed bookings, sample
-	// reviews, one open dispute, and the payments + payout rows behind the
-	// operator payout dashboard.
+	// payout_ledger -> payout_batches / bookings / teachers / course_enrollments,
+	// payment_events -> payments -> bookings -> teachers/users, payout_batches.
+	// created_by -> users, teachers.user_id -> users. Only disputes.booking_id
+	// cascades, so the seed clears every table explicitly deepest-first. We
+	// seed bookings, sample reviews, one open dispute, and the payments +
+	// payout rows behind the operator payout dashboard.
+	//
+	// Courses (phases C1-C3) and lesson resources (phase A2/A3) join this same
+	// clearing pass even though neither is seeded with data of its own (both
+	// are created ad hoc through the app/API today): a submission may point at
+	// either a booking or a course_enrollment, so it — and booking_resources —
+	// must clear before DeleteAllBookings, and course_item_progress /
+	// course_payment_events / course_payments / course_enrollments before
+	// DeleteAllCourses, which itself must precede DeleteAllTeachers. Without
+	// this, `make seed` / `make db-reset` fails with a foreign-key violation
+	// the moment any lesson homework or course/purchase exists in the database.
 	if err := q.DeleteAllDisputes(ctx); err != nil {
 		log.Fatalf("clear disputes: %v", err)
 	}
@@ -74,8 +84,35 @@ func main() {
 	if err := q.DeleteAllPayments(ctx); err != nil {
 		log.Fatalf("clear payments: %v", err)
 	}
+	if err := q.DeleteAllSubmissions(ctx); err != nil {
+		log.Fatalf("clear submissions: %v", err)
+	}
+	if err := q.DeleteAllBookingResources(ctx); err != nil {
+		log.Fatalf("clear booking resources: %v", err)
+	}
 	if err := q.DeleteAllBookings(ctx); err != nil {
 		log.Fatalf("clear bookings: %v", err)
+	}
+	if err := q.DeleteAllCourseItemProgress(ctx); err != nil {
+		log.Fatalf("clear course item progress: %v", err)
+	}
+	if err := q.DeleteAllCourseEnrollments(ctx); err != nil {
+		log.Fatalf("clear course enrollments: %v", err)
+	}
+	if err := q.DeleteAllCoursePaymentEvents(ctx); err != nil {
+		log.Fatalf("clear course payment events: %v", err)
+	}
+	if err := q.DeleteAllCoursePayments(ctx); err != nil {
+		log.Fatalf("clear course payments: %v", err)
+	}
+	if err := q.DeleteAllCourseItems(ctx); err != nil {
+		log.Fatalf("clear course items: %v", err)
+	}
+	if err := q.DeleteAllCourseSections(ctx); err != nil {
+		log.Fatalf("clear course sections: %v", err)
+	}
+	if err := q.DeleteAllCourses(ctx); err != nil {
+		log.Fatalf("clear courses: %v", err)
 	}
 	if err := q.DeleteAllTeachers(ctx); err != nil {
 		log.Fatalf("clear teachers: %v", err)

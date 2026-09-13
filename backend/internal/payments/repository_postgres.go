@@ -124,13 +124,24 @@ func (r *repositoryPostgres) EarningLines(ctx context.Context, teacherID uuid.UU
 	out := make([]EarningLine, len(rows))
 	for i, row := range rows {
 		out[i] = EarningLine{
-			BookingID:          row.BookingID,
 			StudentDisplayName: row.StudentDisplayName,
 			StartAt:            row.StartAt.Time.UTC(),
 			AmountMinor:        row.AmountMinor,
 			Currency:           row.Currency,
 			State:              LedgerState(row.State),
 			AvailableAt:        row.AvailableAt.Time.UTC(),
+		}
+		if row.BookingID.Valid {
+			id := row.BookingID.UUID
+			out[i].BookingID = &id
+		}
+		if row.CourseEnrollmentID.Valid {
+			id := row.CourseEnrollmentID.UUID
+			out[i].CourseEnrollmentID = &id
+		}
+		if row.CourseTitle.Valid {
+			title := row.CourseTitle.String
+			out[i].CourseTitle = &title
 		}
 	}
 	return out, nil
@@ -206,7 +217,7 @@ func (r *repositoryPostgres) ApplyEvent(ctx context.Context, e Event) (bool, err
 		if err := qtx.MarkPaymentRefunded(ctx, p.ID); err != nil {
 			return false, fmt.Errorf("mark refunded: %w", err)
 		}
-		if err := qtx.MarkLedgerReversed(ctx, p.BookingID); err != nil {
+		if err := qtx.MarkLedgerReversed(ctx, uuid.NullUUID{UUID: p.BookingID, Valid: true}); err != nil {
 			return false, fmt.Errorf("reverse ledger: %w", err)
 		}
 

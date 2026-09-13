@@ -1767,6 +1767,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The course moderation queue
+         * @description Permission: `courses.moderate`. Every course on the platform, regardless of status/teacher/suspension, newest first. Filters are optional: `status` (draft / published / archived — "archived" means the course's `archived_at` is set, independent of the underlying draft/published status), `suspended` (true / false), a teacher `teacher_slug`, and `q` (title substring).
+         */
+        get: operations["adminCourseQueue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/courses/{id}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suspend a course
+         * @description Permission: `courses.moderate`. Pulls the course from the storefront (catalog, catalog detail, cover image, and new purchases 404 the same way an unpublished course would) without touching the teacher's own draft/published/archived state and without revoking an already-enrolled student's access — a takedown, not a deletion or refund. Idempotent. No request body.
+         */
+        post: operations["adminSuspendCourse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/courses/{id}/unsuspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a suspended course to the storefront
+         * @description Permission: `courses.moderate`. Idempotent. No request body.
+         */
+        post: operations["adminUnsuspendCourse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2151,19 +2211,31 @@ export interface components {
             currency: string;
             lessons: components["schemas"]["EarningLesson"][];
         };
+        /** @description One earning line: a lesson booking, or (phase C3) a course sale. Exactly one of `booking_id` / `course_enrollment_id` is set — `course_title` is the simplest discriminator, since it is non-null only for a course row. `booking_id` was required prior to phase C3; it is now nullable since a course-sourced row has none, an unavoidable (additive-otherwise) widening of this schema. */
         EarningLesson: {
-            /** Format: uuid */
-            booking_id: string;
+            /**
+             * Format: uuid
+             * @description Set for a lesson-booking earning; null for a course sale.
+             */
+            booking_id?: string | null;
+            /**
+             * Format: uuid
+             * @description (Phase C3) Set for a course-sale earning; null for a lesson booking.
+             */
+            course_enrollment_id?: string | null;
+            /** @description (Phase C3) The purchased course's title; null for a lesson booking. */
+            course_title?: string | null;
+            /** @description The counterparty's display name either way: the student on a lesson booking, or the buyer of a course. */
             student_display_name: string;
             /**
              * Format: date-time
-             * @description RFC3339 UTC.
+             * @description RFC3339 UTC. The date this earning is dated by: a lesson's start time, or a course sale's purchase time.
              */
             start_at: string;
             /** Format: int64 */
             amount_minor: number;
             /**
-             * @description Effective state, resolved against the clearing window at read time: a captured lesson is `held` until its `available_at` passes, then `available` until a payout run settles it as `paid`. `reversed` is a refunded lesson.
+             * @description Effective state, resolved against the clearing window at read time: a captured earning is `held` until its `available_at` passes, then `available` until a payout run settles it as `paid`. `reversed` is a refunded/reversed earning.
              * @enum {string}
              */
             state: "held" | "available" | "paid" | "reversed";
@@ -2516,6 +2588,8 @@ export interface components {
             /** @enum {string} */
             status: "draft" | "published";
             archived: boolean;
+            /** @description (Phase C3) True when an operator has pulled this course from the storefront — independent of `status`/`archived`. Shown here so the teacher's own authoring views can surface a "suspended by admin" banner. */
+            is_suspended: boolean;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -2593,6 +2667,8 @@ export interface components {
             /** @enum {string} */
             status: "draft" | "published";
             archived: boolean;
+            /** @description (Phase C3) See Course.is_suspended. */
+            is_suspended: boolean;
             sections: components["schemas"]["CourseSection"][];
             /** Format: date-time */
             created_at: string;
@@ -2759,6 +2835,33 @@ export interface components {
              */
             enrollment_id: string | null;
             sections: components["schemas"]["CourseLearnSection"][];
+        };
+        /** @description One course in the operator moderation queue, with the teacher it belongs to. */
+        AdminCourse: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            teacher: {
+                slug: string;
+                display_name: string;
+            };
+            price: components["schemas"]["Money"];
+            /** @enum {string} */
+            status: "draft" | "published";
+            archived: boolean;
+            suspended: boolean;
+            /**
+             * Format: date-time
+             * @description RFC3339 UTC. Null unless `suspended` is true.
+             */
+            suspended_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminCourseList: {
+            courses: components["schemas"]["AdminCourse"][];
+            /** @description Total matches */
+            total: number;
         };
         AdminReviewList: {
             reviews: components["schemas"]["AdminReview"][];
@@ -6569,6 +6672,105 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             /** @description `not_found` — no review with that id. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminCourseQueue: {
+        parameters: {
+            query?: {
+                /** @description Omit for any. */
+                status?: "draft" | "published" | "archived";
+                /** @description Omit for any. */
+                suspended?: boolean;
+                teacher_slug?: string;
+                /** @description Title substring */
+                q?: string;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the moderation queue. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCourseList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminSuspendCourse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The updated course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCourse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description `not_found` — no course with that id. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminUnsuspendCourse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The updated course. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCourse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description `not_found` — no course with that id. */
             404: {
                 headers: {
                     [name: string]: unknown;

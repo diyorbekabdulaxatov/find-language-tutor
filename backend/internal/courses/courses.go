@@ -58,8 +58,15 @@ type Course struct {
 	// archive it instead.
 	EverPublished bool
 	ArchivedAt    *time.Time
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// SuspendedAt (phase C3) is an operator-only takedown, independent of
+	// Status/ArchivedAt: non-nil pulls the course from the storefront (catalog,
+	// catalog detail, cover image, new purchases) without touching the
+	// teacher's own draft/published/archived state and without revoking
+	// already-enrolled students' access. Set/cleared only via the
+	// courses.moderate admin endpoints.
+	SuspendedAt *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // Section is one top-level curriculum entry, ordered within its course by Position.

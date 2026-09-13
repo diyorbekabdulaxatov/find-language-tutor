@@ -27,6 +27,9 @@ const (
 
 	// Phase F — defined now, no endpoint yet.
 	PermReviewsModerate Permission = "reviews.moderate"
+
+	// Phase C3 — wired to endpoints.
+	PermCoursesModerate Permission = "courses.moderate" // GET /v1/admin/courses, POST .../{id}/suspend|unsuspend
 )
 
 // PermissionInfo is one catalog entry for the GET /v1/admin/permissions UI.
@@ -50,6 +53,7 @@ var Catalog = []PermissionInfo{
 	{PermPayoutsView, "View the teacher payout ledger and past payout batches."},
 	{PermPayoutsRun, "Run a payout batch, paying out every cleared teacher earning."},
 	{PermReviewsModerate, "Hide or remove reviews (not yet wired to an endpoint)."},
+	{PermCoursesModerate, "View the course moderation queue, and suspend or unsuspend a course."},
 }
 
 // AllPermissions is every permission key in catalog order.

@@ -18,6 +18,13 @@ type fakeCourseRepo struct {
 	byPair  map[string]uuid.UUID // "courseID|studentID" -> payment id
 	events  map[string]bool
 	applied []string
+
+	// phase C3: payout_ledger rows InsertCourseLedgerHeld would have written,
+	// keyed by course_enrollment_id — ON CONFLICT DO NOTHING is emulated by
+	// only ever writing the first call for a given enrollment id.
+	ledger          map[uuid.UUID]int64 // enrollmentID -> amount_minor credited
+	ledgerCalls     int                 // total calls, including no-op duplicates
+	insertLedgerErr error
 }
 
 func newFakeCourseRepo() *fakeCourseRepo {
@@ -25,7 +32,23 @@ func newFakeCourseRepo() *fakeCourseRepo {
 		byID:   map[uuid.UUID]*CoursePayment{},
 		byPair: map[string]uuid.UUID{},
 		events: map[string]bool{},
+		ledger: map[uuid.UUID]int64{},
 	}
+}
+
+// InsertCourseLedgerHeld emulates the real query's
+// ON CONFLICT (course_enrollment_id) DO NOTHING: a second call for the same
+// enrollmentID never overwrites the first credited amount.
+func (r *fakeCourseRepo) InsertCourseLedgerHeld(_ context.Context, enrollmentID uuid.UUID, teacherShareMinor int64, _ string) error {
+	r.ledgerCalls++
+	if r.insertLedgerErr != nil {
+		return r.insertLedgerErr
+	}
+	if _, exists := r.ledger[enrollmentID]; exists {
+		return nil
+	}
+	r.ledger[enrollmentID] = teacherShareMinor
+	return nil
 }
 
 func pairKey(courseID, studentID uuid.UUID) string {
@@ -92,7 +115,7 @@ func (r *fakeCourseRepo) ApplyCourseEvent(_ context.Context, e Event) (bool, err
 // booking flow.
 func newTestCourseService() (*CourseService, *fakeCourseRepo) {
 	repo := newFakeCourseRepo()
-	s := NewCourseService(repo, "fake", discardLogger())
+	s := NewCourseService(repo, "fake", discardLogger(), 70)
 	s.SetProvider(NewFakeProvider(s.EmitCourse))
 	return s, repo
 }
@@ -188,5 +211,74 @@ func TestCourseService_ApplyCourseEvent_DedupesReplay(t *testing.T) {
 	}
 	if applied {
 		t.Error("replaying an already-applied event should report applied=false")
+	}
+}
+
+// --- phase C3: CreditCourseSale ---
+
+func TestCourseService_CreditCourseSale_ComputesTeacherShare(t *testing.T) {
+	s, repo := newTestCourseService() // 70% teacher share
+	enrollmentID := uuid.New()
+
+	if err := s.CreditCourseSale(ctx(), enrollmentID, 100_000, "UZS"); err != nil {
+		t.Fatalf("credit course sale: %v", err)
+	}
+	got, ok := repo.ledger[enrollmentID]
+	if !ok {
+		t.Fatal("expected a ledger row to be written")
+	}
+	if got != 70_000 {
+		t.Errorf("teacher share = %d, want 70_000 (70%% of 100_000)", got)
+	}
+	if repo.ledgerCalls != 1 {
+		t.Errorf("ledger calls = %d, want 1", repo.ledgerCalls)
+	}
+}
+
+func TestCourseService_CreditCourseSale_RoundsHalfUp(t *testing.T) {
+	repo := newFakeCourseRepo()
+	s := NewCourseService(repo, "fake", discardLogger(), 33) // odd percent forces rounding
+	enrollmentID := uuid.New()
+
+	// 100_001 * 33 / 100 = 33000.33 -> rounds to 33000 (round-half-up on the
+	// scaled integer, not float division).
+	if err := s.CreditCourseSale(ctx(), enrollmentID, 100_001, "UZS"); err != nil {
+		t.Fatalf("credit course sale: %v", err)
+	}
+	if got := repo.ledger[enrollmentID]; got != 33000 {
+		t.Errorf("teacher share = %d, want 33000", got)
+	}
+}
+
+func TestCourseService_CreditCourseSale_FreeCourseIsNoOp(t *testing.T) {
+	s, repo := newTestCourseService()
+	enrollmentID := uuid.New()
+
+	if err := s.CreditCourseSale(ctx(), enrollmentID, 0, "UZS"); err != nil {
+		t.Fatalf("credit course sale: %v", err)
+	}
+	if len(repo.ledger) != 0 || repo.ledgerCalls != 0 {
+		t.Errorf("a free (0-priced) course sale must not write a ledger row: ledger=%v calls=%d", repo.ledger, repo.ledgerCalls)
+	}
+}
+
+func TestCourseService_CreditCourseSale_DuplicateCallDoesNotDoubleCredit(t *testing.T) {
+	s, repo := newTestCourseService()
+	enrollmentID := uuid.New()
+
+	if err := s.CreditCourseSale(ctx(), enrollmentID, 100_000, "UZS"); err != nil {
+		t.Fatalf("first credit: %v", err)
+	}
+	// A retried capture (e.g. after a transient error) calls this again for
+	// the same enrollment — the fake's ON CONFLICT DO NOTHING emulation must
+	// keep the original amount, never add to it.
+	if err := s.CreditCourseSale(ctx(), enrollmentID, 100_000, "UZS"); err != nil {
+		t.Fatalf("second credit: %v", err)
+	}
+	if got := repo.ledger[enrollmentID]; got != 70_000 {
+		t.Errorf("teacher share after duplicate call = %d, want 70_000 (unchanged, not doubled)", got)
+	}
+	if repo.ledgerCalls != 2 {
+		t.Errorf("ledger calls = %d, want 2 (both attempted; only the first took effect)", repo.ledgerCalls)
 	}
 }
