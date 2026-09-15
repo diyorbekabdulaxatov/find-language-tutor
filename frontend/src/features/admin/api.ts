@@ -875,3 +875,71 @@ export async function removeReview(id: string): Promise<void> {
     "Could not remove the review.",
   );
 }
+
+/* --------------------------- courses (phase C3) ------------------------- */
+
+type WireAdminCourse = components["schemas"]["AdminCourse"];
+
+export type CourseModerationStatus = "draft" | "published" | "archived";
+
+export interface AdminCourse {
+  id: string;
+  title: string;
+  teacher: { slug: string; displayName: string };
+  price: Money;
+  status: "draft" | "published";
+  archived: boolean;
+  suspended: boolean;
+  suspendedAt: string | null;
+  createdAt: string;
+}
+
+const toAdminCourse = (c: WireAdminCourse): AdminCourse => ({
+  id: c.id,
+  title: c.title,
+  teacher: { slug: c.teacher.slug, displayName: c.teacher.display_name },
+  price: { amountMinor: c.price.amount_minor, currency: cur(c.price.currency) },
+  status: c.status,
+  archived: c.archived,
+  suspended: c.suspended,
+  suspendedAt: c.suspended_at,
+  createdAt: c.created_at,
+});
+
+export async function listAdminCourses(opts: {
+  status?: CourseModerationStatus;
+  suspended?: boolean;
+  teacherSlug?: string;
+  q?: string;
+  page?: number;
+}): Promise<Paged<AdminCourse>> {
+  const p = new URLSearchParams({ page: String(opts.page ?? 1) });
+  if (opts.status) p.set("status", opts.status);
+  if (opts.suspended !== undefined) p.set("suspended", String(opts.suspended));
+  if (opts.teacherSlug) p.set("teacher_slug", opts.teacherSlug);
+  if (opts.q) p.set("q", opts.q);
+  const w = await call<components["schemas"]["AdminCourseList"]>(
+    `/v1/admin/courses?${p}`,
+    {},
+    "Could not load the course moderation queue.",
+  );
+  return { items: w.courses.map(toAdminCourse), total: w.total };
+}
+
+export async function suspendCourse(id: string): Promise<AdminCourse> {
+  const w = await call<WireAdminCourse>(
+    `/v1/admin/courses/${encodeURIComponent(id)}/suspend`,
+    { method: "POST", body: "{}" },
+    "Could not suspend the course.",
+  );
+  return toAdminCourse(w);
+}
+
+export async function unsuspendCourse(id: string): Promise<AdminCourse> {
+  const w = await call<WireAdminCourse>(
+    `/v1/admin/courses/${encodeURIComponent(id)}/unsuspend`,
+    { method: "POST", body: "{}" },
+    "Could not restore the course.",
+  );
+  return toAdminCourse(w);
+}

@@ -17,6 +17,7 @@ export const PERMISSIONS = {
   payoutsView: "payouts.view",
   payoutsRun: "payouts.run",
   reviewsModerate: "reviews.moderate",
+  coursesModerate: "courses.moderate",
   rolesManage: "roles.manage",
 } as const;
 

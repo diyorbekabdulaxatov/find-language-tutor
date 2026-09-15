@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Banknote,
+  BookOpen,
   CalendarClock,
   GraduationCap,
   ShieldAlert,
@@ -29,6 +30,7 @@ const LINKS: {
   { href: "/admin/disputes", label: "Disputes", icon: ShieldAlert, perm: PERMISSIONS.disputesResolve },
   { href: "/admin/payouts", label: "Payouts", icon: Banknote, perm: PERMISSIONS.payoutsView },
   { href: "/admin/reviews", label: "Reviews", icon: Star, perm: PERMISSIONS.reviewsModerate },
+  { href: "/admin/courses", label: "Courses", icon: BookOpen, perm: PERMISSIONS.coursesModerate },
   { href: "/admin/users", label: "Users", icon: Users, perm: PERMISSIONS.usersView },
   { href: "/admin/roles", label: "Roles", icon: ShieldCheck, perm: PERMISSIONS.rolesManage },
 ];
