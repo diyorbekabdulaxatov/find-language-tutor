@@ -99,6 +99,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /v1/auth/login:
     post:
@@ -123,6 +124,7 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /v1/auth/refresh:
     post:
@@ -147,6 +149,7 @@ paths:
               schema: { $ref: "#/components/schemas/AuthResponse" }
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /v1/auth/logout:
     post:
@@ -232,6 +235,7 @@ paths:
       responses:
         "202": { description: If the address is registered, a reset link has been sent. }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /v1/auth/reset-password:
     post:
@@ -257,6 +261,7 @@ paths:
         "400":
           description: "`invalid_token` (unknown / used / expired) or a validation error (weak password)."
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /v1/auth/verify-email:
     post:
@@ -278,6 +283,7 @@ paths:
         "400":
           description: "`invalid_token` — unknown, already used, or expired."
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /v1/auth/resend-verification:
     post:
@@ -293,6 +299,7 @@ paths:
         "409":
           description: "`already_verified` — the address is already confirmed."
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /healthz:
     get:
@@ -1565,8 +1572,9 @@ paths:
           description: "`file_too_large`."
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "415":
-          description: "`unsupported_type`."
+          description: "`unsupported_type` — the declared type isn't on the allow-list, or the file's leading bytes don't match it (the server sniffs; an HTML file labelled image/png is refused)."
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /v1/files/{id}:
     get:
@@ -3071,6 +3079,18 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     Forbidden:
       description: The caller is not allowed to perform this action.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: >-
+        Too many requests from this client (or for this account) in the current
+        window. `error.code` is `rate_limited`; the `Retry-After` header says how
+        many seconds to wait. Applies to the auth endpoints and file uploads.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Seconds until the window resets.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

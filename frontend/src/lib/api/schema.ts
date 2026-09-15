@@ -3316,6 +3316,17 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description Too many requests from this client (or for this account) in the current window. `error.code` is `rate_limited`; the `Retry-After` header says how many seconds to wait. Applies to the auth endpoints and file uploads. */
+        RateLimited: {
+            headers: {
+                /** @description Seconds until the window resets. */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: never;
     requestBodies: never;
@@ -3358,6 +3369,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            429: components["responses"]["RateLimited"];
         };
     };
     login: {
@@ -3385,6 +3397,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["RateLimited"];
         };
     };
     refresh: {
@@ -3407,6 +3420,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["RateLimited"];
         };
     };
     logout: {
@@ -3499,6 +3513,7 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
+            429: components["responses"]["RateLimited"];
         };
     };
     resetPassword: {
@@ -3533,6 +3548,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            429: components["responses"]["RateLimited"];
         };
     };
     verifyEmail: {
@@ -3566,6 +3582,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            429: components["responses"]["RateLimited"];
         };
     };
     resendVerification: {
@@ -3594,6 +3611,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            429: components["responses"]["RateLimited"];
         };
     };
     getHealth: {
@@ -4747,7 +4765,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `unsupported_type`. */
+            /** @description `unsupported_type` — the declared type isn't on the allow-list, or the file's leading bytes don't match it (the server sniffs; an HTML file labelled image/png is refused). */
             415: {
                 headers: {
                     [name: string]: unknown;
@@ -4756,6 +4774,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            429: components["responses"]["RateLimited"];
         };
     };
     getFile: {
