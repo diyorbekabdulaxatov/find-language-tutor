@@ -108,7 +108,7 @@ func TestService_Upload_Validation(t *testing.T) {
 		t.Errorf("too large: %v", err)
 	}
 
-	a, err := svc.Upload(ctx, owner, "notes.pdf", "application/pdf; charset=binary", 5, strings.NewReader("hello"))
+	a, err := svc.Upload(ctx, owner, "notes.pdf", "application/pdf; charset=binary", 5, magic("application/pdf"))
 	if err != nil {
 		t.Fatalf("valid upload: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestService_Upload_Validation(t *testing.T) {
 func TestService_Upload_CleansOrphanOnDBError(t *testing.T) {
 	blob := &memBlob{}
 	svc := NewService(&fakeRepo{err: errors.New("db down")}, blob, discardLogger())
-	if _, err := svc.Upload(context.Background(), uuid.New(), "a.pdf", "application/pdf", 5, strings.NewReader("hi")); err == nil {
+	if _, err := svc.Upload(context.Background(), uuid.New(), "a.pdf", "application/pdf", 5, magic("application/pdf")); err == nil {
 		t.Fatal("want db error")
 	}
 	if blob.deletes != 1 {
@@ -137,7 +137,7 @@ func TestService_Download_OwnerOnly(t *testing.T) {
 	ctx := context.Background()
 	owner := uuid.New()
 
-	a, _ := svc.Upload(ctx, owner, "notes.pdf", "application/pdf", 5, strings.NewReader("hello"))
+	a, _ := svc.Upload(ctx, owner, "notes.pdf", "application/pdf", 5, magic("application/pdf"))
 
 	if _, _, _, err := svc.Download(ctx, a.ID, uuid.New()); !errors.Is(err, ErrForbidden) {
 		t.Errorf("non-owner download: %v", err)
@@ -169,7 +169,7 @@ func TestService_Download_NilCheckerPreservesOwnerOnly(t *testing.T) {
 	svc := NewService(&fakeRepo{}, &memBlob{}, discardLogger())
 	ctx := context.Background()
 	owner := uuid.New()
-	a, _ := svc.Upload(ctx, owner, "notes.pdf", "application/pdf", 5, strings.NewReader("hello"))
+	a, _ := svc.Upload(ctx, owner, "notes.pdf", "application/pdf", 5, magic("application/pdf"))
 
 	// No SetAssigneeChecker call: behavior must be unchanged from phase A1.
 	if _, _, _, err := svc.Download(ctx, a.ID, uuid.New()); !errors.Is(err, ErrForbidden) {
@@ -181,7 +181,7 @@ func TestService_Download_AssigneeCheckerGrantsAccess(t *testing.T) {
 	svc := NewService(&fakeRepo{}, &memBlob{}, discardLogger())
 	ctx := context.Background()
 	owner, assignee, stranger := uuid.New(), uuid.New(), uuid.New()
-	a, _ := svc.Upload(ctx, owner, "notes.pdf", "application/pdf", 5, strings.NewReader("hello"))
+	a, _ := svc.Upload(ctx, owner, "notes.pdf", "application/pdf", 5, magic("application/pdf"))
 
 	checker := &fakeAssigneeChecker{allowed: map[string]bool{a.ID.String() + "|" + assignee.String(): true}}
 	svc.SetAssigneeChecker(checker)
@@ -204,7 +204,7 @@ func TestService_Download_AssigneeCheckerErrorDeniesAccess(t *testing.T) {
 	svc := NewService(&fakeRepo{}, &memBlob{}, discardLogger())
 	ctx := context.Background()
 	owner := uuid.New()
-	a, _ := svc.Upload(ctx, owner, "notes.pdf", "application/pdf", 5, strings.NewReader("hello"))
+	a, _ := svc.Upload(ctx, owner, "notes.pdf", "application/pdf", 5, magic("application/pdf"))
 
 	svc.SetAssigneeChecker(&fakeAssigneeChecker{err: errors.New("db down")})
 

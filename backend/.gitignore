@@ -1,5 +1,9 @@
-# Binaries
+# Binaries (`go build ./cmd/<name>` drops the binary in the cwd)
 /bin/
+/api
+/worker
+/migrate
+/seed
 *.exe
 
 # Local env

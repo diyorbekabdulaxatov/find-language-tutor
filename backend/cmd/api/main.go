@@ -30,6 +30,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/lessons"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payments"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payouts"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/ratelimit"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/rbac"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/resources"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/resourcesmail"
@@ -74,6 +75,10 @@ func run(logger *slog.Logger) error {
 		logger.Warn("redis not reachable at startup", slog.Any("error", err))
 	} else {
 		logger.Info("connected to redis")
+	}
+
+	if cfg.IsProduction() && len(cfg.TrustedProxies) == 0 {
+		logger.Warn("TRUSTED_PROXIES is empty: if the API sits behind a reverse proxy, every client shares the proxy's address and the per-IP rate limits will throttle everyone together")
 	}
 
 	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTL)
@@ -287,6 +292,7 @@ func run(logger *slog.Logger) error {
 		FileHandler:         fileHandler,
 		ResourceHandler:     resourceHandler,
 		CourseHandler:       courseHandler,
+		RateLimiter:         ratelimit.NewRedis(rdb),
 	})
 
 	srv := &http.Server{

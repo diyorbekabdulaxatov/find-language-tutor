@@ -54,6 +54,13 @@ func (s *Service) Upload(ctx context.Context, ownerID uuid.UUID, filename, conte
 		return Asset{}, ErrTooLarge
 	}
 
+	// The declared type is what we store and serve back, so make sure the
+	// bytes don't contradict it (an HTML file labelled image/png, say).
+	r, err := sniffMatches(contentType, r)
+	if err != nil {
+		return Asset{}, err
+	}
+
 	key := "resources/" + ownerID.String() + "/" + uuid.NewString() + ext
 	limited := io.LimitReader(r, maxBytes+1)
 	if err := s.blob.Put(ctx, key, contentType, limited); err != nil {

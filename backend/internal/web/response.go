@@ -4,7 +4,10 @@
 package web
 
 import (
+	"math"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -39,6 +42,21 @@ func Forbidden(c *gin.Context, message string) {
 
 func NotFound(c *gin.Context, message string) {
 	WriteError(c, http.StatusNotFound, "not_found", message)
+}
+
+func PayloadTooLarge(c *gin.Context, message string) {
+	WriteError(c, http.StatusRequestEntityTooLarge, "payload_too_large", message)
+}
+
+// TooManyRequests renders a 429 with a Retry-After header (whole seconds,
+// rounded up so a client that honours it never retries into the same window).
+func TooManyRequests(c *gin.Context, retryAfter time.Duration) {
+	secs := int(math.Ceil(retryAfter.Seconds()))
+	if secs < 1 {
+		secs = 1
+	}
+	c.Header("Retry-After", strconv.Itoa(secs))
+	WriteError(c, http.StatusTooManyRequests, "rate_limited", "Too many requests. Please slow down and try again shortly.")
 }
 
 func Internal(c *gin.Context) {

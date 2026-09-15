@@ -36,21 +36,43 @@ func NewHandler(svc *Service, tokens *TokenManager, cookie CookieConfig, logger 
 	return &Handler{svc: svc, tokens: tokens, cookie: cookie, logger: logger}
 }
 
+// RouteLimits carries the per-route throttles the router wants in front of
+// the abusable endpoints — built by internal/httpapi, which owns the limiter,
+// and injected here so auth stays ignorant of Redis. A nil entry means no
+// limit on that route (the unit tests).
+type RouteLimits struct {
+	Register           gin.HandlerFunc
+	Login              gin.HandlerFunc
+	Refresh            gin.HandlerFunc
+	ForgotPassword     gin.HandlerFunc
+	ResetPassword      gin.HandlerFunc
+	VerifyEmail        gin.HandlerFunc
+	ResendVerification gin.HandlerFunc // runs after RequireAuth, so may key per user
+}
+
+// orNoop lets a nil RouteLimits entry sit in a handler chain.
+func orNoop(f gin.HandlerFunc) gin.HandlerFunc {
+	if f == nil {
+		return func(c *gin.Context) { c.Next() }
+	}
+	return f
+}
+
 // RegisterRoutes mounts the auth endpoints onto the given group (expected to be
 // "/v1/auth"). /me is guarded by RequireAuth; the rest are public (refresh and
 // logout authenticate via the cookie).
-func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
-	rg.POST("/register", h.Register)
-	rg.POST("/login", h.Login)
-	rg.POST("/refresh", h.Refresh)
+func RegisterRoutes(rg *gin.RouterGroup, h *Handler, limits RouteLimits) {
+	rg.POST("/register", orNoop(limits.Register), h.Register)
+	rg.POST("/login", orNoop(limits.Login), h.Login)
+	rg.POST("/refresh", orNoop(limits.Refresh), h.Refresh)
 	rg.POST("/logout", h.Logout)
 	rg.GET("/me", RequireAuth(h.tokens), h.Me)
 	rg.PATCH("/me", RequireAuth(h.tokens), h.UpdateMe)
 
-	rg.POST("/forgot-password", h.ForgotPassword)
-	rg.POST("/reset-password", h.ResetPassword)
-	rg.POST("/verify-email", h.VerifyEmail)
-	rg.POST("/resend-verification", RequireAuth(h.tokens), h.ResendVerification)
+	rg.POST("/forgot-password", orNoop(limits.ForgotPassword), h.ForgotPassword)
+	rg.POST("/reset-password", orNoop(limits.ResetPassword), h.ResetPassword)
+	rg.POST("/verify-email", orNoop(limits.VerifyEmail), h.VerifyEmail)
+	rg.POST("/resend-verification", RequireAuth(h.tokens), orNoop(limits.ResendVerification), h.ResendVerification)
 }
 
 // Register handles POST /v1/auth/register.

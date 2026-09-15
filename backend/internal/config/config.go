@@ -22,6 +22,14 @@ type Config struct {
 	Port           string
 	AllowedOrigins []string // CORS allow-list for the browser frontend
 
+	// TrustedProxies is the list of CIDRs/IPs whose X-Forwarded-For /
+	// X-Real-IP headers gin may believe when computing the client IP
+	// (TRUSTED_PROXIES, comma-separated). Empty — the default — trusts
+	// nobody, so the TCP peer address is the client. Set it to the reverse
+	// proxy / load balancer in front of the API, otherwise per-IP rate
+	// limits are spoofable with a forged header.
+	TrustedProxies []string
+
 	// AppBaseURL is the public origin of the frontend — used to build the links
 	// in account-recovery emails (APP_BASE_URL, default http://localhost:3000).
 	AppBaseURL string
@@ -102,6 +110,7 @@ func Load() (*Config, error) {
 		Env:            env,
 		Port:           getenv("PORT", "8080"),
 		AllowedOrigins: splitAndTrim(getenv("ALLOWED_ORIGINS", "http://localhost:3000")),
+		TrustedProxies: splitAndTrim(os.Getenv("TRUSTED_PROXIES")),
 		AppBaseURL:     getenv("APP_BASE_URL", "http://localhost:3000"),
 
 		FilesStore:      getenv("FILES_STORE", "disk"),

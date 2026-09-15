@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,6 +18,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/files"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payments"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payouts"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/ratelimit"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/rbac"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/resources"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/reviews"
@@ -45,7 +47,15 @@ type Deps struct {
 	FileHandler         *files.Handler
 	ResourceHandler     *resources.Handler
 	CourseHandler       *courses.Handler
+	// RateLimiter backs the per-route throttles; nil falls back to an
+	// in-process limiter (tests, Redis-less dev).
+	RateLimiter ratelimit.Limiter
 }
+
+// maxJSONBodyBytes caps every non-upload request body. The largest legitimate
+// JSON body is a quiz resource's content (a few dozen questions) — well under
+// 1 MiB.
+const maxJSONBodyBytes = 1 << 20
 
 // NewRouter builds the gin engine with middleware, the health check, and every
 // module's routes mounted under /v1.
@@ -55,18 +65,55 @@ func NewRouter(d Deps) *gin.Engine {
 	}
 
 	r := gin.New()
+	// Trust no proxy unless told to: gin's default believes any
+	// X-Forwarded-For, which would let a client pick its own IP for the
+	// per-IP limits below.
+	_ = r.SetTrustedProxies(d.Config.TrustedProxies)
+
 	r.Use(
 		RequestID(),
 		StructuredLogger(d.Logger),
 		Recovery(d.Logger),
+		SecurityHeaders(d.Config.CookieSecure),
 		CORS(d.Config.AllowedOrigins),
+		MaxBodyBytes(maxJSONBodyBytes, "/v1/uploads"),
 	)
 
 	r.GET("/healthz", healthHandler(d.Pool, d.Redis))
 
+	limiter := d.RateLimiter
+	if limiter == nil {
+		limiter = ratelimit.NewMemory()
+	}
+	limit := func(rules ...Rule) gin.HandlerFunc { return RateLimit(limiter, d.Logger, rules...) }
+
 	v1 := r.Group("/v1")
 
-	auth.RegisterRoutes(v1.Group("/auth"), d.AuthHandler)
+	authGroup := v1.Group("/auth", NoStore())
+	auth.RegisterRoutes(authGroup, d.AuthHandler, auth.RouteLimits{
+		// Login: a per-IP ceiling against spraying, plus a per-account one
+		// against stuffing from many IPs. The account limit is deliberately
+		// loose enough that locking someone out on purpose costs an attacker
+		// a sustained effort, while 10 failures in 10 minutes is far more than
+		// any real user needs.
+		Login: limit(
+			Rule{Name: "login_ip", Limit: 30, Window: time.Minute, Key: PerIP},
+			Rule{Name: "login_email", Limit: 10, Window: 10 * time.Minute, Key: PerBodyField("email")},
+		),
+		Register: limit(Rule{Name: "register_ip", Limit: 20, Window: time.Hour, Key: PerIP}),
+		// Refresh is called on every page load and shared across concurrent
+		// 401s by the frontend client, so this is only a runaway guard.
+		Refresh: limit(Rule{Name: "refresh_ip", Limit: 120, Window: time.Minute, Key: PerIP}),
+		ForgotPassword: limit(
+			Rule{Name: "forgot_ip", Limit: 10, Window: 15 * time.Minute, Key: PerIP},
+			Rule{Name: "forgot_email", Limit: 3, Window: time.Hour, Key: PerBodyField("email")},
+		),
+		// Tokens are 256-bit so guessing is hopeless anyway; this just keeps
+		// the argon2/DB cost of a flood bounded.
+		ResetPassword:      limit(Rule{Name: "reset_ip", Limit: 10, Window: 15 * time.Minute, Key: PerIP}),
+		VerifyEmail:        limit(Rule{Name: "verify_ip", Limit: 20, Window: 15 * time.Minute, Key: PerIP}),
+		ResendVerification: limit(Rule{Name: "resend_user", Limit: 5, Window: time.Hour, Key: PerUser}),
+	})
 
 	teacherRoutes := v1.Group("/teachers")
 	teachers.RegisterRoutes(teacherRoutes, d.TeacherHandler, d.AuthMiddleware)
@@ -82,7 +129,8 @@ func NewRouter(d Deps) *gin.Engine {
 
 	payments.RegisterRoutes(v1.Group("/payments"), d.PaymentHandler, d.AuthMiddleware)
 
-	files.RegisterRoutes(v1, d.FileHandler, d.AuthMiddleware)
+	files.RegisterRoutes(v1, d.FileHandler, d.AuthMiddleware,
+		limit(Rule{Name: "upload_user", Limit: 60, Window: time.Hour, Key: PerUser}))
 	resources.RegisterRoutes(v1.Group("/resources"), d.ResourceHandler, d.AuthMiddleware)
 	resources.RegisterSubmissionRoutes(v1.Group("/submissions"), d.ResourceHandler, d.AuthMiddleware)
 

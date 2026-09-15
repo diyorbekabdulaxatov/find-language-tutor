@@ -13,7 +13,7 @@ func TestService_FileOwnedBy(t *testing.T) {
 	svc := NewService(&fakeRepo{}, &memBlob{}, discardLogger())
 	ctx := context.Background()
 	owner := uuid.New()
-	a, err := svc.Upload(ctx, owner, "clip.mp4", "video/mp4", 10, strings.NewReader("0123456789"))
+	a, err := svc.Upload(ctx, owner, "clip.mp4", "video/mp4", 10, magic("video/mp4"))
 	if err != nil {
 		t.Fatalf("upload: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestCourseGateway_FileOwnedBy(t *testing.T) {
 	gw := NewCourseGateway(svc)
 	ctx := context.Background()
 	owner := uuid.New()
-	a, err := svc.Upload(ctx, owner, "cover.png", "image/png", 5, strings.NewReader("hello"))
+	a, err := svc.Upload(ctx, owner, "cover.png", "image/png", 5, magic("image/png"))
 	if err != nil {
 		t.Fatalf("upload: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestService_Upload_VideoAllowsWiderSizeCap(t *testing.T) {
 	if _, err := svc.Upload(ctx, owner, "big.pdf", "application/pdf", overNonVideoCap, strings.NewReader("x")); !errors.Is(err, ErrTooLarge) {
 		t.Errorf("oversized pdf: %v, want ErrTooLarge", err)
 	}
-	if _, err := svc.Upload(ctx, owner, "big.mp4", "video/mp4", overNonVideoCap, strings.NewReader("x")); err != nil {
+	if _, err := svc.Upload(ctx, owner, "big.mp4", "video/mp4", overNonVideoCap, magic("video/mp4")); err != nil {
 		t.Errorf("video over the non-video cap but under the video cap should succeed: %v", err)
 	}
 	overVideoCap := int64(MaxVideoUploadBytes) + 1
@@ -76,7 +76,7 @@ func TestService_Upload_AcceptsVideoContentTypes(t *testing.T) {
 	ctx := context.Background()
 	owner := uuid.New()
 	for _, ct := range []string{"video/mp4", "video/webm", "video/quicktime"} {
-		if _, err := svc.Upload(ctx, owner, "clip", ct, 5, strings.NewReader("hello")); err != nil {
+		if _, err := svc.Upload(ctx, owner, "clip", ct, 5, magic(ct)); err != nil {
 			t.Errorf("%s should be accepted: %v", ct, err)
 		}
 	}

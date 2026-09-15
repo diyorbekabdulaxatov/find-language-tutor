@@ -23,7 +23,7 @@ func newTestHandler(repo Repository) (*gin.Engine, *Service, *TokenManager) {
 		MaxAge: 24 * time.Hour,
 	}, discardLogger())
 	r := gin.New()
-	RegisterRoutes(r.Group("/v1/auth"), h)
+	RegisterRoutes(r.Group("/v1/auth"), h, RouteLimits{})
 	return r, svc, tm
 }
 

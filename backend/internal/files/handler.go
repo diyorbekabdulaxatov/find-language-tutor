@@ -27,9 +27,13 @@ func NewHandler(svc *Service, logger *slog.Logger) *Handler {
 }
 
 // RegisterRoutes mounts POST /v1/uploads and GET /v1/files/:id. Both require a
-// valid access token.
-func RegisterRoutes(rg *gin.RouterGroup, h *Handler, requireAuth gin.HandlerFunc) {
-	rg.POST("/uploads", requireAuth, h.Upload)
+// valid access token. uploadLimit (optional) runs after auth so it can throttle
+// per user; nil means unthrottled.
+func RegisterRoutes(rg *gin.RouterGroup, h *Handler, requireAuth, uploadLimit gin.HandlerFunc) {
+	if uploadLimit == nil {
+		uploadLimit = func(c *gin.Context) { c.Next() }
+	}
+	rg.POST("/uploads", requireAuth, uploadLimit, h.Upload)
 	rg.GET("/files/:id", requireAuth, h.Download)
 }
 
@@ -118,7 +122,7 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 		web.BadRequest(c, ve.Error())
 	case errors.Is(err, ErrUnsupportedType):
 		web.WriteError(c, http.StatusUnsupportedMediaType, "unsupported_type",
-			"That file type isn't allowed. Use a PDF, image, or audio file.")
+			"That file type isn't allowed, or the file's contents don't match its type. Use a PDF, image, audio, or video file.")
 	case errors.Is(err, ErrTooLarge):
 		web.WriteError(c, http.StatusRequestEntityTooLarge, "file_too_large",
 			fmt.Sprintf("Files must be under %d MB (%d MB for video).", MaxUploadBytes>>20, MaxVideoUploadBytes>>20))

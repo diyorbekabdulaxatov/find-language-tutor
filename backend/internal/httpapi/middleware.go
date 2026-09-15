@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -58,6 +59,56 @@ func Recovery(logger *slog.Logger) gin.HandlerFunc {
 	})
 }
 
+// SecurityHeaders sets the browser-hardening headers appropriate for a JSON
+// API: nothing here is ever a document, so framing, sniffing and any active
+// content are denied outright. HSTS is only sent when the deployment is
+// known to be HTTPS (it is harmful on plain-http dev).
+func SecurityHeaders(hsts bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		h := c.Writer.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		if hsts {
+			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		}
+		c.Next()
+	}
+}
+
+// MaxBodyBytes caps the request body for every route except those in skip
+// (matched on the registered route pattern), which set their own wider
+// limit — the multipart upload. A declared Content-Length over the cap is a
+// 413 up front; a chunked body that grows past it surfaces to the handler as
+// a bind error (400) rather than a hung connection.
+func MaxBodyBytes(limit int64, skip ...string) gin.HandlerFunc {
+	skipped := make(map[string]struct{}, len(skip))
+	for _, p := range skip {
+		skipped[p] = struct{}{}
+	}
+	return func(c *gin.Context) {
+		if _, ok := skipped[c.FullPath()]; !ok && c.Request.Body != nil {
+			if c.Request.ContentLength > limit {
+				web.PayloadTooLarge(c, "Request body is too large.")
+				return
+			}
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
+		}
+		c.Next()
+	}
+}
+
+// NoStore marks responses as uncacheable — for the auth surface, where a
+// body may carry an access token.
+func NoStore() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		c.Next()
+	}
+}
+
 // CORS allows the browser frontend (and nothing else) to call the API.
 func CORS(allowedOrigins []string) gin.HandlerFunc {
 	allowed := make(map[string]struct{}, len(allowedOrigins))
@@ -76,6 +127,7 @@ func CORS(allowedOrigins []string) gin.HandlerFunc {
 			c.Header("Vary", "Origin")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
 			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, "+requestIDHeader)
+			c.Header("Access-Control-Expose-Headers", "Retry-After, "+requestIDHeader)
 			c.Header("Access-Control-Max-Age", "600")
 		}
 
