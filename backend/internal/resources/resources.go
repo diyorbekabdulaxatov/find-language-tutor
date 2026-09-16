@@ -24,10 +24,11 @@ package resources
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/i18n"
 )
 
 // Type is the resource kind (matches the resources.type CHECK).
@@ -294,11 +295,11 @@ var (
 )
 
 // ValidationError is a client-fixable authoring problem, rendered 400.
-type ValidationError struct{ msg string }
+type ValidationError struct{ i18n.Msg }
 
-func (e ValidationError) Error() string { return e.msg }
+func (e ValidationError) Error() string { return e.Msg.String() }
 
-func invalid(format string, a ...any) error { return ValidationError{fmt.Sprintf(format, a...)} }
+func invalid(format string, a ...any) error { return ValidationError{i18n.Message(format, a...)} }
 
 const (
 	defaultPageSize = 20

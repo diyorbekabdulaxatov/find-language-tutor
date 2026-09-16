@@ -1,6 +1,8 @@
 package payments
 
 import (
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/i18n"
+
 	"context"
 	"fmt"
 	"sync"
@@ -55,7 +57,9 @@ func (f *FakeProvider) nextRef() string {
 // Declined; everything else emits payment.authorized.
 func (f *FakeProvider) Authorize(ctx context.Context, in AuthorizeInput) (Intent, error) {
 	if in.MethodToken == "pm_decline" {
-		reason := "the card was declined"
+		// A catalog string: bookings/courses.PaymentFailedError translates it
+		// for the person paying, so it is registered through i18n.T here.
+		reason := i18n.T(i18n.Default, "the card was declined")
 		if err := f.sink(ctx, Event{
 			ID:        eventID(in.PaymentID.String()+"_decline", EventFailed),
 			Type:      EventFailed,

@@ -85,6 +85,11 @@ export const authedFetch: typeof fetch = async (input, init) => {
 function applyAuth(request: Request): void {
   const token = getAccessToken();
   if (token) request.headers.set("Authorization", `Bearer ${token}`);
+  // The backend renders error messages in this language. The root layout
+  // stamps the UI locale on <html lang>, which is the one source of truth
+  // the browser has for it without threading it through every call.
+  const lang = typeof document !== "undefined" ? document.documentElement.lang : "";
+  if (lang) request.headers.set("Accept-Language", lang);
 }
 
 export const browserApi = createClient<paths>({

@@ -1854,6 +1854,11 @@ export interface components {
         /** @description Fields to change on the caller's account. All optional; an omitted field is left unchanged. `email` is not editable and is ignored if sent. */
         UpdateMeRequest: {
             display_name?: string;
+            /**
+             * @description The language the account's email is written in.
+             * @enum {string}
+             */
+            locale?: "en" | "ru" | "uz";
         };
         AuthUser: {
             /** Format: uuid */
@@ -1861,6 +1866,11 @@ export interface components {
             /** Format: email */
             email: string;
             display_name: string;
+            /**
+             * @description The language transactional email is written in. Defaults to the Accept-Language the account registered with.
+             * @enum {string}
+             */
+            locale: "en" | "ru" | "uz";
             /** @description False until the account confirms its address via the link mailed on registration. Nothing is blocked on this yet; the frontend shows a nudge banner. */
             email_verified: boolean;
             /** @description The caller's effective RBAC permission keys (flat, sorted, deduped across all their roles). Resolved server-side per request — NOT from the JWT — so a revoked role takes effect immediately. Empty for a normal user. The frontend gates the /admin area on these. See GET /v1/admin/permissions for the catalog. */

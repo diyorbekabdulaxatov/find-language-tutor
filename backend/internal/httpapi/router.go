@@ -76,6 +76,7 @@ func NewRouter(d Deps) *gin.Engine {
 		Recovery(d.Logger),
 		SecurityHeaders(d.Config.CookieSecure),
 		CORS(d.Config.AllowedOrigins),
+		Locale(),
 		MaxBodyBytes(maxJSONBodyBytes, "/v1/uploads"),
 	)
 

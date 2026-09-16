@@ -36,6 +36,7 @@ func (r *repositoryPostgres) CreateUser(ctx context.Context, in NewUser) (User, 
 		Email:        in.Email,
 		PasswordHash: in.PasswordHash,
 		DisplayName:  in.DisplayName,
+		Locale:       in.Locale,
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -44,7 +45,7 @@ func (r *repositoryPostgres) CreateUser(ctx context.Context, in NewUser) (User, 
 		}
 		return User{}, fmt.Errorf("create user: %w", err)
 	}
-	return userFromRow(row.ID, row.Email, row.DisplayName, row.EmailVerifiedAt, row.CreatedAt, row.UpdatedAt), nil
+	return userFromRow(row.ID, row.Email, row.DisplayName, row.Locale, row.EmailVerifiedAt, row.CreatedAt, row.UpdatedAt), nil
 }
 
 func (r *repositoryPostgres) UserWithHashByEmail(ctx context.Context, email string) (User, string, error) {
@@ -55,7 +56,7 @@ func (r *repositoryPostgres) UserWithHashByEmail(ctx context.Context, email stri
 		}
 		return User{}, "", fmt.Errorf("get user by email: %w", err)
 	}
-	return userFromRow(row.ID, row.Email, row.DisplayName, row.EmailVerifiedAt, row.CreatedAt, row.UpdatedAt), row.PasswordHash, nil
+	return userFromRow(row.ID, row.Email, row.DisplayName, row.Locale, row.EmailVerifiedAt, row.CreatedAt, row.UpdatedAt), row.PasswordHash, nil
 }
 
 func (r *repositoryPostgres) UserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -66,18 +67,22 @@ func (r *repositoryPostgres) UserByID(ctx context.Context, id uuid.UUID) (User, 
 		}
 		return User{}, fmt.Errorf("get user by id: %w", err)
 	}
-	return userFromRow(row.ID, row.Email, row.DisplayName, row.EmailVerifiedAt, row.CreatedAt, row.UpdatedAt), nil
+	return userFromRow(row.ID, row.Email, row.DisplayName, row.Locale, row.EmailVerifiedAt, row.CreatedAt, row.UpdatedAt), nil
 }
 
-func (r *repositoryPostgres) UpdateUser(ctx context.Context, id uuid.UUID, displayName string) (User, error) {
-	row, err := r.q.UpdateUser(ctx, sqlc.UpdateUserParams{ID: id, DisplayName: displayName})
+func (r *repositoryPostgres) UpdateUser(ctx context.Context, id uuid.UUID, patch UserPatch) (User, error) {
+	row, err := r.q.UpdateUser(ctx, sqlc.UpdateUserParams{
+		ID:          id,
+		DisplayName: optionalText(patch.DisplayName),
+		Locale:      optionalText(patch.Locale),
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return User{}, ErrUserNotFound
 		}
 		return User{}, fmt.Errorf("update user: %w", err)
 	}
-	return userFromRow(row.ID, row.Email, row.DisplayName, row.EmailVerifiedAt, row.CreatedAt, row.UpdatedAt), nil
+	return userFromRow(row.ID, row.Email, row.DisplayName, row.Locale, row.EmailVerifiedAt, row.CreatedAt, row.UpdatedAt), nil
 }
 
 func (r *repositoryPostgres) CreateSession(ctx context.Context, in NewSession) (Session, error) {
@@ -132,7 +137,7 @@ func (r *repositoryPostgres) UserByEmail(ctx context.Context, email string) (Use
 		}
 		return User{}, fmt.Errorf("get user by email: %w", err)
 	}
-	return userFromRow(row.ID, row.Email, row.DisplayName, row.EmailVerifiedAt, row.CreatedAt, row.UpdatedAt), nil
+	return userFromRow(row.ID, row.Email, row.DisplayName, row.Locale, row.EmailVerifiedAt, row.CreatedAt, row.UpdatedAt), nil
 }
 
 func (r *repositoryPostgres) SetUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
@@ -243,11 +248,19 @@ func (r *repositoryPostgres) inTx(ctx context.Context, fn func(*sqlc.Queries) er
 	return tx.Commit(ctx)
 }
 
-func userFromRow(id uuid.UUID, email, displayName string, emailVerifiedAt, createdAt, updatedAt pgtype.Timestamptz) User {
+func optionalText(s *string) pgtype.Text {
+	if s == nil {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: *s, Valid: true}
+}
+
+func userFromRow(id uuid.UUID, email, displayName, locale string, emailVerifiedAt, createdAt, updatedAt pgtype.Timestamptz) User {
 	return User{
 		ID:            id,
 		Email:         email,
 		DisplayName:   displayName,
+		Locale:        locale,
 		EmailVerified: emailVerifiedAt.Valid,
 		CreatedAt:     createdAt.Time,
 		UpdatedAt:     updatedAt.Time,

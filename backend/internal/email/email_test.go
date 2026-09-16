@@ -44,7 +44,7 @@ func sampleInfo() LessonInfo {
 func TestTemplates_IncludeMeetingLinkAndTime(t *testing.T) {
 	li := sampleInfo()
 
-	subj, html, text := BookingConfirmedContent(li)
+	subj, html, text := BookingConfirmedContent("en", li)
 	for _, want := range []string{"https://meet.example/room", "9000000 UZS", "confirmed"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("confirmed text missing %q: %s", want, text)
@@ -58,20 +58,20 @@ func TestTemplates_IncludeMeetingLinkAndTime(t *testing.T) {
 		t.Errorf("subject not in teacher tz: %s", subj)
 	}
 
-	_, _, rtext := LessonReminderContent(li, Reminder1h)
+	_, _, rtext := LessonReminderContent("en", li, Reminder1h)
 	if !strings.Contains(rtext, "in 1 hour") || !strings.Contains(rtext, "https://meet.example/room") {
 		t.Errorf("reminder text wrong: %s", rtext)
 	}
-	_, _, r24 := LessonReminderContent(li, Reminder24h)
+	_, _, r24 := LessonReminderContent("en", li, Reminder24h)
 	if !strings.Contains(r24, "in 24 hours") {
 		t.Errorf("24h reminder text wrong: %s", r24)
 	}
 
-	_, _, ctext := BookingCancelledContent(li, true)
+	_, _, ctext := BookingCancelledContent("en", li, true)
 	if !strings.Contains(ctext, "refunded") {
 		t.Errorf("cancelled text missing refund note: %s", ctext)
 	}
-	_, _, cnote := BookingCancelledContent(li, false)
+	_, _, cnote := BookingCancelledContent("en", li, false)
 	if strings.Contains(cnote, "has been refunded") {
 		t.Errorf("no-refund note should not claim a refund: %s", cnote)
 	}
@@ -80,7 +80,7 @@ func TestTemplates_IncludeMeetingLinkAndTime(t *testing.T) {
 func TestLessonInfo_FallsBackToUTC(t *testing.T) {
 	li := sampleInfo()
 	li.Timezone = "Not/AZone"
-	if got := li.when(); !strings.Contains(got, "UTC") {
+	if got := li.when("en"); !strings.Contains(got, "UTC") {
 		t.Errorf("bad tz should fall back to UTC, got %q", got)
 	}
 }

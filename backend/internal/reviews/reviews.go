@@ -14,10 +14,11 @@ package reviews
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/i18n"
 )
 
 // MaxCommentLen caps a review comment (characters). Longer -> 400.
@@ -134,10 +135,10 @@ var (
 
 // ValidationError is a client-fixable problem with a request. The handler
 // renders it as 400.
-type ValidationError struct{ msg string }
+type ValidationError struct{ i18n.Msg }
 
-func (e ValidationError) Error() string { return e.msg }
+func (e ValidationError) Error() string { return e.Msg.String() }
 
 func invalid(format string, args ...any) error {
-	return ValidationError{msg: fmt.Sprintf(format, args...)}
+	return ValidationError{i18n.Message(format, args...)}
 }

@@ -525,6 +525,7 @@ type User struct {
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
 	EmailVerifiedAt pgtype.Timestamptz
+	Locale          string
 }
 
 type UserRole struct {

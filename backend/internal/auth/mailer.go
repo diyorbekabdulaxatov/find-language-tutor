@@ -9,13 +9,17 @@ import "context"
 // internal/email.
 type Mailer interface {
 	// SendPasswordReset mails a reset link carrying the raw token.
-	SendPasswordReset(ctx context.Context, to, name, rawToken string) error
+	SendPasswordReset(ctx context.Context, locale, to, name, rawToken string) error
 	// SendEmailVerification mails a verification link carrying the raw token.
-	SendEmailVerification(ctx context.Context, to, name, rawToken string) error
+	SendEmailVerification(ctx context.Context, locale, to, name, rawToken string) error
 }
 
 // noopMailer is the default before SetMailer.
 type noopMailer struct{}
 
-func (noopMailer) SendPasswordReset(context.Context, string, string, string) error     { return nil }
-func (noopMailer) SendEmailVerification(context.Context, string, string, string) error { return nil }
+func (noopMailer) SendPasswordReset(context.Context, string, string, string, string) error {
+	return nil
+}
+func (noopMailer) SendEmailVerification(context.Context, string, string, string, string) error {
+	return nil
+}

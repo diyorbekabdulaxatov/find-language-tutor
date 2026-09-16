@@ -17,6 +17,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/config"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/db/sqlc"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/i18n"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/rbac"
 )
 
@@ -149,6 +150,7 @@ func main() {
 			Email:        demoEmail(t.DisplayName),
 			PasswordHash: passwordHash,
 			DisplayName:  t.DisplayName,
+			Locale:       i18n.Default,
 		})
 		if err != nil {
 			log.Fatalf("create user for %s: %v", t.Slug, err)
@@ -259,6 +261,7 @@ func main() {
 		Email:        "admin@findtutor.local",
 		PasswordHash: adminHash,
 		DisplayName:  "Site Admin",
+		Locale:       i18n.Default,
 	})
 	if err != nil {
 		log.Fatalf("create admin user: %v", err)

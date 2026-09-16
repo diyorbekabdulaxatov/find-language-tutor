@@ -8,6 +8,8 @@ export interface AuthUser {
   id: string;
   email: string;
   displayName: string;
+  /** The language the backend writes email to this account in. */
+  locale: "en" | "ru" | "uz";
   /** False until the account confirms its address via the emailed link. */
   emailVerified: boolean;
   /** RBAC permission keys the caller holds (union across their roles). Empty

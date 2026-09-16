@@ -212,12 +212,12 @@ func (r *fakeRepo) FileAssetAccessible(_ context.Context, fileAssetID, requester
 	return r.fileAccessible[pairKey(fileAssetID, requesterID)], nil
 }
 
-func (r *fakeRepo) UserContact(_ context.Context, userID uuid.UUID) (string, string, error) {
+func (r *fakeRepo) UserContact(_ context.Context, userID uuid.UUID) (string, string, string, error) {
 	c, ok := r.userContacts[userID]
 	if !ok {
-		return "", "", nil
+		return "", "", "en", nil
 	}
-	return c[0], c[1], nil
+	return c[0], c[1], "en", nil
 }
 
 // fakeBookingReader is an in-memory resources.BookingReader.

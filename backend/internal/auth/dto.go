@@ -15,11 +15,12 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-// updateMeRequest is the body of PATCH /v1/auth/me. Only display_name is
-// editable; a nil pointer means "field omitted" (no change). Email is read-only
-// here and any email key in the body is ignored.
+// updateMeRequest is the body of PATCH /v1/auth/me. A nil pointer means
+// "field omitted" (no change). Email is read-only here and any email key in
+// the body is ignored.
 type updateMeRequest struct {
 	DisplayName *string `json:"display_name"`
+	Locale      *string `json:"locale"`
 }
 
 type forgotPasswordRequest struct {
@@ -39,6 +40,7 @@ type userDTO struct {
 	ID            string   `json:"id"`
 	Email         string   `json:"email"`
 	DisplayName   string   `json:"display_name"`
+	Locale        string   `json:"locale"` // en | ru | uz — the language email addresses them in
 	EmailVerified bool     `json:"email_verified"`
 	Permissions   []string `json:"permissions"` // effective RBAC permission keys, sorted; the frontend gates /admin on these
 }
@@ -59,6 +61,7 @@ func toUserDTO(u User, permissions []string) userDTO {
 		ID:            u.ID.String(),
 		Email:         u.Email,
 		DisplayName:   u.DisplayName,
+		Locale:        u.Locale,
 		EmailVerified: u.EmailVerified,
 		Permissions:   permissions,
 	}

@@ -642,7 +642,8 @@ type Querier interface {
 	// accepting_students) and the slug are intentionally left untouched.
 	UpdateTeacher(ctx context.Context, arg UpdateTeacherParams) error
 	// Edit the caller's own account. Email is immutable here (changing it needs a
-	// verification flow that does not exist yet).
+	// verification flow that does not exist yet). A NULL arg leaves that column
+	// as it is.
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error)
 	// Progress.
 	// Merges the given fields into a video item's progress row for a student

@@ -371,7 +371,7 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 	var payFailed PaymentFailedError
 	switch {
 	case errors.As(err, &ve):
-		web.BadRequest(c, ve.Error())
+		web.BadRequestErr(c, ve)
 	case errors.Is(err, ErrNoTeacher):
 		web.WriteError(c, http.StatusForbidden, "no_teacher_profile",
 			"Create a teacher profile before building courses.")
@@ -392,7 +392,7 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 		web.WriteError(c, http.StatusServiceUnavailable, "purchase_unavailable",
 			"Course purchases aren't available right now.")
 	case errors.As(err, &payFailed):
-		web.WriteError(c, http.StatusPaymentRequired, "payment_failed", payFailed.Error())
+		web.WriteErrorFrom(c, http.StatusPaymentRequired, "payment_failed", payFailed)
 	case errors.Is(err, ErrCaptureFailed):
 		web.WriteError(c, http.StatusBadGateway, "capture_failed", "The payment could not be captured. Please try again.")
 	default:

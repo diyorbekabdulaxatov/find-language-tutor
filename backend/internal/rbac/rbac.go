@@ -16,10 +16,11 @@ package rbac
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/i18n"
 )
 
 // SuperadminRoleName is the one system role that always holds every permission
@@ -62,13 +63,13 @@ var (
 // empty role name). The handler renders it as 400.
 type ValidationError struct {
 	Code string
-	msg  string
+	i18n.Msg
 }
 
-func (e ValidationError) Error() string { return e.msg }
+func (e ValidationError) Error() string { return e.Msg.String() }
 
 func invalid(code, format string, args ...any) error {
-	return ValidationError{Code: code, msg: fmt.Sprintf(format, args...)}
+	return ValidationError{Code: code, Msg: i18n.Message(format, args...)}
 }
 
 // validatePermissions returns a ValidationError (code unknown_permission) if any

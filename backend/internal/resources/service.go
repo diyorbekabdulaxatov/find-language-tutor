@@ -71,7 +71,7 @@ type Repository interface {
 	// against EnrollmentReader.StudentResourceAccess.
 	ResourceIDsForFileAsset(ctx context.Context, fileAssetID uuid.UUID) ([]uuid.UUID, error)
 	// UserContact is a plain contact lookup, used only for the grading-done email.
-	UserContact(ctx context.Context, userID uuid.UUID) (email, displayName string, err error)
+	UserContact(ctx context.Context, userID uuid.UUID) (email, displayName, locale string, err error)
 }
 
 // CreateParams is the repository's insert payload.
@@ -654,7 +654,7 @@ func (s *Service) Grade(ctx context.Context, teacherCallerID, submissionID uuid.
 // notifyGraded is the guarded, best-effort Mailer call: a lookup or send
 // failure is logged and swallowed, never fails the grading request.
 func (s *Service) notifyGraded(ctx context.Context, sub Submission, resourceTitle string) {
-	email, name, err := s.repo.UserContact(ctx, sub.StudentID)
+	email, name, locale, err := s.repo.UserContact(ctx, sub.StudentID)
 	if err != nil {
 		s.log().Error("load student contact for grading email",
 			slog.String("submission_id", sub.ID.String()), slog.Any("error", err))
@@ -664,7 +664,7 @@ func (s *Service) notifyGraded(ctx context.Context, sub Submission, resourceTitl
 	// risking a stuck goroutine outliving the process (mail sends have their
 	// own client timeout).
 	go func(ctx context.Context) {
-		if err := s.mailer.SubmissionGraded(ctx, email, name, resourceTitle, sub.TeacherScore, nil, sub.TeacherFeedback); err != nil {
+		if err := s.mailer.SubmissionGraded(ctx, locale, email, name, resourceTitle, sub.TeacherScore, nil, sub.TeacherFeedback); err != nil {
 			s.log().Error("send submission graded email",
 				slog.String("submission_id", sub.ID.String()), slog.Any("error", err))
 		}

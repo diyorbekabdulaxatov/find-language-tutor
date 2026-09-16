@@ -16,10 +16,11 @@ package admin
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/i18n"
 )
 
 // Domain errors. The handler maps each to an HTTP status; anything else is 500.
@@ -45,12 +46,12 @@ var (
 
 // ValidationError is a client-fixable problem with a request (e.g. a missing
 // moderation note). The handler renders it as 400.
-type ValidationError struct{ msg string }
+type ValidationError struct{ i18n.Msg }
 
-func (e ValidationError) Error() string { return e.msg }
+func (e ValidationError) Error() string { return e.Msg.String() }
 
 func invalid(format string, args ...any) error {
-	return ValidationError{msg: fmt.Sprintf(format, args...)}
+	return ValidationError{i18n.Message(format, args...)}
 }
 
 // --- phase A: dashboard ---

@@ -60,36 +60,43 @@ func lessonInfo(b bookings.Booking) email.LessonInfo {
 	}
 }
 
-// recipients returns the (email,name) pairs for the two participants, skipping
-// any with a blank address.
-func recipients(b bookings.Booking) []struct{ addr, name string } {
-	var out []struct{ addr, name string }
+type recipient struct{ addr, name, locale string }
+
+// recipients returns the two participants, skipping any with a blank address.
+// Each carries their own locale, so a lesson between a Russian-speaking
+// student and an Uzbek-speaking teacher produces two differently worded mails.
+func recipients(b bookings.Booking) []recipient {
+	var out []recipient
 	if b.StudentEmail != "" {
-		out = append(out, struct{ addr, name string }{b.StudentEmail, b.Student.DisplayName})
+		out = append(out, recipient{b.StudentEmail, b.Student.DisplayName, b.StudentLocale})
 	}
 	if b.TeacherEmail != "" {
-		out = append(out, struct{ addr, name string }{b.TeacherEmail, b.Teacher.DisplayName})
+		out = append(out, recipient{b.TeacherEmail, b.Teacher.DisplayName, b.TeacherLocale})
 	}
 	return out
 }
 
+// content renders one template in one locale.
+type content func(loc string) (subject, html, text string)
+
 // ReminderMessages renders the lesson_reminder email for both participants.
 // Shared by the worker's task handler.
 func ReminderMessages(b bookings.Booking, kind string) []email.Message {
-	subject, html, text := email.LessonReminderContent(lessonInfo(b), email.ReminderKind(kind))
-	return fanOut(b, subject, html, text)
+	return fanOut(b, func(loc string) (string, string, string) {
+		return email.LessonReminderContent(loc, lessonInfo(b), email.ReminderKind(kind))
+	})
 }
 
 // ConfirmedMessages renders booking_confirmed for both participants.
 func ConfirmedMessages(b bookings.Booking) []email.Message {
-	subject, html, text := email.BookingConfirmedContent(lessonInfo(b))
-	return fanOut(b, subject, html, text)
+	return fanOut(b, func(loc string) (string, string, string) {
+		return email.BookingConfirmedContent(loc, lessonInfo(b))
+	})
 }
 
 // CancelledMessages renders booking_cancelled for the party who did NOT trigger
 // the cancellation (the "other party").
 func CancelledMessages(b bookings.Booking, cancelledBy uuid.UUID, refunded bool) []email.Message {
-	subject, html, text := email.BookingCancelledContent(lessonInfo(b), refunded)
 	var out []email.Message
 	for _, r := range recipients(b) {
 		if cancelledBy != uuid.Nil {
@@ -100,14 +107,16 @@ func CancelledMessages(b bookings.Booking, cancelledBy uuid.UUID, refunded bool)
 				continue
 			}
 		}
+		subject, html, text := email.BookingCancelledContent(r.locale, lessonInfo(b), refunded)
 		out = append(out, email.Message{To: r.addr, ToName: r.name, Subject: subject, HTMLBody: html, TextBody: text})
 	}
 	return out
 }
 
-func fanOut(b bookings.Booking, subject, html, text string) []email.Message {
+func fanOut(b bookings.Booking, render content) []email.Message {
 	var out []email.Message
 	for _, r := range recipients(b) {
+		subject, html, text := render(r.locale)
 		out = append(out, email.Message{To: r.addr, ToName: r.name, Subject: subject, HTMLBody: html, TextBody: text})
 	}
 	return out

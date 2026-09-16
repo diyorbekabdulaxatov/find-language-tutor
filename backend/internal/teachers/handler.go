@@ -142,7 +142,7 @@ func (h *Handler) Create(c *gin.Context) {
 		web.WriteError(c, http.StatusConflict, "profile_exists", "Your account already has a teacher profile.")
 		return
 	case errors.As(err, &ve):
-		web.BadRequest(c, ve.Error())
+		web.BadRequestErr(c, ve)
 		return
 	case err != nil:
 		h.logger.Error("create teacher profile", slog.Any("error", err))
@@ -180,7 +180,7 @@ func (h *Handler) Update(c *gin.Context) {
 		web.Forbidden(c, "You can only edit your own teacher profile.")
 		return
 	case errors.As(err, &ve):
-		web.BadRequest(c, ve.Error())
+		web.BadRequestErr(c, ve)
 		return
 	case err != nil:
 		h.logger.Error("update teacher profile", slog.String("slug", slug), slog.Any("error", err))

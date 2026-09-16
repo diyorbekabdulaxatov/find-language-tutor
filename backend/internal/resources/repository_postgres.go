@@ -357,12 +357,12 @@ func (r *repositoryPostgres) ResourceIDsForFileAsset(ctx context.Context, fileAs
 	return ids, nil
 }
 
-func (r *repositoryPostgres) UserContact(ctx context.Context, userID uuid.UUID) (string, string, error) {
+func (r *repositoryPostgres) UserContact(ctx context.Context, userID uuid.UUID) (string, string, string, error) {
 	row, err := r.q.GetUserContact(ctx, userID)
 	if err != nil {
-		return "", "", fmt.Errorf("get user contact: %w", err)
+		return "", "", "", fmt.Errorf("get user contact: %w", err)
 	}
-	return row.Email, row.DisplayName, nil
+	return row.Email, row.DisplayName, row.Locale, nil
 }
 
 func marshalContent(c Content) ([]byte, error) {

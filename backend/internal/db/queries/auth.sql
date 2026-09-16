@@ -1,27 +1,30 @@
 -- Auth module: user accounts and refresh-token sessions.
 
 -- name: CreateUser :one
-INSERT INTO users (email, password_hash, display_name)
-VALUES ($1, $2, $3)
-RETURNING id, email, password_hash, display_name, email_verified_at, created_at, updated_at;
+INSERT INTO users (email, password_hash, display_name, locale)
+VALUES ($1, $2, $3, $4)
+RETURNING id, email, password_hash, display_name, email_verified_at, locale, created_at, updated_at;
 
 -- name: GetUserByEmail :one
-SELECT id, email, password_hash, display_name, email_verified_at, created_at, updated_at
+SELECT id, email, password_hash, display_name, email_verified_at, locale, created_at, updated_at
 FROM users
 WHERE email = $1;
 
 -- name: GetUserByID :one
-SELECT id, email, password_hash, display_name, email_verified_at, created_at, updated_at
+SELECT id, email, password_hash, display_name, email_verified_at, locale, created_at, updated_at
 FROM users
 WHERE id = $1;
 
 -- name: UpdateUser :one
 -- Edit the caller's own account. Email is immutable here (changing it needs a
--- verification flow that does not exist yet).
+-- verification flow that does not exist yet). A NULL arg leaves that column
+-- as it is.
 UPDATE users
-SET display_name = $2, updated_at = now()
+SET display_name = coalesce(sqlc.narg('display_name'), display_name),
+    locale       = coalesce(sqlc.narg('locale'), locale),
+    updated_at   = now()
 WHERE id = $1
-RETURNING id, email, password_hash, display_name, email_verified_at, created_at, updated_at;
+RETURNING id, email, password_hash, display_name, email_verified_at, locale, created_at, updated_at;
 
 -- name: SetUserPassword :exec
 -- Password reset: replace the hash and bump updated_at. The caller also revokes

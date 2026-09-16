@@ -119,13 +119,13 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 	var ve ValidationError
 	switch {
 	case errors.As(err, &ve):
-		web.BadRequest(c, ve.Error())
+		web.BadRequestErr(c, ve)
 	case errors.Is(err, ErrUnsupportedType):
 		web.WriteError(c, http.StatusUnsupportedMediaType, "unsupported_type",
 			"That file type isn't allowed, or the file's contents don't match its type. Use a PDF, image, audio, or video file.")
 	case errors.Is(err, ErrTooLarge):
-		web.WriteError(c, http.StatusRequestEntityTooLarge, "file_too_large",
-			fmt.Sprintf("Files must be under %d MB (%d MB for video).", MaxUploadBytes>>20, MaxVideoUploadBytes>>20))
+		web.WriteErrorf(c, http.StatusRequestEntityTooLarge, "file_too_large",
+			"Files must be under %d MB (%d MB for video).", MaxUploadBytes>>20, MaxVideoUploadBytes>>20)
 	case errors.Is(err, ErrEmptyUpload):
 		web.BadRequest(c, "The file is empty.")
 	case errors.Is(err, ErrAssetNotFound):
