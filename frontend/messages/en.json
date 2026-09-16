@@ -224,7 +224,8 @@
     "emailChangeUnsupported": "Email changes aren't supported yet.",
     "saveChanges": "Save changes",
     "saved": "Saved.",
-    "couldNotSave": "Could not save your changes. Please try again."
+    "couldNotSave": "Could not save your changes. Please try again.",
+    "teacherSignupHint": "You're signing up to teach — after this you'll set up your teacher profile, which goes live once it's reviewed."
   },
   "resourceTypes": {
     "material": "Material",
