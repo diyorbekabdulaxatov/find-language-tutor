@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -12,8 +13,9 @@ export function Stars({
   value: number;
   className?: string;
 }) {
+  const t = useTranslations("reviews");
   return (
-    <span className={cn("inline-flex gap-0.5", className)} aria-label={`${value} out of 5`}>
+    <span className={cn("inline-flex gap-0.5", className)} aria-label={t("outOf5", { value })}>
       {[1, 2, 3, 4, 5].map((n) => (
         <Star
           key={n}
@@ -40,6 +42,7 @@ export function StarInput({
 }) {
   const [hover, setHover] = useState(0);
   const shown = hover || value;
+  const t = useTranslations("reviews");
 
   return (
     <div className="flex gap-1" onMouseLeave={() => setHover(0)}>
@@ -47,7 +50,7 @@ export function StarInput({
         <button
           key={n}
           type="button"
-          aria-label={`${n} star${n === 1 ? "" : "s"}`}
+          aria-label={t("stars", { count: n })}
           aria-pressed={value === n}
           onMouseEnter={() => setHover(n)}
           onClick={() => onChange(n)}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import {
   getTeacherReviews,
   ReviewError,
@@ -8,8 +9,8 @@ import {
 } from "@/features/reviews/api";
 import { Stars } from "./star-rating";
 
-function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatDate(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -31,6 +32,8 @@ export function ReviewsSection({
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const t = useTranslations("reviews");
+  const locale = useLocale();
 
   useEffect(() => {
     let alive = true;
@@ -62,9 +65,9 @@ export function ReviewsSection({
   return (
     <section className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-soft">
       <h2 className="font-display text-xl">
-        Reviews{" "}
+        {t("title")}{" "}
         <span className="text-muted-foreground">
-          ({reviewCount.toLocaleString("en-US")})
+          ({reviewCount.toLocaleString(locale)})
         </span>
       </h2>
 
@@ -77,7 +80,7 @@ export function ReviewsSection({
       )}
 
       {state === "ready" && reviews.length === 0 && (
-        <p className="mt-3 text-sm text-muted-foreground">No written reviews yet.</p>
+        <p className="mt-3 text-sm text-muted-foreground">{t("noneYet")}</p>
       )}
 
       {reviews.length > 0 && (
@@ -87,7 +90,7 @@ export function ReviewsSection({
               <div className="flex items-center justify-between gap-3">
                 <span className="font-medium">{r.studentDisplayName}</span>
                 <span className="text-xs text-muted-foreground">
-                  {formatDate(r.createdAt)}
+                  {formatDate(r.createdAt, locale)}
                 </span>
               </div>
               <Stars value={r.rating} className="mt-1" />
@@ -107,7 +110,7 @@ export function ReviewsSection({
           onClick={() => setPage((p) => p + 1)}
           className="mt-4 text-sm font-medium text-primary hover:underline"
         >
-          Show more reviews
+          {t("showMore")}
         </button>
       )}
     </section>

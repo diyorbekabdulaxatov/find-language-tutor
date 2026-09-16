@@ -1,32 +1,35 @@
 import Link from "next/link";
+import { getTranslations } from "next-intl/server";
 import { GraduationCap } from "lucide-react";
 
-const COLUMNS: { heading: string; links: { label: string; href: string }[] }[] = [
-  {
-    heading: "Learn",
-    links: [
-      { label: "Find a teacher", href: "/teachers" },
-      { label: "How lessons work", href: "/#how-it-works" },
-      { label: "Pricing", href: "/#pricing" },
-    ],
-  },
-  {
-    heading: "Teach",
-    links: [
-      { label: "Become a teacher", href: "/#teach" },
-      { label: "Payouts", href: "/#payouts" },
-    ],
-  },
-  {
-    heading: "Company",
-    links: [
-      { label: "About", href: "/about" },
-      { label: "Contact", href: "/contact" },
-    ],
-  },
-];
+export async function SiteFooter() {
+  const t = await getTranslations("footer");
 
-export function SiteFooter() {
+  const columns: { heading: string; links: { label: string; href: string }[] }[] = [
+    {
+      heading: t("learn"),
+      links: [
+        { label: t("findTeacher"), href: "/teachers" },
+        { label: t("howLessonsWork"), href: "/#how-it-works" },
+        { label: t("pricing"), href: "/#pricing" },
+      ],
+    },
+    {
+      heading: t("teach"),
+      links: [
+        { label: t("becomeTeacher"), href: "/#teach" },
+        { label: t("payouts"), href: "/#payouts" },
+      ],
+    },
+    {
+      heading: t("company"),
+      links: [
+        { label: t("about"), href: "/about" },
+        { label: t("contact"), href: "/contact" },
+      ],
+    },
+  ];
+
   return (
     <footer className="mt-8 border-t border-border bg-card/60">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:grid-cols-[1.5fr_repeat(3,1fr)] sm:px-6">
@@ -37,13 +40,10 @@ export function SiteFooter() {
             </span>
             <span className="font-display text-lg">FindTutor</span>
           </div>
-          <p className="mt-3 max-w-xs text-sm text-muted-foreground">
-            One-on-one language lessons with teachers you choose, on a schedule
-            that works across timezones.
-          </p>
+          <p className="mt-3 max-w-xs text-sm text-muted-foreground">{t("tagline")}</p>
         </div>
 
-        {COLUMNS.map((col) => (
+        {columns.map((col) => (
           <nav key={col.heading} className="text-sm">
             <p className="font-semibold text-foreground">{col.heading}</p>
             <ul className="mt-3 space-y-2.5">
@@ -63,7 +63,7 @@ export function SiteFooter() {
       </div>
 
       <div className="mx-auto max-w-6xl px-4 pb-10 text-xs text-muted-foreground sm:px-6">
-        © {new Date().getFullYear()} FindTutor. A portfolio project.
+        {t("copyright", { year: new Date().getFullYear() })}
       </div>
     </footer>
   );

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { useTranslations } from "next-intl";
 import { Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,7 @@ export function IntroVideo({
   className?: string;
 }) {
   const [playing, setPlaying] = useState(false);
+  const t = useTranslations("profile");
 
   return (
     <div
@@ -32,15 +34,14 @@ export function IntroVideo({
     >
       {playing ? (
         <div className="grid h-full place-items-center bg-foreground p-6 text-center text-sm text-background">
-          Video playback isn&rsquo;t wired up yet — {name}&rsquo;s intro will play
-          here.
+          {t("introNotWired", { name })}
         </div>
       ) : (
         <button
           type="button"
           onClick={() => setPlaying(true)}
           className="group absolute inset-0"
-          aria-label={`Play ${name}'s intro video`}
+          aria-label={t("playIntro", { name })}
         >
           <Image
             src={poster}
@@ -56,7 +57,7 @@ export function IntroVideo({
             </span>
           </span>
           <span className="absolute bottom-3 left-3 rounded-full bg-black/55 px-2.5 py-1 text-xs font-medium text-white backdrop-blur">
-            Watch 1-min intro
+            {t("watchIntro")}
           </span>
         </button>
       )}

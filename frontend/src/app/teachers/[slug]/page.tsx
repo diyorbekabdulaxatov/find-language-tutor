@@ -2,6 +2,7 @@ import { cache } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { getLocale, getTranslations } from "next-intl/server";
 import { ArrowLeft } from "lucide-react";
 
 import { getTeacherBySlug, listTeacherSlugs } from "@/features/teachers/api";
@@ -13,7 +14,7 @@ import { BookingPanel } from "@/features/teachers/components/booking-panel";
 import { ReviewsSection } from "@/features/reviews/components/reviews-section";
 import { VerifiedBadge } from "@/features/teachers/components/verified-badge";
 import { photoUrl } from "@/features/teachers/components/teacher-avatar";
-import { greetingFor, localTimeIn } from "@/lib/i18n";
+import { greetingFor, languageName, localTimeIn } from "@/lib/i18n";
 import { flagEmoji } from "@/lib/country";
 
 /**
@@ -44,12 +45,13 @@ export async function generateMetadata({
   const teacher = await loadTeacher(slug);
   if (!teacher) return {};
 
-  const subject = teacher.teaches.map((l) => l.name).join(" & ");
+  const [t, tLang] = await Promise.all([getTranslations("profile"), getTranslations("languages")]);
+  const subject = teacher.teaches.map((l) => languageName(tLang, l)).join(" & ");
   return {
-    title: `${teacher.displayName} — ${subject} teacher`,
+    title: t("metaTitle", { name: teacher.displayName, subject }),
     description: teacher.headline,
     openGraph: {
-      title: `${teacher.displayName} · ${subject} on FindTutor`,
+      title: t("ogTitle", { name: teacher.displayName, subject }),
       description: teacher.headline,
       images: [teacher.avatarUrl],
     },
@@ -63,11 +65,15 @@ export default async function TeacherProfilePage({
   const teacher = await loadTeacher(slug);
   if (!teacher) notFound();
 
+  const [t, tLang, locale] = await Promise.all([
+    getTranslations("profile"),
+    getTranslations("languages"),
+    getLocale(),
+  ]);
   const primaryLanguage = teacher.teaches[0];
-  const kindLabel =
-    teacher.kind === "professional"
-      ? `Professional teacher of ${primaryLanguage.name}`
-      : `Community tutor of ${primaryLanguage.name}`;
+  const kindLabel = t(teacher.kind === "professional" ? "professionalOf" : "communityOf", {
+    language: languageName(tLang, primaryLanguage),
+  });
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:py-10">
@@ -76,7 +82,7 @@ export default async function TeacherProfilePage({
         className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
-        All teachers
+        {t("allTeachers")}
       </Link>
 
       <div className="mt-5 grid gap-6 lg:grid-cols-[1fr_340px]">
@@ -107,7 +113,7 @@ export default async function TeacherProfilePage({
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
                 <Rating value={teacher.rating} reviewCount={teacher.reviewCount} />
                 <span className="text-muted-foreground">
-                  {teacher.studentCount} active students
+                  {t("activeStudents", { count: teacher.studentCount })}
                 </span>
               </div>
 
@@ -115,7 +121,7 @@ export default async function TeacherProfilePage({
                 <LocalTime
                   timezone={teacher.timezone}
                   city={teacher.city}
-                  initial={localTimeIn(teacher.timezone)}
+                  initial={localTimeIn(teacher.timezone, new Date(), locale)}
                 />
               </div>
 
@@ -150,15 +156,15 @@ export default async function TeacherProfilePage({
 
         {/* Long-form content — column 1, row 2 */}
         <div className="space-y-6 lg:col-start-1 lg:row-start-2">
-          <Card title="About">
+          <Card title={t("about")}>
             <Prose text={teacher.about} />
           </Card>
 
-          <Card title="How I teach">
+          <Card title={t("howITeach")}>
             <Prose text={teacher.teachingStyle} />
           </Card>
 
-          <Card title="Experience">
+          <Card title={t("experience")}>
             <ul className="space-y-4">
               {teacher.experience.map((item) => (
                 <li

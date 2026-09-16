@@ -1,16 +1,18 @@
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import { Suspense } from "react";
 import { AuthForm } from "@/features/auth/components/auth-form";
 import { AuthCard } from "@/features/auth/components/auth-card";
 
-export const metadata: Metadata = {
-  title: "Log in",
-  description: "Sign in to your FindTutor account.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("auth");
+  return { title: t("loginMeta"), description: t("loginMetaDescription") };
+}
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const t = await getTranslations("auth");
   return (
-    <AuthCard title="Welcome back">
+    <AuthCard title={t("loginTitle")}>
       <Suspense fallback={<FormSkeleton />}>
         <AuthForm mode="login" />
       </Suspense>

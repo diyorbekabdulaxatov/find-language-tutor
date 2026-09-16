@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { MailWarning, X } from "lucide-react";
 import { useAuth } from "@/features/auth/auth-context";
 import { resendVerification } from "@/features/auth/api";
@@ -15,6 +16,7 @@ export function EmailVerificationBanner() {
   const [dismissed, setDismissed] = useState(false);
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const t = useTranslations("auth");
 
   if (status !== "authenticated" || !user || user.emailVerified || dismissed) {
     return null;
@@ -36,23 +38,23 @@ export function EmailVerificationBanner() {
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2 text-sm sm:px-6">
         <MailWarning className="size-4 shrink-0" />
         {sent ? (
-          <span>Verification email sent — check your inbox.</span>
+          <span>{t("bannerSent")}</span>
         ) : (
           <span className="flex-1">
-            Confirm your email ({user.email}) to secure your account.{" "}
+            {t("bannerConfirm", { email: user.email })}{" "}
             <button
               type="button"
               disabled={busy}
               onClick={resend}
               className="font-semibold underline underline-offset-2 disabled:opacity-60"
             >
-              {busy ? "Sending…" : "Resend link"}
+              {busy ? t("sending") : t("resendLink")}
             </button>
           </span>
         )}
         <button
           type="button"
-          aria-label="Dismiss"
+          aria-label={t("dismiss")}
           onClick={() => setDismissed(true)}
           className="ml-auto shrink-0 rounded p-0.5 hover:bg-star/15"
         >

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { useAuth } from "@/features/auth/auth-context";
 import { AuthError, updateProfile } from "@/features/auth/api";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ export function AccountSettings() {
   const [displayName, setDisplayName] = useState(user?.displayName ?? "");
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
+  const t = useTranslations("auth");
 
   if (!user) return null;
 
@@ -29,27 +31,21 @@ export function AccountSettings() {
       setStatus("saved");
     } catch (err) {
       setStatus("idle");
-      setError(
-        err instanceof AuthError
-          ? err.message
-          : "Could not save your changes. Please try again.",
-      );
+      setError(err instanceof AuthError ? err.message : t("couldNotSave"));
     }
   }
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
-      <h1 className="font-display text-3xl">Account settings</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Manage the details on your FindTutor account.
-      </p>
+      <h1 className="font-display text-3xl">{t("settingsTitle")}</h1>
+      <p className="mt-1 text-sm text-muted-foreground">{t("settingsIntro")}</p>
 
       <form
         onSubmit={handleSubmit}
         className="mt-8 flex flex-col gap-5 rounded-2xl border border-border bg-card p-6 shadow-soft"
       >
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="displayName">Name</Label>
+          <Label htmlFor="displayName">{t("name")}</Label>
           <Input
             id="displayName"
             value={displayName}
@@ -62,11 +58,9 @@ export function AccountSettings() {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email">{t("email")}</Label>
           <Input id="email" value={user.email} disabled readOnly />
-          <p className="text-xs text-muted-foreground">
-            Email changes aren&apos;t supported yet.
-          </p>
+          <p className="text-xs text-muted-foreground">{t("emailChangeUnsupported")}</p>
         </div>
 
         {error && (
@@ -80,10 +74,10 @@ export function AccountSettings() {
 
         <div className="flex items-center gap-3">
           <Button type="submit" disabled={!dirty || status === "saving"}>
-            {status === "saving" ? "Saving…" : "Save changes"}
+            {status === "saving" ? t("saving") : t("saveChanges")}
           </Button>
           {status === "saved" && (
-            <span className="text-sm text-muted-foreground">Saved.</span>
+            <span className="text-sm text-muted-foreground">{t("saved")}</span>
           )}
         </div>
       </form>

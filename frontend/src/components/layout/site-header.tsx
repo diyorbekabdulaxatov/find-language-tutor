@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { getTranslations } from "next-intl/server";
 import { GraduationCap } from "lucide-react";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { LocaleSwitcher } from "@/components/layout/locale-switcher";
 import { AccountMenu } from "@/features/auth/components/account-menu";
 
 /**
@@ -8,7 +10,8 @@ import { AccountMenu } from "@/features/auth/components/account-menu";
  * that reflects the session — log in / sign up when signed out, account
  * dropdown when signed in.
  */
-export function SiteHeader() {
+export async function SiteHeader() {
+  const t = await getTranslations("nav");
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6">
@@ -23,20 +26,21 @@ export function SiteHeader() {
 
         <nav className="hidden items-center gap-6 text-sm font-medium text-muted-foreground sm:flex">
           <Link href="/teachers" className="transition-colors hover:text-foreground">
-            Find a teacher
+            {t("findTeacher")}
           </Link>
           <Link href="/courses/catalog" className="transition-colors hover:text-foreground">
-            Find a course
+            {t("findCourse")}
           </Link>
           <Link href="/#how-it-works" className="transition-colors hover:text-foreground">
-            How it works
+            {t("howItWorks")}
           </Link>
           <Link href="/#teach" className="transition-colors hover:text-foreground">
-            Teach
+            {t("teach")}
           </Link>
         </nav>
 
         <div className="ml-auto flex items-center gap-1.5">
+          <LocaleSwitcher />
           <ThemeToggle />
           <AccountMenu />
         </div>

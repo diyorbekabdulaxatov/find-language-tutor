@@ -9,6 +9,7 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useAuth } from "./auth-context";
 
 export function RequireUser({ children }: { children: React.ReactNode }) {
@@ -16,6 +17,7 @@ export function RequireUser({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const search = useSearchParams();
+  const t = useTranslations("common");
 
   useEffect(() => {
     if (status !== "unauthenticated") return;
@@ -26,7 +28,7 @@ export function RequireUser({ children }: { children: React.ReactNode }) {
   if (status !== "authenticated") {
     return (
       <div className="mx-auto max-w-6xl px-4 py-24 text-sm text-muted-foreground sm:px-6">
-        Checking your session…
+        {t("checkingSession")}
       </div>
     );
   }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { requestPasswordReset } from "@/features/auth/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,7 @@ export function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const t = useTranslations("auth");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,22 +30,26 @@ export function ForgotPasswordForm() {
     return (
       <div className="flex flex-col gap-4 text-sm">
         <p>
-          If <span className="font-medium">{email.trim()}</span> has an account,
-          a reset link is on its way. It expires in an hour.
+          {t.rich("forgotSent", {
+            email: email.trim(),
+            b: (chunks) => <span className="font-medium">{chunks}</span>,
+          })}
         </p>
         <p className="text-muted-foreground">
-          Didn&apos;t get it? Check spam, or{" "}
-          <button
-            type="button"
-            className="font-medium text-primary hover:underline"
-            onClick={() => setSent(false)}
-          >
-            try another address
-          </button>
-          .
+          {t.rich("forgotNotReceived", {
+            link: (chunks) => (
+              <button
+                type="button"
+                className="font-medium text-primary hover:underline"
+                onClick={() => setSent(false)}
+              >
+                {chunks}
+              </button>
+            ),
+          })}
         </p>
         <Link href="/login" className="font-medium text-primary hover:underline">
-          Back to sign in
+          {t("backToSignIn")}
         </Link>
       </div>
     );
@@ -51,11 +57,9 @@ export function ForgotPasswordForm() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-      <p className="text-sm text-muted-foreground">
-        Enter your email and we&apos;ll send you a link to choose a new password.
-      </p>
+      <p className="text-sm text-muted-foreground">{t("forgotIntro")}</p>
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email">{t("email")}</Label>
         <Input
           id="email"
           name="email"
@@ -67,12 +71,12 @@ export function ForgotPasswordForm() {
         />
       </div>
       <Button type="submit" size="lg" disabled={busy} className="mt-1 w-full">
-        {busy ? "Sending…" : "Send reset link"}
+        {busy ? t("sending") : t("sendResetLink")}
       </Button>
       <p className="text-center text-sm text-muted-foreground">
-        Remembered it?{" "}
+        {t("rememberedIt")}{" "}
         <Link href="/login" className="font-medium text-primary hover:underline">
-          Sign in
+          {t("signIn")}
         </Link>
       </p>
     </form>

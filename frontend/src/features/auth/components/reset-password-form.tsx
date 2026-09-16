@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { AuthError, resetPassword } from "@/features/auth/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,12 +14,14 @@ export function ResetPasswordForm({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  const t = useTranslations("auth");
+  const tCommon = useTranslations("common");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     if (password !== confirm) {
-      setError("The two passwords don't match.");
+      setError(t("passwordsMismatch"));
       return;
     }
     setBusy(true);
@@ -26,11 +29,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
       await resetPassword(token, password);
       setDone(true);
     } catch (err) {
-      setError(
-        err instanceof AuthError
-          ? err.message
-          : "Something went wrong. Please try again.",
-      );
+      setError(err instanceof AuthError ? err.message : tCommon("somethingWrong"));
       setBusy(false);
     }
   }
@@ -38,12 +37,9 @@ export function ResetPasswordForm({ token }: { token: string }) {
   if (done) {
     return (
       <div className="flex flex-col gap-4 text-sm">
-        <p>
-          Your password has been changed. For safety, you&apos;ve been signed out
-          everywhere.
-        </p>
+        <p>{t("resetDone")}</p>
         <Button asChild size="lg" className="w-full">
-          <Link href="/login">Sign in</Link>
+          <Link href="/login">{t("signIn")}</Link>
         </Button>
       </div>
     );
@@ -52,7 +48,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="password">New password</Label>
+        <Label htmlFor="password">{t("newPassword")}</Label>
         <Input
           id="password"
           type="password"
@@ -62,10 +58,10 @@ export function ResetPasswordForm({ token }: { token: string }) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
-        <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+        <p className="text-xs text-muted-foreground">{t("atLeast8")}</p>
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="confirm">Confirm password</Label>
+        <Label htmlFor="confirm">{t("confirmPassword")}</Label>
         <Input
           id="confirm"
           type="password"
@@ -83,13 +79,13 @@ export function ResetPasswordForm({ token }: { token: string }) {
         >
           <span>{error}</span>
           <Link href="/forgot-password" className="font-medium underline">
-            Request a new link
+            {t("requestNewLink")}
           </Link>
         </div>
       )}
 
       <Button type="submit" size="lg" disabled={busy} className="mt-1 w-full">
-        {busy ? "Saving…" : "Change password"}
+        {busy ? t("saving") : t("changePassword")}
       </Button>
     </form>
   );

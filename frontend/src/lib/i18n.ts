@@ -1,3 +1,17 @@
+import type { useTranslations } from "next-intl";
+
+/** The `languages` namespace translator (same shape from `getTranslations`). */
+type LanguagesT = ReturnType<typeof useTranslations<"languages">>;
+
+/**
+ * A taught language's display name in the UI locale. The backend sends the
+ * English name; the catalogue covers the codes we know and the English name
+ * is the fallback for any it doesn't.
+ */
+export function languageName(t: LanguagesT, lang: { code: string; name: string }): string {
+  return t.has(lang.code as never) ? t(lang.code as never) : lang.name;
+}
+
 /** A greeting in each language we currently have teachers for, used as a motif. */
 const GREETINGS: Record<string, string> = {
   en: "Hello",
@@ -22,28 +36,26 @@ export function greetingFor(languageCode: string): string {
  * library needed. Pass a fixed `now` on the server so SSR output is stable;
  * the client component re-renders with the live value.
  */
-export function localTimeIn(timezone: string, now: Date = new Date()): string {
-  return new Intl.DateTimeFormat("en-US", {
+export function localTimeIn(timezone: string, now: Date = new Date(), locale = "en"): string {
+  return new Intl.DateTimeFormat(locale, {
     timeZone: timezone,
     hour: "numeric",
     minute: "2-digit",
   }).format(now);
 }
 
-/** Offset label relative to the viewer, e.g. "6 hours ahead of you". */
-export function offsetFromViewer(timezone: string, now: Date = new Date()): string | null {
+/**
+ * Whole hours the teacher's zone is ahead of (positive) or behind (negative)
+ * the viewer's; null when they share a zone. The caller words it.
+ */
+export function hoursFromViewer(timezone: string, now: Date = new Date()): number | null {
   const viewerTz =
     Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_VIEWER_TZ;
   if (viewerTz === timezone) return null;
 
   const there = zonedOffsetMinutes(timezone, now);
   const here = zonedOffsetMinutes(viewerTz, now);
-  const diffHours = Math.round((there - here) / 60);
-
-  if (diffHours === 0) return "same time as you";
-  const magnitude = Math.abs(diffHours);
-  const unit = magnitude === 1 ? "hour" : "hours";
-  return `${magnitude} ${unit} ${diffHours > 0 ? "ahead of" : "behind"} you`;
+  return Math.round((there - here) / 60);
 }
 
 /** Minutes east of UTC for a timezone at a given instant. */

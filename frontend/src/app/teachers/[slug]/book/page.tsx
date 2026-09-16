@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getTranslations } from "next-intl/server";
 import { ArrowLeft } from "lucide-react";
 import { getTeacherBySlug } from "@/features/teachers/api";
 import { BookingFlow } from "@/features/bookings/components/booking-flow";
@@ -11,10 +12,8 @@ export async function generateMetadata({
   params,
 }: PageProps<"/teachers/[slug]/book">): Promise<Metadata> {
   const { slug } = await params;
-  const teacher = await getTeacherBySlug(slug);
-  return teacher
-    ? { title: `Book a lesson with ${teacher.displayName}` }
-    : {};
+  const [t, teacher] = await Promise.all([getTranslations("bookPage"), getTeacherBySlug(slug)]);
+  return teacher ? { title: t("metaTitle", { name: teacher.displayName }) } : {};
 }
 
 export default async function BookPage({
@@ -23,7 +22,7 @@ export default async function BookPage({
 }: PageProps<"/teachers/[slug]/book">) {
   const { slug } = await params;
   const sp = await searchParams;
-  const teacher = await getTeacherBySlug(slug);
+  const [t, teacher] = await Promise.all([getTranslations("bookPage"), getTeacherBySlug(slug)]);
   if (!teacher) notFound();
 
   const isTrial = sp.trial === "1" && teacher.trialPrice != null;
@@ -35,12 +34,10 @@ export default async function BookPage({
         className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
-        Back to {teacher.displayName}
+        {t("backTo", { name: teacher.displayName })}
       </Link>
 
-      <h1 className="mt-4 font-display text-3xl">
-        {isTrial ? "Book a trial lesson" : "Book a lesson"}
-      </h1>
+      <h1 className="mt-4 font-display text-3xl">{t(isTrial ? "bookTrial" : "bookLesson")}</h1>
 
       <div className="mt-6">
         <BookingFlow

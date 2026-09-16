@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import { SlidersHorizontal, X } from "lucide-react";
 import type { TeacherListResult, TeacherSort } from "@/features/teachers/api";
 import { Slider } from "@/components/ui/slider";
@@ -20,26 +21,26 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { languageName } from "@/lib/i18n";
 
-const SORT_OPTIONS: { value: TeacherSort; label: string }[] = [
-  { value: "recommended", label: "Recommended" },
-  { value: "price_asc", label: "Price: low to high" },
-  { value: "price_desc", label: "Price: high to low" },
-  { value: "rating_desc", label: "Highest rated" },
+const SORT_OPTIONS: { value: TeacherSort; label: SortKey }[] = [
+  { value: "recommended", label: "sortRecommended" },
+  { value: "price_asc", label: "sortPriceAsc" },
+  { value: "price_desc", label: "sortPriceDesc" },
+  { value: "rating_desc", label: "sortRatingDesc" },
 ];
+type SortKey = "sortRecommended" | "sortPriceAsc" | "sortPriceDesc" | "sortRatingDesc";
 
-const KIND_OPTIONS = [
-  { value: "", label: "Anyone" },
-  { value: "professional", label: "Professional" },
-  { value: "community", label: "Community" },
+const KIND_OPTIONS: { value: string; label: "anyone" | "professional" | "community" }[] = [
+  { value: "", label: "anyone" },
+  { value: "professional", label: "professional" },
+  { value: "community", label: "community" },
 ];
 
 /** Price filter works in whole so'm; kept in the URL as e.g. ?max=90000. */
 const PRICE_MIN = 30_000;
 const PRICE_MAX = 150_000;
 const PRICE_STEP = 5_000;
-
-const som = new Intl.NumberFormat("en-US");
 
 export function TeacherFilters({
   facets,
@@ -51,6 +52,7 @@ export function TeacherFilters({
   const params = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [sheetOpen, setSheetOpen] = useState(false);
+  const t = useTranslations("filters");
 
   const commit = useCallback(
     (mutate: (next: URLSearchParams) => void) => {
@@ -114,7 +116,7 @@ export function TeacherFilters({
             >
               <span className="inline-flex items-center gap-2">
                 <SlidersHorizontal className="size-4" />
-                Filters &amp; sort
+                {t("filtersSort")}
               </span>
               {activeCount > 0 && (
                 <span className="inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
@@ -125,7 +127,7 @@ export function TeacherFilters({
           </SheetTrigger>
           <SheetContent side="bottom">
             <SheetHeader>
-              <SheetTitle>Filters &amp; sort</SheetTitle>
+              <SheetTitle>{t("filtersSort")}</SheetTitle>
             </SheetHeader>
             {controls}
             <button
@@ -133,7 +135,7 @@ export function TeacherFilters({
               onClick={() => setSheetOpen(false)}
               className="mt-2 h-10 w-full rounded-lg bg-primary text-sm font-semibold text-primary-foreground"
             >
-              Show results
+              {t("showResults")}
             </button>
           </SheetContent>
         </Sheet>
@@ -181,12 +183,18 @@ function FilterControls({
   commit: Commit;
   setParam: (key: string, value: string) => void;
 }) {
+  const t = useTranslations("filters");
+  const tLang = useTranslations("languages");
+  const tCommon = useTranslations("common");
+  const locale = useLocale();
+  const som = new Intl.NumberFormat(locale);
+
   return (
     <div>
       {/* Language chips */}
       <div className="flex flex-wrap gap-2">
         <Chip active={!lang} onClick={() => setParam("lang", "")}>
-          All languages
+          {t("allLanguages")}
         </Chip>
         {facets.languages.map((l) => (
           <Chip
@@ -194,7 +202,7 @@ function FilterControls({
             active={lang === l.code}
             onClick={() => setParam("lang", lang === l.code ? "" : l.code)}
           >
-            {l.name}
+            {languageName(tLang, l)}
             <span
               className={cn(
                 "ml-1",
@@ -224,7 +232,7 @@ function FilterControls({
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {opt.label}
+              {t(opt.label)}
             </button>
           ))}
         </div>
@@ -234,9 +242,9 @@ function FilterControls({
           <SlidersHorizontal className="size-4 shrink-0 text-muted-foreground" />
           <div className="flex-1">
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Max price</span>
+              <span>{t("maxPrice")}</span>
               <span className="font-medium text-foreground">
-                {priceActive ? `${som.format(max)} so'm` : "Any"}
+                {priceActive ? `${som.format(max)} ${tCommon("som")}` : t("any")}
               </span>
             </div>
             <Slider
@@ -261,13 +269,13 @@ function FilterControls({
         <Select value={sort} onValueChange={(v) => setParam("sort", v)}>
           <SelectTrigger className="h-9 lg:w-[190px]">
             <SelectValue>
-              {SORT_OPTIONS.find((opt) => opt.value === sort)?.label}
+              {t(SORT_OPTIONS.find((opt) => opt.value === sort)?.label ?? "sortRecommended")}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {SORT_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
+                {t(opt.label)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -286,7 +294,7 @@ function FilterControls({
             className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
           >
             <X className="size-3.5" />
-            Clear
+            {t("clear")}
           </button>
         )}
       </div>
