@@ -55,8 +55,12 @@ build: ## Compile all binaries into ./bin
 	go build -o bin/ ./cmd/...
 
 .PHONY: test
-test: ## Run tests
+test: ## Run the unit suite (no database needed)
 	go test ./...
+
+.PHONY: test-integration
+test-integration: ## DB-enforced invariants against a real Postgres (Docker, or TEST_DATABASE_URL)
+	go test -tags integration -count=1 ./internal/dbtest/...
 
 .PHONY: vet
 vet: ## go vet

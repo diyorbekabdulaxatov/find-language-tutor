@@ -35,14 +35,15 @@ make seed           # load the demo teacher catalog
 make db-reset       # wipe volumes, migrate, seed — clean slate
 make run            # HTTP API on :8080
 make worker         # background worker (reminders/emails) — separate terminal
-make test           # go test ./...
+make test           # go test ./... (unit suite — no database)
+make test-integration  # DB-enforced invariants against a real Postgres (testcontainers; Docker, or TEST_DATABASE_URL naming a *test* db)
 make vet
 make sqlc           # regenerate internal/db/sqlc from internal/db/queries (needs sqlc on PATH)
 
 go test ./internal/bookings/ -run TestSlotGeneration -v   # single package / test
 ```
 
-`sqlc` is a standalone binary (`go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`), deliberately **not** a `go tool` dependency. The test suite needs **no database** (fakes + httptest throughout). Copy `.env.example` to `.env` for local dev; `AUTH_JWT_SECRET` falls back to an insecure dev value when unset (required in production).
+`sqlc` is a standalone binary (`go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`), deliberately **not** a `go tool` dependency. The unit suite needs **no database** (fakes + httptest throughout). The things only Postgres enforces — the `EXCLUDE` double-booking constraints, webhook idempotency via `23505`, the jsonb round-trip, the payout-ledger `CHECK`, and that every migration rolls back — live in `internal/dbtest` behind the `integration` build tag (`make test-integration`); `dbtest.Pool(t)` hands a test a freshly migrated database and **drops the schema first**, which is why `TEST_DATABASE_URL` must name a database containing "test". Copy `.env.example` to `.env` for local dev; `AUTH_JWT_SECRET` falls back to an insecure dev value when unset (required in production).
 
 ### Architecture
 
