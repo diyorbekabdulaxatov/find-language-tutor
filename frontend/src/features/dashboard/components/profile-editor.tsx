@@ -101,6 +101,7 @@ export function ProfileEditor({
           <Input
             id="displayName"
             value={values.displayName}
+            maxLength={120}
             onChange={(e) => set("displayName", e.target.value)}
             required
           />
@@ -109,6 +110,7 @@ export function ProfileEditor({
           <Input
             id="headline"
             value={values.headline}
+            maxLength={120}
             onChange={(e) => set("headline", e.target.value)}
             required
           />

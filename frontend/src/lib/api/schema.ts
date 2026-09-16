@@ -2619,7 +2619,12 @@ export interface components {
              * @default 0
              */
             price_amount_minor: number;
-            price_currency?: components["schemas"]["Currency"];
+            /**
+             * @description UZS only — same as teacher pricing; the payout ledger has no currency dimension.
+             * @default UZS
+             * @enum {string}
+             */
+            price_currency: "UZS";
         };
         UpdateCourseRequest: {
             title: string;
@@ -2635,7 +2640,12 @@ export interface components {
              * @default 0
              */
             price_amount_minor: number;
-            price_currency?: components["schemas"]["Currency"];
+            /**
+             * @description UZS only — same as teacher pricing; the payout ledger has no currency dimension.
+             * @default UZS
+             * @enum {string}
+             */
+            price_currency: "UZS";
         };
         /** @enum {string} */
         CourseItemKind: "video" | "resource";
@@ -5258,7 +5268,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
+            /** @description `forbidden` — not the owner; or `teacher_not_approved` — the owning teacher profile is pending / rejected / suspended. Only an approved teacher's courses go on the storefront; the catalog detail and purchase routes 404 a course whose teacher is not approved, so a later suspension takes it down without touching the course row. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             404: components["responses"]["NotFound"];
         };
     };

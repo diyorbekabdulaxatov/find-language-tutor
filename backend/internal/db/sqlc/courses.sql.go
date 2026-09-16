@@ -748,19 +748,25 @@ func (q *Queries) GetTeacherOwnerID(ctx context.Context, id uuid.UUID) (uuid.Nul
 }
 
 const getTeacherSummary = `-- name: GetTeacherSummary :one
-SELECT id, slug, display_name FROM teachers WHERE id = $1
+SELECT id, slug, display_name, (status = 'approved') AS approved FROM teachers WHERE id = $1
 `
 
 type GetTeacherSummaryRow struct {
 	ID          uuid.UUID
 	Slug        string
 	DisplayName string
+	Approved    bool
 }
 
 func (q *Queries) GetTeacherSummary(ctx context.Context, id uuid.UUID) (GetTeacherSummaryRow, error) {
 	row := q.db.QueryRow(ctx, getTeacherSummary, id)
 	var i GetTeacherSummaryRow
-	err := row.Scan(&i.ID, &i.Slug, &i.DisplayName)
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.DisplayName,
+		&i.Approved,
+	)
 	return i, err
 }
 

@@ -19,9 +19,12 @@ func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Disca
 
 type fakeRepo struct {
 	teacherByOwner map[uuid.UUID]uuid.UUID
-	courses        map[uuid.UUID]Course
-	sections       map[uuid.UUID]Section
-	items          map[uuid.UUID]Item
+	// unapprovedTeachers marks teacher ids whose profile is not approved
+	// (default: every teacher is approved, matching the seed).
+	unapprovedTeachers map[uuid.UUID]bool
+	courses            map[uuid.UUID]Course
+	sections           map[uuid.UUID]Section
+	items              map[uuid.UUID]Item
 
 	// phase C2
 	enrollments map[uuid.UUID]Enrollment
@@ -30,12 +33,13 @@ type fakeRepo struct {
 
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
-		teacherByOwner: map[uuid.UUID]uuid.UUID{},
-		courses:        map[uuid.UUID]Course{},
-		sections:       map[uuid.UUID]Section{},
-		items:          map[uuid.UUID]Item{},
-		enrollments:    map[uuid.UUID]Enrollment{},
-		progress:       map[uuid.UUID]ItemProgress{},
+		teacherByOwner:     map[uuid.UUID]uuid.UUID{},
+		unapprovedTeachers: map[uuid.UUID]bool{},
+		courses:            map[uuid.UUID]Course{},
+		sections:           map[uuid.UUID]Section{},
+		items:              map[uuid.UUID]Item{},
+		enrollments:        map[uuid.UUID]Enrollment{},
+		progress:           map[uuid.UUID]ItemProgress{},
 	}
 }
 
@@ -520,11 +524,16 @@ func TestService_Update(t *testing.T) {
 
 	// cover asset owned and an image: succeeds.
 	e.file.put(coverID, ownerA, "image/png")
-	updated, err := e.svc.Update(ctx, ownerA, d.Course.ID, "New Title", "sub2", "desc2", &coverID, 150000, "USD")
+	if _, err := e.svc.Update(ctx, ownerA, d.Course.ID, "New Title", "sub2", "desc2", &coverID, 150000, "USD"); err == nil {
+		t.Error("USD should be rejected — courses are UZS-only like teacher pricing")
+	} else {
+		asValidationError(t, err)
+	}
+	updated, err := e.svc.Update(ctx, ownerA, d.Course.ID, "New Title", "sub2", "desc2", &coverID, 150000, "UZS")
 	if err != nil {
 		t.Fatalf("valid update: %v", err)
 	}
-	if updated.Course.Title != "New Title" || updated.Course.PriceAmountMinor != 150000 || updated.Course.PriceCurrency != "USD" {
+	if updated.Course.Title != "New Title" || updated.Course.PriceAmountMinor != 150000 || updated.Course.PriceCurrency != "UZS" {
 		t.Errorf("unexpected course: %+v", updated.Course)
 	}
 	if updated.Course.CoverAssetID == nil || *updated.Course.CoverAssetID != coverID {

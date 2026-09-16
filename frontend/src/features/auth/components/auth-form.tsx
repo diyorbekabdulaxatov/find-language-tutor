@@ -76,6 +76,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
             id="displayName"
             name="name"
             autoComplete="name"
+            maxLength={80}
             required
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -12,6 +13,10 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/auth"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/web"
 )
+
+// uploadReadTimeout is how long a single upload may take to arrive: 500 MB at
+// a modest 1 MB/s is ~8 minutes.
+const uploadReadTimeout = 15 * time.Minute
 
 // Handler adapts HTTP to the Service. The *gin.Context never leaves this file.
 type Handler struct {
@@ -56,6 +61,11 @@ func (h *Handler) Upload(c *gin.Context) {
 	// Cap what gin buffers/parses at the wider of the two limits (video); the
 	// service enforces the tighter per-type cap once it knows the content type.
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, MaxVideoUploadBytes+(1<<20))
+	// The server deliberately has no ReadTimeout (it would bound the whole
+	// body); this route is the one that reads big bodies, so bound it here.
+	// Errors are ignored: an unsupported ResponseWriter just keeps the
+	// server default.
+	_ = http.NewResponseController(c.Writer).SetReadDeadline(time.Now().Add(uploadReadTimeout))
 
 	fh, err := c.FormFile("file")
 	if err != nil {

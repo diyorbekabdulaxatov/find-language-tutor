@@ -6,6 +6,7 @@ import (
 	"net/mail"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -15,6 +16,9 @@ import (
 // minPasswordLen is the floor enforced at registration. No max here — argon2
 // handles long inputs fine; the handler caps the request body size.
 const minPasswordLen = 8
+
+// maxDisplayNameLen bounds what ends up in headers, emails and admin tables.
+const maxDisplayNameLen = 80
 
 // NewUser / NewSession are the repository's create inputs.
 type NewUser struct {
@@ -167,6 +171,9 @@ func (s *Service) Register(ctx context.Context, email, password, displayName, us
 	}
 	if displayName == "" {
 		return AuthResult{}, invalid("A display name is required.")
+	}
+	if utf8.RuneCountInString(displayName) > maxDisplayNameLen {
+		return AuthResult{}, invalid("Display name must be at most %d characters.", maxDisplayNameLen)
 	}
 
 	hash, err := HashPassword(password)
@@ -401,6 +408,9 @@ func (s *Service) UpdateCurrentUser(ctx context.Context, id uuid.UUID, patch Use
 		name := strings.TrimSpace(*patch.DisplayName)
 		if name == "" {
 			return User{}, invalid("A display name is required.")
+		}
+		if utf8.RuneCountInString(name) > maxDisplayNameLen {
+			return User{}, invalid("Display name must be at most %d characters.", maxDisplayNameLen)
 		}
 		patch.DisplayName = &name
 	}

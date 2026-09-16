@@ -23,7 +23,7 @@ func (r *fakeRepo) TeacherOwnerID(_ context.Context, teacherID uuid.UUID) (uuid.
 }
 
 func (r *fakeRepo) TeacherSummaryByID(_ context.Context, teacherID uuid.UUID) (TeacherSummary, error) {
-	return TeacherSummary{ID: teacherID, DisplayName: "Teacher", Slug: "teacher-" + teacherID.String()[:8]}, nil
+	return TeacherSummary{ID: teacherID, DisplayName: "Teacher", Slug: "teacher-" + teacherID.String()[:8], Approved: !r.unapprovedTeachers[teacherID]}, nil
 }
 
 func (r *fakeRepo) CatalogList(_ context.Context, q CatalogQuery) ([]CatalogEntry, int, error) {
@@ -918,5 +918,43 @@ func TestService_Learn_StillWorksAfterSuspension(t *testing.T) {
 	}
 	if learn.EnrollmentID == nil {
 		t.Error("expected the student's enrollment id to still be present")
+	}
+}
+
+// --- moderation gate: the owning teacher must be approved ---
+
+func TestService_UnapprovedTeacher_CannotPublishAndCourseIsNotForSale(t *testing.T) {
+	e := newTestEnv()
+	ctx := context.Background()
+	owner, teacherID := e.seedTeacher()
+	// Published while approved, the way a suspension would find it.
+	d, _ := e.publishWithOneVideoItem(t, owner, 1000)
+
+	e.repo.unapprovedTeachers[teacherID] = true
+
+	// Direct link: hidden like an unpublished course, not a distinguishable
+	// "teacher suspended" — nothing leaks about the teacher.
+	if _, err := e.svc.CatalogDetail(ctx, uuid.Nil, d.Course.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("catalog detail: want ErrNotFound, got %v", err)
+	}
+	if _, _, err := e.svc.Purchase(ctx, uuid.New(), d.Course.ID, "pm_ok"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("purchase: want ErrNotFound, got %v", err)
+	}
+
+	// Re-publishing a draft is refused with a code the owner can act on.
+	if _, err := e.svc.SetPublished(ctx, owner, d.Course.ID, false); err != nil {
+		t.Fatalf("unpublish: %v", err)
+	}
+	if _, err := e.svc.SetPublished(ctx, owner, d.Course.ID, true); !errors.Is(err, ErrTeacherNotApproved) {
+		t.Errorf("publish while unapproved: want ErrTeacherNotApproved, got %v", err)
+	}
+
+	// Approval restores everything without touching the course.
+	delete(e.repo.unapprovedTeachers, teacherID)
+	if _, err := e.svc.SetPublished(ctx, owner, d.Course.ID, true); err != nil {
+		t.Fatalf("publish once approved: %v", err)
+	}
+	if _, err := e.svc.CatalogDetail(ctx, uuid.Nil, d.Course.ID); err != nil {
+		t.Errorf("catalog detail once approved: %v", err)
 	}
 }
