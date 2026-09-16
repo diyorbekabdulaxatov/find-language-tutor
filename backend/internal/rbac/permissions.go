@@ -52,7 +52,7 @@ var Catalog = []PermissionInfo{
 	{PermDisputesResolve, "View the dispute queue and resolve or reject disputes."},
 	{PermPayoutsView, "View the teacher payout ledger and past payout batches."},
 	{PermPayoutsRun, "Run a payout batch, paying out every cleared teacher earning."},
-	{PermReviewsModerate, "Hide or remove reviews (not yet wired to an endpoint)."},
+	{PermReviewsModerate, "View the review moderation queue, and hide, restore or permanently remove a review."},
 	{PermCoursesModerate, "View the course moderation queue, and suspend or unsuspend a course."},
 }
 

@@ -4,7 +4,8 @@ An italki-style, two-sided online language-tutoring marketplace, scoped to
 **Uzbekistan only**. Students browse teacher profiles, book paid 1-on-1 video
 lessons against a teacher's weekly availability, pay for them, attend, and leave
 reviews; teachers manage their profile, hours, lessons, and payouts. Prices are
-shown in **UZS** (`120,000 so'm`) and the UI is in **English** (no i18n yet).
+shown in **UZS** (`120,000 so'm`) and the whole product — UI, API error
+messages, transactional email — speaks **English, Russian and Uzbek**.
 Most teachers are local (`Asia/Tashkent`), so timezone conversion matters mainly
 for the few based abroad.
 
@@ -35,14 +36,26 @@ moderation (approve / reject / suspend / verify), bookings admin with
 force-cancel, lesson-dispute queue, teacher payouts (holding window + payout
 runs), and review moderation.
 
+**Learning resources and video courses complete**: a reusable resource library
+(materials, articles, auto-graded quizzes, listening/reading tasks,
+teacher-graded writing) that attaches to lessons as homework with a grading
+inbox, and self-paced video courses (authoring with a curriculum builder, a
+public catalog, purchase, a player with progress, revenue-share payouts, admin
+moderation).
+
+**Hardening and i18n complete**: rate limiting on the auth surface and uploads
+(Redis, shared across instances), trusted-proxy handling, security headers,
+request-body caps, upload content sniffing; UI + API messages + email in
+en / ru / uz with tests that fail on a missing translation; Prometheus
+`/metrics`.
+
 **Payment-webhook signature hardening** is in place (pluggable verifier,
 HMAC-SHA256 over `timestamp.body`, replay-safe). A **real Payme / Click / Uzum
 adapter is not built** — Stripe does not operate in Uzbekistan and a live
 integration needs a merchant account and sandbox. The port and verifier are
-ready for one to drop in.
-
-Also still open: auth rate-limiting, email verification / password reset, object
-storage for uploads, frontend error boundaries.
+ready for one to drop in. Likewise real payout disbursement, cloud object
+storage (uploads are on local disk behind a `Blob` port), and CI/Docker images
+are parked until the project is meant to ship.
 
 ## Architecture
 
@@ -61,7 +74,8 @@ between them.
   API and the test suite run without Redis.
 - **Layout:** module-per-domain under `internal/` (`auth`, `teachers`,
   `availability`, `bookings`, `payments`, `lessons`, `reviews`, `disputes`,
-  `payouts`, `rbac`, `admin`, `email`). Each module owns its
+  `payouts`, `rbac`, `admin`, `files`, `resources`, `courses`, `email`), plus
+  cross-cutting `i18n`, `ratelimit`, `web`, `httpapi`. Each module owns its
   `dto.go` / `service.go` / `repository_postgres.go` / `handler.go` and mounts
   its own routes. Business logic lives in the service layer; handlers only bind →
   call the service → render JSON, and `*gin.Context` never crosses the handler
@@ -149,14 +163,18 @@ backend/
   cmd/                 api, worker, migrate, seed binaries
   internal/<module>/   one folder per domain (dto/service/repository/handler)
   internal/db/         queries/ (hand-written SQL) + sqlc/ (generated)
+  internal/i18n/       message catalogs (ru/uz keyed by the English source) + guards
+  internal/dbtest/     integration tests against a real Postgres (build tag `integration`)
   internal/web/        shared HTTP primitives (error envelope, helpers)
-  internal/httpapi/    router assembly, middleware, health check
+  internal/httpapi/    router assembly, middleware, health check, /metrics
   migrations/          golang-migrate SQL files (up + down)
 frontend/
+  messages/            UI catalogs en/ru/uz (next-intl, typed keys)
   src/app/             Next.js App Router routes (incl. /admin/*)
   src/features/<mod>/  api.ts data layer + module components (mirrors backend)
   src/components/ui/   owned shadcn/ui primitives
-  src/lib/             api client + schema, format.ts (money), country, i18n
+  src/i18n/            locale config, request config, switcher action
+  src/lib/             api client + schema, format.ts (money), country, i18n helpers
   src/types/           hand-written camelCase view-models
 openapi.yaml           hand-written wire contract (source of truth)
 ```
@@ -173,7 +191,8 @@ openapi.yaml           hand-written wire contract (source of truth)
 | `make db-reset` | Drop volumes, recreate, migrate, seed — clean slate |
 | `make run` | Run the HTTP API on `:8080` |
 | `make worker` | Run the background worker |
-| `make test` | `go test ./...` |
+| `make test` | `go test ./...` (unit suite, no database) |
+| `make test-integration` | DB-enforced invariants against a real Postgres (Docker or `TEST_DATABASE_URL`) |
 | `make vet` | `go vet ./...` |
 | `make sqlc` | Regenerate `internal/db/sqlc` from the query files |
 
@@ -188,14 +207,22 @@ dependency.
 | `npm run dev` | Dev server on `http://localhost:3000` (needs the backend on `:8080`) |
 | `npm run build` | Production build + full typecheck |
 | `npm run lint` | ESLint |
+| `npm test` | Vitest — pure logic + message-catalogue checks |
 | `npm run gen:api` | Regenerate `src/lib/api/schema.ts` from `../openapi.yaml` |
 
 ## Testing
 
-- **Backend:** `go test ./...` needs **no database** — fakes and `httptest`
-  throughout.
-- **Frontend:** no unit-test setup. Verification is `npm run build` +
-  `npm run lint` + clicking through against the live backend.
+- **Backend:** `make test` needs **no database** — fakes and `httptest`
+  throughout. `make test-integration` (build tag `integration`) runs the things
+  only Postgres enforces — `EXCLUDE` double-booking, webhook idempotency, the
+  jsonb round-trip, ledger `CHECK`s, and every migration's rollback — against a
+  throwaway container. `internal/i18n`'s tests fail on any user-facing message
+  without a ru/uz translation or with scrambled format verbs.
+- **Frontend:** `npm test` (Vitest) covers the pure logic — timezone math,
+  formatting, locale negotiation, the auth fetch wrapper's refresh-and-retry —
+  and the message catalogues (key parity, ICU syntax, argument/tag parity).
+  UI is verified by `npm run build` + `npm run lint` + clicking through
+  against the live backend.
 
 ## Branches
 
