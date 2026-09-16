@@ -224,7 +224,8 @@
     "emailChangeUnsupported": "Elektron pochtani o'zgartirish hozircha qo'llab-quvvatlanmaydi.",
     "saveChanges": "Saqlash",
     "saved": "Saqlandi.",
-    "couldNotSave": "O'zgarishlarni saqlab bo'lmadi. Qayta urinib ko'ring."
+    "couldNotSave": "O'zgarishlarni saqlab bo'lmadi. Qayta urinib ko'ring.",
+    "teacherSignupHint": "Siz o'qituvchi sifatida ro'yxatdan o'tmoqdasiz — keyin profilingizni to'ldirasiz, u tekshiruvdan so'ng saytda ko'rinadi."
   },
   "resourceTypes": {
     "material": "Material",

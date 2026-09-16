@@ -15,12 +15,9 @@ test("a new student can sign up, book a lesson and pay for it", async ({ page })
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("password123");
   await page.getByRole("button", { name: "Sign up" }).click();
-  // Lands on the dashboard (the ?next= default) and the header shows the account.
-  await expect(page).toHaveURL(/\/dashboard/);
+  // A new student lands on the teacher catalog, signed in.
+  await expect(page).toHaveURL(/\/teachers$/);
   await expect(page.getByRole("button", { name: "Account menu" })).toBeVisible();
-
-  // --- find a teacher ---
-  await page.goto("/teachers");
   await expect(page.getByRole("heading", { name: "Find your teacher" })).toBeVisible();
   await page.getByRole("link", { name: /Nodira Karimova/ }).first().click();
   await expect(page.getByRole("heading", { name: /Nodira Karimova/ })).toBeVisible();
@@ -65,4 +62,15 @@ test("the UI follows the language switcher", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "Найдите преподавателя, с которым вы заговорите" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("lang", "ru");
+});
+
+test("signing up to teach lands on the profile form", async ({ page }) => {
+  await page.goto("/signup?role=teacher");
+  await expect(page.getByText(/signing up to teach/)).toBeVisible();
+  await page.getByLabel("Name").fill("E2E Teacher");
+  await page.getByLabel("Email").fill(`e2e-teacher-${Date.now()}@example.com`);
+  await page.getByLabel("Password").fill("password123");
+  await page.getByRole("button", { name: "Sign up" }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page.getByRole("button", { name: "Create profile" })).toBeVisible();
 });

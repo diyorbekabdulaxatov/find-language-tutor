@@ -2,8 +2,9 @@
 
 /**
  * Shared sign-in / sign-up form. On success it sends the visitor to the
- * `?next=` path (validated to be a local path) or falls back to /dashboard.
- * Server errors from {@link AuthError} are shown inline.
+ * `?next=` path (validated to be a local path) or to a sensible default for
+ * who they are — see postAuthDestination. Server errors from {@link AuthError}
+ * are shown inline.
  */
 
 import { useEffect, useState } from "react";
@@ -12,6 +13,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/features/auth/auth-context";
 import { AuthError } from "@/features/auth/api";
+import { postAuthDestination } from "@/features/auth/destination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,12 +25,6 @@ const COPY = {
   signup: { cta: "signUp", altText: "haveAccount", altHref: "/login", altLink: "logIn" },
 } as const;
 
-/** Only allow same-site, absolute-path redirects. */
-function safeNext(next: string | null): string {
-  if (next && next.startsWith("/") && !next.startsWith("//")) return next;
-  return "/dashboard";
-}
-
 export function AuthForm({ mode }: { mode: Mode }) {
   const { login, register, status } = useAuth();
   const router = useRouter();
@@ -36,13 +32,17 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const copy = COPY[mode];
   const t = useTranslations("auth");
   const tCommon = useTranslations("common");
+  const role = search.get("role");
+  const destination = postAuthDestination({ mode, next: search.get("next"), role });
+  // The other form (log in ↔ sign up) keeps the role and return path.
+  const altHref = search.toString() ? `${copy.altHref}?${search}` : copy.altHref;
 
   // Already signed in (e.g. hit /login from a bookmark) — move along.
   useEffect(() => {
     if (status === "authenticated") {
-      router.replace(safeNext(search.get("next")));
+      router.replace(destination);
     }
-  }, [status, router, search]);
+  }, [status, router, destination]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -60,7 +60,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
       } else {
         await login(email, password);
       }
-      router.replace(safeNext(search.get("next")));
+      router.replace(destination);
     } catch (err) {
       setError(err instanceof AuthError ? err.message : tCommon("somethingWrong"));
       setSubmitting(false);
@@ -69,6 +69,9 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+      {mode === "signup" && role === "teacher" && (
+        <p className="rounded-lg bg-primary/8 px-3 py-2 text-sm text-muted-foreground">{t("teacherSignupHint")}</p>
+      )}
       {mode === "signup" && (
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="displayName">{t("name")}</Label>
@@ -137,7 +140,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
       <p className="text-center text-sm text-muted-foreground">
         {t(copy.altText)}{" "}
         <Link
-          href={copy.altHref}
+          href={altHref}
           className="font-medium text-primary hover:underline"
         >
           {t(copy.altLink)}
