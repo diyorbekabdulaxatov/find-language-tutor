@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { Popover as PopoverPrimitive } from "radix-ui";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,7 @@ export function TimezoneSelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const zones = useMemo(() => allZones(), []);
+  const t = useTranslations("availability");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -67,7 +69,7 @@ export function TimezoneSelect({
           className="flex h-9 w-full items-center justify-between rounded-lg border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           <span className={cn(!value && "text-muted-foreground")}>
-            {value || "Select a timezone"}
+            {value || t("selectTimezone")}
             {value && (
               <span className="ml-2 text-muted-foreground">
                 {offsetLabel(value)}
@@ -87,13 +89,13 @@ export function TimezoneSelect({
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search zones…"
+            placeholder={t("searchZones")}
             className="mb-1 w-full rounded-lg bg-transparent px-2.5 py-2 text-sm outline-none"
           />
           <div className="max-h-64 overflow-y-auto">
             {filtered.length === 0 && (
               <p className="px-2.5 py-2 text-sm text-muted-foreground">
-                No match.
+                {t("noMatch")}
               </p>
             )}
             {filtered.map((z) => (

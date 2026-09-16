@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -13,10 +14,10 @@ import {
 } from "@/components/ui/select";
 import type { CourseSort } from "@/features/courses/types";
 
-const SORT_OPTIONS: { value: CourseSort; label: string }[] = [
-  { value: "newest", label: "Newest" },
-  { value: "price_asc", label: "Price: low to high" },
-  { value: "price_desc", label: "Price: high to low" },
+const SORT_OPTIONS: { value: CourseSort; label: "sortNewest" | "sortPriceAsc" | "sortPriceDesc" }[] = [
+  { value: "newest", label: "sortNewest" },
+  { value: "price_asc", label: "sortPriceAsc" },
+  { value: "price_desc", label: "sortPriceDesc" },
 ];
 
 /**
@@ -30,6 +31,7 @@ export function CourseCatalogFilters() {
   const params = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [q, setQ] = useState(params.get("q") ?? "");
+  const t = useTranslations("courses");
 
   const setParam = useCallback(
     (key: string, value: string) => {
@@ -67,19 +69,19 @@ export function CourseCatalogFilters() {
           onChange={(e) => setQ(e.target.value)}
           onBlur={() => setParam("q", q.trim())}
           type="search"
-          placeholder="Search courses…"
+          placeholder={t("searchPlaceholder")}
           className="h-10 w-full rounded-lg border border-input bg-transparent pl-9 pr-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />
       </form>
 
       <Select value={sort} onValueChange={(v) => setParam("sort", v === "newest" ? "" : v)}>
         <SelectTrigger className="h-10 sm:w-[190px]">
-          <SelectValue>{SORT_OPTIONS.find((opt) => opt.value === sort)?.label}</SelectValue>
+          <SelectValue>{t(SORT_OPTIONS.find((opt) => opt.value === sort)?.label ?? "sortNewest")}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           {SORT_OPTIONS.map((opt) => (
             <SelectItem key={opt.value} value={opt.value}>
-              {opt.label}
+              {t(opt.label)}
             </SelectItem>
           ))}
         </SelectContent>

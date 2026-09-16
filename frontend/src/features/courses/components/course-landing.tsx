@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, CheckCircle2, FileText, Film, GraduationCap, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatMoney } from "@/lib/format";
@@ -34,6 +35,8 @@ export function CourseLanding({ id }: { id: string }) {
   const [course, setCourse] = useState<CourseCatalogDetail | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "not-found" | "error">("loading");
   const [justEnrolled, setJustEnrolled] = useState<CourseEnrollment | null>(null);
+  const t = useTranslations("courses");
+  const locale = useLocale();
 
   useEffect(() => {
     if (status === "loading") return;
@@ -73,12 +76,10 @@ export function CourseLanding({ id }: { id: string }) {
   if (state === "not-found" || !course) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-24 text-center sm:px-6">
-        <p className="font-display text-2xl">Course not found</p>
-        <p className="mt-2 text-sm text-muted-foreground">
-          It may have been unpublished, or the link is wrong.
-        </p>
+        <p className="font-display text-2xl">{t("notFound")}</p>
+        <p className="mt-2 text-sm text-muted-foreground">{t("notFoundBody")}</p>
         <Button asChild className="mt-6">
-          <Link href="/courses/catalog">Browse courses</Link>
+          <Link href="/courses/catalog">{t("browseCourses")}</Link>
         </Button>
       </div>
     );
@@ -88,7 +89,7 @@ export function CourseLanding({ id }: { id: string }) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-24 text-center sm:px-6">
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Could not load this course. Please try again.
+          {t("couldNotLoad")}
         </p>
       </div>
     );
@@ -105,7 +106,7 @@ export function CourseLanding({ id }: { id: string }) {
         className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
-        All courses
+        {t("allCourses")}
       </Link>
 
       <div className="mt-5 grid gap-6 lg:grid-cols-[1fr_340px]">
@@ -144,8 +145,7 @@ export function CourseLanding({ id }: { id: string }) {
 
             <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-muted-foreground">
               <Layers className="size-4" />
-              {course.sections.length} {course.sections.length === 1 ? "section" : "sections"} ·{" "}
-              {totalItems} {totalItems === 1 ? "lesson" : "lessons"}
+              {t("sections", { count: course.sections.length })} · {t("lessons", { count: totalItems })}
             </p>
           </div>
         </div>
@@ -155,25 +155,25 @@ export function CourseLanding({ id }: { id: string }) {
           <div className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-card">
             <div className="flex items-end gap-1.5">
               <span className="font-display text-3xl text-foreground">
-                {free ? "Free" : formatMoney(course.price)}
+                {free ? t("free") : formatMoney(course.price, locale)}
               </span>
             </div>
 
             <div className="mt-5">
               {course.isOwner ? (
                 <Button asChild size="lg" className="w-full">
-                  <Link href={`/courses/${course.id}/edit`}>Edit course</Link>
+                  <Link href={`/courses/${course.id}/edit`}>{t("editCourse")}</Link>
                 </Button>
               ) : enrolled ? (
                 <div className="flex flex-col gap-3">
                   {justEnrolled && (
                     <p className="inline-flex items-center gap-2 rounded-lg bg-mint/12 px-3 py-2 text-sm font-medium text-mint">
                       <CheckCircle2 className="size-4" />
-                      You&rsquo;re enrolled
+                      {t("youreEnrolled")}
                     </p>
                   )}
                   <Button asChild size="lg" className="w-full">
-                    <Link href={`/learn/${course.id}`}>Continue learning</Link>
+                    <Link href={`/learn/${course.id}`}>{t("continueLearning")}</Link>
                   </Button>
                 </div>
               ) : (
@@ -187,7 +187,7 @@ export function CourseLanding({ id }: { id: string }) {
 
             {!course.isOwner && (
               <p className="mt-5 rounded-xl bg-primary/8 p-3 text-xs text-muted-foreground">
-                Watch on your own schedule — lifetime access once you enroll.
+                {t("lifetimeAccess")}
               </p>
             )}
           </div>
@@ -197,7 +197,7 @@ export function CourseLanding({ id }: { id: string }) {
         <div className="space-y-6 lg:col-start-1 lg:row-start-2">
           {course.description && (
             <section className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-soft">
-              <h2 className="font-display text-xl">About this course</h2>
+              <h2 className="font-display text-xl">{t("aboutCourse")}</h2>
               <div className="mt-3 max-w-[64ch] space-y-4 text-sm leading-relaxed text-foreground/90">
                 {course.description.split("\n\n").map((para, i) => (
                   <p key={i}>{para}</p>
@@ -207,7 +207,7 @@ export function CourseLanding({ id }: { id: string }) {
           )}
 
           <section className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-soft">
-            <h2 className="font-display text-xl">Curriculum</h2>
+            <h2 className="font-display text-xl">{t("curriculum")}</h2>
             <ul className="mt-4 flex flex-col gap-4">
               {course.sections.map((section) => (
                 <li key={section.id}>
@@ -223,18 +223,18 @@ export function CourseLanding({ id }: { id: string }) {
                         ) : (
                           <FileText className="size-3.5 shrink-0" />
                         )}
-                        {item.title || (item.kind === "video" ? "Video" : "Resource")}
+                        {item.title || (item.kind === "video" ? t("video") : t("resource"))}
                       </li>
                     ))}
                     {section.items.length === 0 && (
-                      <li className="text-sm text-muted-foreground/70">Nothing here yet.</li>
+                      <li className="text-sm text-muted-foreground/70">{t("nothingHereYet")}</li>
                     )}
                   </ul>
                 </li>
               ))}
               {course.sections.length === 0 && (
                 <li className="text-sm text-muted-foreground">
-                  This course&rsquo;s curriculum isn&rsquo;t published yet.
+                  {t("curriculumNotPublished")}
                 </li>
               )}
             </ul>

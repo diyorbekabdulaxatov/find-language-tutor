@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { CreditCard, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
@@ -32,6 +33,9 @@ export function PaymentForm({
   const [method, setMethod] = useState<MethodToken>("pm_ok");
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
+  const t = useTranslations("bookings");
+  const locale = useLocale();
+  const METHOD_LABEL = { pm_ok: "testCardOk", pm_decline: "testCardDeclined" } as const;
 
   async function handlePay() {
     setPaying(true);
@@ -40,30 +44,26 @@ export function PaymentForm({
       onPaid(await payBooking(bookingId, method));
     } catch (err) {
       setPaying(false);
-      setError(
-        err instanceof BookingError
-          ? err.message
-          : "Payment could not be processed. Please try again.",
-      );
+      setError(err instanceof BookingError ? err.message : t("paymentFailed"));
     }
   }
 
   return (
     <div className="flex flex-col gap-5 rounded-2xl border border-border bg-card p-6">
       <div className="flex items-center justify-between">
-        <h2 className="font-display text-xl">Payment</h2>
+        <h2 className="font-display text-xl">{t("payment")}</h2>
         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-          <Lock className="size-3" /> Simulated — no real charge
+          <Lock className="size-3" /> {t("simulated")}
         </span>
       </div>
 
       <div className="flex items-baseline justify-between rounded-xl bg-muted/60 px-4 py-3">
-        <span className="text-sm text-muted-foreground">Amount due</span>
-        <span className="font-display text-2xl">{formatMoney(amount)}</span>
+        <span className="text-sm text-muted-foreground">{t("amountDue")}</span>
+        <span className="font-display text-2xl">{formatMoney(amount, locale)}</span>
       </div>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 text-sm font-medium">Payment method</legend>
+        <legend className="mb-1 text-sm font-medium">{t("paymentMethod")}</legend>
         {TEST_METHODS.map((m) => (
           <label
             key={m.token}
@@ -86,7 +86,7 @@ export function PaymentForm({
               className="accent-primary"
             />
             <CreditCard className="size-4 text-muted-foreground" />
-            <span className="font-medium">{m.label}</span>
+            <span className="font-medium">{t(METHOD_LABEL[m.token])}</span>
             <span className="ml-auto text-muted-foreground">{m.hint}</span>
           </label>
         ))}
@@ -102,12 +102,9 @@ export function PaymentForm({
       )}
 
       <Button size="lg" className="w-full" onClick={handlePay} disabled={paying}>
-        {paying ? "Processing…" : `Pay ${formatMoney(amount)}`}
+        {paying ? t("processing") : t("pay", { amount: formatMoney(amount, locale) })}
       </Button>
-      <p className="text-center text-xs text-muted-foreground">
-        The teacher is paid after the lesson takes place. Cancel any time before
-        then for a full refund.
-      </p>
+      <p className="text-center text-xs text-muted-foreground">{t("teacherPaidAfter")}</p>
     </div>
   );
 }

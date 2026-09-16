@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,6 @@ import {
   type Resource,
   type ResourceContent,
   type ResourceType,
-  typeLabel,
 } from "@/features/resources/types";
 import { FileField } from "./file-field";
 import { QuestionBuilder, newQuestion } from "./question-builder";
@@ -34,6 +34,8 @@ export function ResourceEditor({
 }) {
   const router = useRouter();
   const isEdit = !!initial;
+  const t = useTranslations("resources");
+  const tType = useTranslations("resourceTypes");
 
   const [title, setTitle] = useState(initial?.title ?? "");
   const [instructions, setInstructions] = useState(initial?.instructions ?? "");
@@ -59,7 +61,7 @@ export function ResourceEditor({
       router.push("/resources");
       router.refresh();
     } catch (err) {
-      setError(err instanceof ResourceError ? err.message : "Something went wrong.");
+      setError(err instanceof ResourceError ? err.message : t("somethingWrong"));
       setSaving(false);
     }
   }
@@ -72,20 +74,20 @@ export function ResourceEditor({
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          Resources
+          {t("back")}
         </Link>
         <h1 className="mt-2 font-display text-2xl">
-          {isEdit ? "Edit" : "New"} {typeLabel(type).toLowerCase()}
+          {t(isEdit ? "editTitle" : "newTitle", { type: tType(`long.${type}`) })}
         </h1>
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="title">Title</Label>
+        <Label htmlFor="title">{t("titleLabel")}</Label>
         <Input id="title" required value={title} onChange={(e) => setTitle(e.target.value)} />
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="instructions">Instructions for the student (optional)</Label>
+        <Label htmlFor="instructions">{t("instructions")}</Label>
         <textarea
           id="instructions"
           rows={2}
@@ -100,12 +102,12 @@ export function ResourceEditor({
       {type === "material" && (
         <>
           <FileField
-            label="File"
+            label={t("file")}
             value={content.fileAssetId}
             onChange={(id) => setC({ fileAssetId: id, url: id ? "" : content.url })}
           />
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="url">…or a link</Label>
+            <Label htmlFor="url">{t("orLink")}</Label>
             <Input
               id="url"
               placeholder="https://…"
@@ -115,7 +117,7 @@ export function ResourceEditor({
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="desc">Description (optional)</Label>
+            <Label htmlFor="desc">{t("description")}</Label>
             <textarea
               id="desc"
               rows={2}
@@ -129,12 +131,12 @@ export function ResourceEditor({
 
       {type === "article" && (
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="body">Body</Label>
+          <Label htmlFor="body">{t("body")}</Label>
           <textarea
             id="body"
             rows={12}
             className={textareaCls}
-            placeholder="Markdown is supported."
+            placeholder={t("markdownSupported")}
             value={content.body ?? ""}
             onChange={(e) => setC({ body: e.target.value })}
           />
@@ -144,7 +146,7 @@ export function ResourceEditor({
       {type === "writing" && (
         <>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="prompt">Prompt</Label>
+            <Label htmlFor="prompt">{t("prompt")}</Label>
             <textarea
               id="prompt"
               rows={4}
@@ -154,7 +156,7 @@ export function ResourceEditor({
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="minwords">Minimum words (optional)</Label>
+            <Label htmlFor="minwords">{t("minWords")}</Label>
             <Input
               id="minwords"
               type="number"
@@ -165,7 +167,7 @@ export function ResourceEditor({
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="rubric">Rubric / notes for grading (optional)</Label>
+            <Label htmlFor="rubric">{t("rubric")}</Label>
             <textarea
               id="rubric"
               rows={3}
@@ -179,7 +181,7 @@ export function ResourceEditor({
 
       {type === "listening" && (
         <FileField
-          label="Audio"
+          label={t("audio")}
           accept="audio/*"
           value={content.audioAssetId}
           onChange={(id) => setC({ audioAssetId: id })}
@@ -188,7 +190,7 @@ export function ResourceEditor({
 
       {type === "reading" && (
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="passage">Passage</Label>
+          <Label htmlFor="passage">{t("passage")}</Label>
           <textarea
             id="passage"
             rows={8}
@@ -201,7 +203,7 @@ export function ResourceEditor({
 
       {isQuizLike(type) && (
         <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium">Questions</span>
+          <span className="text-sm font-medium">{t("questions")}</span>
           <QuestionBuilder
             questions={content.questions ?? []}
             onChange={(questions) => setC({ questions })}
@@ -217,7 +219,7 @@ export function ResourceEditor({
 
       <div className="sticky bottom-0 -mx-4 flex items-center gap-3 border-t border-border bg-background px-4 py-4 sm:-mx-6 sm:px-6">
         <Button type="submit" disabled={saving}>
-          {saving ? "Saving…" : isEdit ? "Save changes" : "Create"}
+          {saving ? t("saving") : isEdit ? t("saveChanges") : t("create")}
         </Button>
         {!isEdit && (
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -227,7 +229,7 @@ export function ResourceEditor({
               onChange={(e) => setPublish(e.target.checked)}
               className="accent-primary"
             />
-            Publish now
+            {t("publishNow")}
           </label>
         )}
       </div>

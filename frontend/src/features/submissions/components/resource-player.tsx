@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Download, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fetchFileObjectUrl } from "@/features/resources/api";
@@ -41,6 +42,8 @@ export function ResourcePlayer({
   onSubmissionChange?: (submission: Submission) => void;
 }) {
   const needsSubmission = hasSubmissionFlow(attachment.type) && !previewOnly;
+  const t = useTranslations("player");
+  const tType = useTranslations("resourceTypes");
 
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
@@ -74,9 +77,7 @@ export function ResourcePlayer({
         onSubmissionChangeRef.current?.(s);
       } catch (err) {
         if (!alive) return;
-        setError(
-          err instanceof SubmissionError ? err.message : "Could not load this homework.",
-        );
+        setError(err instanceof SubmissionError ? err.message : t("couldNotLoadHomework"));
         setState("error");
       }
     }
@@ -84,7 +85,7 @@ export function ResourcePlayer({
     return () => {
       alive = false;
     };
-  }, [attachment.resourceId, bookingId, enrollmentId, needsSubmission]);
+  }, [attachment.resourceId, bookingId, enrollmentId, needsSubmission, t]);
 
   useEffect(() => {
     return () => {
@@ -119,7 +120,7 @@ export function ResourcePlayer({
       setAnswers(result.answers);
       onSubmissionChange?.(result);
     } catch (err) {
-      setError(err instanceof SubmissionError ? err.message : "Could not submit that homework.");
+      setError(err instanceof SubmissionError ? err.message : t("couldNotSubmit"));
     } finally {
       setSubmitting(false);
     }
@@ -136,7 +137,7 @@ export function ResourcePlayer({
 
       {previewOnly && hasSubmissionFlow(attachment.type) && (
         <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
-          Preview only — enrolled students answer this as {attachment.type}.
+          {t("previewOnly", { type: tType(attachment.type) })}
         </p>
       )}
 
@@ -161,7 +162,7 @@ export function ResourcePlayer({
                 />
                 {submission.status === "graded" && submission.autoScore == null && (
                   <span className="text-xs text-muted-foreground">
-                    {submission.teacherFeedback ? "See feedback below." : "Graded, no written feedback."}
+                    {submission.teacherFeedback ? t("seeFeedbackBelow") : t("gradedNoFeedback")}
                   </span>
                 )}
               </div>
@@ -188,7 +189,7 @@ export function ResourcePlayer({
 
               {submission.status === "graded" && submission.teacherFeedback && (
                 <div className="rounded-xl border border-border bg-muted/40 p-3 text-sm">
-                  <p className="font-medium">Teacher feedback</p>
+                  <p className="font-medium">{t("teacherFeedback")}</p>
                   <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
                     {submission.teacherFeedback}
                   </p>
@@ -203,7 +204,7 @@ export function ResourcePlayer({
 
               {!locked && (
                 <Button onClick={() => void handleSubmit()} disabled={submitting} className="self-start">
-                  {submitting ? "Submitting…" : "Submit"}
+                  {submitting ? t("submitting") : t("submit")}
                 </Button>
               )}
             </>
@@ -254,6 +255,7 @@ function useFileObjectUrl(fileAssetId: string | undefined) {
 }
 
 function MaterialView({ attachment }: { attachment: AttachedResource }) {
+  const t = useTranslations("player");
   const { content } = attachment;
   const { url: fileObjectUrl, state: fileState } = useFileObjectUrl(content.fileAssetId);
   return (
@@ -262,13 +264,13 @@ function MaterialView({ attachment }: { attachment: AttachedResource }) {
         <p className="whitespace-pre-wrap text-sm">{content.description}</p>
       )}
       {content.fileAssetId && fileState === "error" && (
-        <p className="text-sm text-destructive">Could not load the attached file.</p>
+        <p className="text-sm text-destructive">{t("couldNotLoadFile")}</p>
       )}
       {content.fileAssetId && fileState !== "error" && (
         <Button asChild variant="outline" className="self-start" disabled={!fileObjectUrl}>
           <a href={fileObjectUrl ?? undefined} download target="_blank" rel="noreferrer">
             <Download className="size-4" />
-            {fileObjectUrl ? "Download file" : "Loading file…"}
+            {fileObjectUrl ? t("downloadFile") : t("loadingFile")}
           </a>
         </Button>
       )}
@@ -276,21 +278,22 @@ function MaterialView({ attachment }: { attachment: AttachedResource }) {
         <Button asChild variant="outline" className="self-start">
           <a href={content.url} target="_blank" rel="noreferrer">
             <ExternalLink className="size-4" />
-            Open link
+            {t("openLink")}
           </a>
         </Button>
       )}
       {!content.description && !content.fileAssetId && !content.url && (
-        <p className="text-sm text-muted-foreground">Nothing attached to this material yet.</p>
+        <p className="text-sm text-muted-foreground">{t("nothingAttached")}</p>
       )}
     </div>
   );
 }
 
 function AudioPlayer({ fileAssetId }: { fileAssetId: string }) {
+  const t = useTranslations("player");
   const { url, state } = useFileObjectUrl(fileAssetId);
   if (state === "error") {
-    return <p className="text-sm text-destructive">Could not load the audio.</p>;
+    return <p className="text-sm text-destructive">{t("couldNotLoadAudio")}</p>;
   }
   if (!url) {
     return <div className="h-10 animate-pulse rounded-lg bg-muted" />;
@@ -303,9 +306,10 @@ function AudioPlayer({ fileAssetId }: { fileAssetId: string }) {
 }
 
 function ArticleView({ attachment }: { attachment: AttachedResource }) {
+  const t = useTranslations("player");
   return (
     <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm whitespace-pre-wrap">
-      {attachment.content.body || "This article has no content yet."}
+      {attachment.content.body || t("articleEmpty")}
     </div>
   );
 }
@@ -321,6 +325,7 @@ function QuizForm({
   locked: boolean;
   onChange: (next: Record<string, string[]>) => void;
 }) {
+  const t = useTranslations("player");
   const { content } = attachment;
   return (
     <div className="flex flex-col gap-4">
@@ -386,7 +391,7 @@ function QuizForm({
                 value={value[0] ?? ""}
                 disabled={locked}
                 onChange={(e) => onChange({ ...answers, [q.id]: [e.target.value] })}
-                placeholder="Your answer"
+                placeholder={t("yourAnswer")}
               />
             )}
           </div>
@@ -407,6 +412,7 @@ function WritingForm({
   locked: boolean;
   onChange: (next: Record<string, string[]>) => void;
 }) {
+  const t = useTranslations("player");
   const text = answers.text?.[0] ?? "";
   const wordCount = text.trim() === "" ? 0 : text.trim().split(/\s+/).length;
   const minWords = attachment.content.minWords;
@@ -421,12 +427,12 @@ function WritingForm({
         value={text}
         disabled={locked}
         onChange={(e) => onChange({ ...answers, text: [e.target.value] })}
-        placeholder="Write your response here…"
+        placeholder={t("writeHere")}
         className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
       />
       <p className="text-xs text-muted-foreground">
-        {wordCount} word{wordCount === 1 ? "" : "s"}
-        {minWords ? ` · recommended at least ${minWords}` : ""}
+        {t("wordCount", { count: wordCount })}
+        {minWords ? ` ${t("recommendedMin", { count: minWords })}` : ""}
       </p>
     </div>
   );

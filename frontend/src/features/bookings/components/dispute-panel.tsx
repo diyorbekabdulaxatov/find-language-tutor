@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { ShieldAlert } from "lucide-react";
 import {
   BookingError,
@@ -10,15 +11,16 @@ import {
   type Dispute,
 } from "@/features/bookings/api";
 import { Button } from "@/components/ui/button";
+import { intlLocale } from "@/lib/i18n";
 
-const STATUS_LABEL: Record<Dispute["status"], string> = {
-  open: "Open — a moderator is reviewing this",
-  resolved: "Resolved in favour of the person who raised it",
-  rejected: "Reviewed — closed without action",
-};
+const STATUS_LABEL = {
+  open: "disputeOpen",
+  resolved: "disputeResolved",
+  rejected: "disputeRejected",
+} as const;
 
-function fmtDate(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function fmtDate(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -42,6 +44,8 @@ export function DisputePanel({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const t = useTranslations("bookings");
+  const locale = useLocale();
 
   useEffect(() => {
     if (!hasHistory) return;
@@ -69,11 +73,7 @@ export function DisputePanel({
       setReason("");
       onChanged();
     } catch (e) {
-      setErr(
-        e instanceof BookingError
-          ? e.message
-          : "Could not open the dispute. Try again.",
-      );
+      setErr(e instanceof BookingError ? e.message : t("couldNotDispute"));
     } finally {
       setBusy(false);
     }
@@ -91,7 +91,7 @@ export function DisputePanel({
             status: booking.openDispute.status,
             reason: booking.openDispute.reason,
             resolution: "",
-            raisedBy: { id: "", displayName: "You or the other participant" },
+            raisedBy: { id: "", displayName: t("youOrOther") },
             resolvedBy: null,
             createdAt: booking.openDispute.createdAt,
             resolvedAt: null,
@@ -103,7 +103,7 @@ export function DisputePanel({
   return (
     <div className="mt-4 rounded-2xl border border-border bg-card p-6">
       <h2 className="inline-flex items-center gap-2 font-display text-lg">
-        <ShieldAlert className="size-4 text-coral" /> Problem with this lesson
+        <ShieldAlert className="size-4 text-coral" /> {t("problemWithLesson")}
       </h2>
 
       {entries.length > 0 && (
@@ -121,16 +121,16 @@ export function DisputePanel({
                       : "font-medium text-muted-foreground"
                   }
                 >
-                  {STATUS_LABEL[d.status]}
+                  {t(STATUS_LABEL[d.status])}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {fmtDate(d.createdAt)}
+                  {fmtDate(d.createdAt, locale)}
                 </span>
               </div>
               <p className="mt-1 whitespace-pre-wrap">{d.reason}</p>
               {d.resolution && (
                 <p className="mt-2 rounded-lg bg-muted px-2.5 py-1.5 text-xs">
-                  <span className="font-medium">Moderator:</span> {d.resolution}
+                  <span className="font-medium">{t("moderator")}</span> {d.resolution}
                 </p>
               )}
             </li>
@@ -144,14 +144,14 @@ export function DisputePanel({
           className="mt-3"
           onClick={() => setComposing(true)}
         >
-          Report a problem
+          {t("reportProblem")}
         </Button>
       )}
 
       {composing && (
         <div className="mt-3 flex flex-col gap-2">
           <label htmlFor="dispute-reason" className="text-sm font-medium">
-            What went wrong?
+            {t("whatWentWrong")}
           </label>
           <textarea
             id="dispute-reason"
@@ -159,12 +159,12 @@ export function DisputePanel({
             maxLength={2000}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="Describe what happened. A moderator will review it."
+            placeholder={t("describeProblem")}
             className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
           <div className="flex gap-2">
             <Button disabled={busy || reason.trim() === ""} onClick={submit}>
-              {busy ? "Submitting…" : "Submit dispute"}
+              {busy ? t("submitting") : t("submitDispute")}
             </Button>
             <Button
               variant="outline"
@@ -174,7 +174,7 @@ export function DisputePanel({
                 setErr(null);
               }}
             >
-              Cancel
+              {t("cancel")}
             </Button>
           </div>
         </div>

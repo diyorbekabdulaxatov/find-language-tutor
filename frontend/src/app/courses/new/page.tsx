@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import { Suspense } from "react";
 import { RequireUser } from "@/features/auth/require-user";
 import { CourseEditor } from "@/features/courses/components/course-editor";
 
-export const metadata: Metadata = { title: "New course" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("courses");
+  return { title: t("metaNew") };
+}
 
 export default function NewCoursePage() {
   return (

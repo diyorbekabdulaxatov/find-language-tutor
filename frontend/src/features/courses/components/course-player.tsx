@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { ArrowLeft, CheckCircle2, Circle, FileText, Film } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ export function CoursePlayer({ id }: { id: string }) {
     "loading",
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const t = useTranslations("courses");
 
   useEffect(() => {
     let alive = true;
@@ -95,10 +97,10 @@ export function CoursePlayer({ id }: { id: string }) {
   if (state === "forbidden") {
     return (
       <EmptyState
-        title="You don't have access to this course"
-        body="Enroll in this course to unlock its lessons."
+        title={t("noAccessTitle")}
+        body={t("noAccessBody")}
         href="/courses/catalog"
-        cta="Browse courses"
+        cta={t("browseCourses")}
       />
     );
   }
@@ -106,10 +108,10 @@ export function CoursePlayer({ id }: { id: string }) {
   if (state === "not-found") {
     return (
       <EmptyState
-        title="Course not found"
-        body="It may have been removed, or the link is wrong."
+        title={t("notFound")}
+        body={t("notFoundBodyLearn")}
         href="/learn"
-        cta="My learning"
+        cta={t("myLearning")}
       />
     );
   }
@@ -118,7 +120,7 @@ export function CoursePlayer({ id }: { id: string }) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-24 text-center sm:px-6">
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Could not load this course. Please try again.
+          {t("couldNotLoad")}
         </p>
       </div>
     );
@@ -135,12 +137,12 @@ export function CoursePlayer({ id }: { id: string }) {
         className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
-        My learning
+        {t("myLearning")}
       </Link>
 
       <h1 className="mt-3 font-display text-2xl sm:text-3xl">{learn.title}</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        {completedCount} of {items.length} lessons completed
+        {t("completedOf", { completed: completedCount, total: items.length })}
       </p>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[280px_1fr] lg:items-start">
@@ -172,7 +174,7 @@ export function CoursePlayer({ id }: { id: string }) {
                         <FileText className="size-3.5 shrink-0 text-muted-foreground" />
                       )}
                       <span className="truncate">
-                        {item.title || (item.kind === "video" ? "Video" : "Resource")}
+                        {item.title || (item.kind === "video" ? t("video") : t("resource"))}
                       </span>
                     </button>
                   </li>
@@ -193,7 +195,7 @@ export function CoursePlayer({ id }: { id: string }) {
             />
           ) : (
             <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center text-sm text-muted-foreground">
-              This course has no lessons yet.
+              {t("noLessons")}
             </div>
           )}
         </div>
@@ -235,6 +237,7 @@ function CourseItemView({
   enrollmentId: string | null;
   onProgress: (progress: CourseItemProgress) => void;
 }) {
+  const t = useTranslations("courses");
   if (item.kind === "resource" && item.resource) {
     return (
       <div className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-soft">
@@ -263,7 +266,7 @@ function CourseItemView({
 
   return (
     <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center text-sm text-muted-foreground">
-      This lesson has no content yet.
+      {t("noContent")}
     </div>
   );
 }
@@ -286,6 +289,7 @@ function VideoItem({
   const seekedRef = useRef(false);
   const [marking, setMarking] = useState(false);
   const completed = item.progress.status === "completed";
+  const t = useTranslations("courses");
 
   // Resume from the last saved position once metadata is available. Guarded
   // by a ref (not state) so it fires exactly once per mounted <video>.
@@ -345,18 +349,18 @@ function VideoItem({
   return (
     <div className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-soft">
       <div className="flex items-start justify-between gap-3">
-        <h2 className="font-display text-xl">{item.title || "Video"}</h2>
+        <h2 className="font-display text-xl">{item.title || t("video")}</h2>
         {completed && (
           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-mint/12 px-2.5 py-1 text-xs font-semibold text-mint">
             <CheckCircle2 className="size-3.5" />
-            Completed
+            {t("completed")}
           </span>
         )}
       </div>
 
       <div className="mt-4 overflow-hidden rounded-xl bg-black">
         {state === "error" && (
-          <p className="p-6 text-center text-sm text-destructive">Could not load this video.</p>
+          <p className="p-6 text-center text-sm text-destructive">{t("couldNotLoadVideo")}</p>
         )}
         {state !== "error" && !url && <div className="aspect-video animate-pulse bg-muted" />}
         {url && (
@@ -382,7 +386,7 @@ function VideoItem({
           disabled={marking || completed}
           onClick={() => void handleMarkComplete()}
         >
-          {completed ? "Completed" : marking ? "Saving…" : "Mark as complete"}
+          {completed ? t("completed") : marking ? t("saving") : t("markComplete")}
         </Button>
       </div>
     </div>

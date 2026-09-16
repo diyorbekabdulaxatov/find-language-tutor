@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { ReviewError, submitReview } from "@/features/reviews/api";
 import { StarInput, Stars } from "./star-rating";
 import { Button } from "@/components/ui/button";
@@ -19,11 +20,12 @@ export function ReviewPrompt({
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const t = useTranslations("bookings");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (rating < 1) {
-      setError("Pick a star rating.");
+      setError(t("pickRating"));
       return;
     }
     setSubmitting(true);
@@ -33,11 +35,7 @@ export function ReviewPrompt({
       onSubmitted();
     } catch (err) {
       setSubmitting(false);
-      setError(
-        err instanceof ReviewError
-          ? err.message
-          : "Could not submit your review. Please try again.",
-      );
+      setError(err instanceof ReviewError ? err.message : t("couldNotReview"));
     }
   }
 
@@ -46,11 +44,11 @@ export function ReviewPrompt({
       onSubmit={handleSubmit}
       className="mt-4 flex flex-col gap-3 rounded-2xl border border-border bg-card p-6"
     >
-      <h2 className="font-display text-lg">How was your lesson with {teacherName}?</h2>
+      <h2 className="font-display text-lg">{t("reviewTitle", { name: teacherName })}</h2>
       <StarInput value={rating} onChange={setRating} />
       <textarea
         rows={3}
-        placeholder="Share what went well (optional)"
+        placeholder={t("reviewPlaceholder")}
         className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         value={comment}
         maxLength={2000}
@@ -62,7 +60,7 @@ export function ReviewPrompt({
         </p>
       )}
       <Button type="submit" disabled={submitting} className="self-start">
-        {submitting ? "Submitting…" : "Post review"}
+        {submitting ? t("submitting") : t("postReview")}
       </Button>
     </form>
   );
@@ -76,9 +74,10 @@ export function BookingReview({
   rating: number;
   comment: string;
 }) {
+  const t = useTranslations("bookings");
   return (
     <div className="mt-4 rounded-2xl border border-border bg-card p-6">
-      <h2 className="font-display text-lg">Your review</h2>
+      <h2 className="font-display text-lg">{t("yourReview")}</h2>
       <Stars value={rating} className="mt-2" />
       {comment && (
         <p className="mt-2 text-sm leading-relaxed text-foreground/90">{comment}</p>

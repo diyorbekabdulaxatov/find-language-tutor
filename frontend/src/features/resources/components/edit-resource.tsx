@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { getResource, ResourceError } from "@/features/resources/api";
 import type { Resource } from "@/features/resources/types";
 import { ResourceEditor } from "./resource-editor";
@@ -9,7 +10,8 @@ import { ResourceEditor } from "./resource-editor";
 export function EditResource({ id }: { id: string }) {
   const [resource, setResource] = useState<Resource | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
-  const [msg, setMsg] = useState("Could not load that resource.");
+  const [msg, setMsg] = useState<string | null>(null);
+  const t = useTranslations("resources");
 
   useEffect(() => {
     let alive = true;
@@ -37,9 +39,9 @@ export function EditResource({ id }: { id: string }) {
   if (state === "error" || !resource) {
     return (
       <div className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-        {msg}{" "}
+        {msg ?? t("couldNotLoadOne")}{" "}
         <Link href="/resources" className="font-medium underline">
-          Back to resources
+          {t("backToResources")}
         </Link>
       </div>
     );

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 import { useAuth } from "@/features/auth/auth-context";
@@ -13,7 +14,6 @@ import {
   reportNoShow,
   setMeetingLink,
   type Booking,
-  type PaymentStatus,
 } from "@/features/bookings/api";
 import { formatFull, viewerTimezone } from "@/features/bookings/datetime";
 import {
@@ -28,14 +28,6 @@ import { LessonResourcesPanel } from "./lesson-resources-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-const PAYMENT_LABEL: Record<PaymentStatus, string> = {
-  requires_payment: "Not paid",
-  authorized: "Held (paid, not yet released)",
-  captured: "Released to teacher",
-  refunded: "Refunded",
-  failed: "Payment failed",
-};
-
 export function BookingDetail({ id }: { id: string }) {
   const { user } = useAuth();
   const [booking, setBooking] = useState<Booking | null>(null);
@@ -48,6 +40,10 @@ export function BookingDetail({ id }: { id: string }) {
   const [linkDraft, setLinkDraft] = useState("");
   const [now] = useState(() => Date.now());
   const viewerTz = viewerTimezone();
+  const t = useTranslations("bookings");
+  const tPay = useTranslations("paymentStatus");
+  const tCommon = useTranslations("common");
+  const locale = useLocale();
 
   useEffect(() => {
     let alive = true;
@@ -60,17 +56,13 @@ export function BookingDetail({ id }: { id: string }) {
       })
       .catch((err) => {
         if (!alive) return;
-        setErrorMsg(
-          err instanceof BookingError
-            ? err.message
-            : "Could not load that booking.",
-        );
+        setErrorMsg(err instanceof BookingError ? err.message : t("couldNotLoadBooking"));
         setState("error");
       });
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, t]);
 
   async function refetch() {
     const fresh = await getBooking(id);
@@ -91,11 +83,7 @@ export function BookingDetail({ id }: { id: string }) {
       setBooking(fresh);
       setLinkDraft(fresh.meetingUrl);
     } catch (err) {
-      setErrorMsg(
-        err instanceof BookingError
-          ? err.message
-          : "Something went wrong. Please try again.",
-      );
+      setErrorMsg(err instanceof BookingError ? err.message : tCommon("somethingWrong"));
     } finally {
       setBusy(null);
     }
@@ -113,13 +101,13 @@ export function BookingDetail({ id }: { id: string }) {
     return (
       <div className="mx-auto max-w-xl px-4 py-12 sm:px-6">
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {errorMsg ?? "Booking not found."}
+          {errorMsg ?? t("notFound")}
         </p>
         <Link
           href="/bookings"
           className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="size-4" /> All bookings
+          <ArrowLeft className="size-4" /> {t("allBookings")}
         </Link>
       </div>
     );
@@ -142,20 +130,20 @@ export function BookingDetail({ id }: { id: string }) {
         href="/bookings"
         className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
       >
-        <ArrowLeft className="size-4" /> All bookings
+        <ArrowLeft className="size-4" /> {t("allBookings")}
       </Link>
 
       <div className="mt-4 rounded-2xl border border-border bg-card p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="font-display text-2xl">
-              {isStudent
-                ? `Lesson with ${booking.teacher.displayName}`
-                : `Lesson with ${booking.student.displayName}`}
+              {t("lessonWith", {
+                name: isStudent ? booking.teacher.displayName : booking.student.displayName,
+              })}
             </h1>
             {booking.isTrial && (
               <span className="mt-1 inline-block rounded-full bg-coral/10 px-2 py-0.5 text-xs font-semibold text-coral">
-                Trial lesson
+                {t("trialLesson")}
               </span>
             )}
           </div>
@@ -163,28 +151,26 @@ export function BookingDetail({ id }: { id: string }) {
         </div>
 
         <dl className="mt-5 flex flex-col gap-3 border-t border-border pt-5 text-sm">
-          <Row label="When (your time)">
-            {formatFull(booking.startAt, viewerTz)}
+          <Row label={t("whenYourTime")}>
+            {formatFull(booking.startAt, viewerTz, locale)}
           </Row>
           {viewerTz !== booking.teacher.timezone && (
-            <Row label="Teacher's time">
-              {formatFull(booking.startAt, booking.teacher.timezone)}
+            <Row label={t("teachersTime")}>
+              {formatFull(booking.startAt, booking.teacher.timezone, locale)}
             </Row>
           )}
-          <Row label="Length">{booking.durationMinutes} min</Row>
-          <Row label="Price">{formatMoney(booking.price)}</Row>
+          <Row label={t("length")}>{t("min", { count: booking.durationMinutes })}</Row>
+          <Row label={t("price")}>{formatMoney(booking.price, locale)}</Row>
           {booking.payment && (
-            <Row label="Payment">{PAYMENT_LABEL[booking.payment.status]}</Row>
+            <Row label={t("payment")}>{tPay(booking.payment.status)}</Row>
           )}
           {booking.noShowParty && (
-            <Row label="No-show">
-              {booking.noShowParty === "student"
-                ? "Student didn't attend"
-                : "Teacher didn't attend"}
+            <Row label={t("noShow")}>
+              {booking.noShowParty === "student" ? t("studentNoShow") : t("teacherNoShow")}
             </Row>
           )}
           {booking.status === "cancelled" && booking.cancellationReason && (
-            <Row label="Cancellation reason">{booking.cancellationReason}</Row>
+            <Row label={t("cancellationReason")}>{booking.cancellationReason}</Row>
           )}
         </dl>
 
@@ -207,7 +193,7 @@ export function BookingDetail({ id }: { id: string }) {
               }}
             >
               <label htmlFor="meeting-link" className="text-sm font-medium">
-                Meeting link for this lesson
+                {t("meetingLink")}
               </label>
               <div className="flex gap-2">
                 <Input
@@ -222,12 +208,10 @@ export function BookingDetail({ id }: { id: string }) {
                   variant="outline"
                   disabled={busy !== null || linkDraft.trim() === booking.meetingUrl}
                 >
-                  {busy === "link" ? "Saving…" : "Save"}
+                  {busy === "link" ? t("saving") : t("save")}
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Overrides your profile&apos;s default room for this booking only.
-              </p>
+              <p className="text-xs text-muted-foreground">{t("meetingLinkHint")}</p>
             </form>
           )}
 
@@ -240,7 +224,7 @@ export function BookingDetail({ id }: { id: string }) {
         {(canPay || canComplete || canNoShow || canCancel) && (
           <div className="mt-6 flex flex-wrap gap-3">
             {canPay && !payOpen && (
-              <Button onClick={() => setPayOpen(true)}>Pay now</Button>
+              <Button onClick={() => setPayOpen(true)}>{t("payNow")}</Button>
             )}
             {canComplete && (
               <Button
@@ -249,7 +233,7 @@ export function BookingDetail({ id }: { id: string }) {
                 }
                 disabled={busy !== null}
               >
-                {busy === "complete" ? "Completing…" : "Mark lesson complete"}
+                {busy === "complete" ? t("completing") : t("markComplete")}
               </Button>
             )}
             {canNoShow && (
@@ -263,9 +247,7 @@ export function BookingDetail({ id }: { id: string }) {
                   }
                   disabled={busy !== null}
                 >
-                  {busy === "no_show_student"
-                    ? "Reporting…"
-                    : "Student didn't show"}
+                  {busy === "no_show_student" ? t("reporting") : t("studentDidntShow")}
                 </Button>
                 <Button
                   variant="outline"
@@ -276,9 +258,7 @@ export function BookingDetail({ id }: { id: string }) {
                   }
                   disabled={busy !== null}
                 >
-                  {busy === "no_show_teacher"
-                    ? "Reporting…"
-                    : "I couldn't make it"}
+                  {busy === "no_show_teacher" ? t("reporting") : t("couldntMakeIt")}
                 </Button>
               </>
             )}
@@ -289,10 +269,10 @@ export function BookingDetail({ id }: { id: string }) {
                 disabled={busy !== null}
               >
                 {busy === "cancel"
-                  ? "Cancelling…"
+                  ? t("cancelling")
                   : booking.status === "confirmed"
-                    ? "Cancel & refund"
-                    : "Cancel lesson"}
+                    ? t("cancelRefund")
+                    : t("cancelLesson")}
               </Button>
             )}
           </div>

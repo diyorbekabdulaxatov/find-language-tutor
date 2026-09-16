@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Plus, Trash2 } from "lucide-react";
 import {
   AvailabilityError,
@@ -22,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAYS = ["day0", "day1", "day2", "day3", "day4", "day5", "day6"] as const;
 const STEP = 30;
 const DAY_MIN = 1440;
 /** 00:00 … 24:00 in STEP-minute increments. */
@@ -66,6 +67,7 @@ export function AvailabilityEditor({ slug }: { slug: string }) {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
+  const t = useTranslations("availability");
 
   useEffect(() => {
     let alive = true;
@@ -77,17 +79,13 @@ export function AvailabilityEditor({ slug }: { slug: string }) {
       })
       .catch((err) => {
         if (!alive) return;
-        setError(
-          err instanceof AvailabilityError
-            ? err.message
-            : "Could not load your availability.",
-        );
+        setError(err instanceof AvailabilityError ? err.message : t("couldNotLoad"));
       })
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, [slug]);
+  }, [slug, t]);
 
   const overlaps = useMemo(() => hasOverlap(week), [week]);
 
@@ -106,11 +104,7 @@ export function AvailabilityEditor({ slug }: { slug: string }) {
       setStatus("saved");
     } catch (err) {
       setStatus("idle");
-      setError(
-        err instanceof AvailabilityError
-          ? err.message
-          : "Could not save your availability.",
-      );
+      setError(err instanceof AvailabilityError ? err.message : t("couldNotSave"));
     }
   }
 
@@ -121,16 +115,16 @@ export function AvailabilityEditor({ slug }: { slug: string }) {
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-muted-foreground">
-        Recurring weekly hours, shown in your timezone
-        {tz && <span className="font-medium text-foreground"> ({tz})</span>}.
-        Students see these converted to their own time when booking.
+        {t.rich("intro", {
+          tz: () => (tz ? <span className="font-medium text-foreground"> ({tz})</span> : null),
+        })}
       </p>
 
       <div className="flex flex-col divide-y divide-border rounded-2xl border border-border">
-        {DAYS.map((label, day) => (
+        {DAYS.map((key, day) => (
           <DayRow
             key={day}
-            label={label}
+            label={t(key)}
             ranges={week[day]}
             onChange={(ranges) => mutateDay(day, ranges)}
           />
@@ -139,7 +133,7 @@ export function AvailabilityEditor({ slug }: { slug: string }) {
 
       {overlaps && (
         <p className="text-sm text-destructive">
-          Some ranges on the same day overlap — fix those before saving.
+          {t("overlap")}
         </p>
       )}
       {error && (
@@ -153,10 +147,10 @@ export function AvailabilityEditor({ slug }: { slug: string }) {
 
       <div className="flex items-center gap-3">
         <Button onClick={handleSave} disabled={status === "saving" || overlaps}>
-          {status === "saving" ? "Saving…" : "Save availability"}
+          {status === "saving" ? t("saving") : t("save")}
         </Button>
         {status === "saved" && (
-          <span className="text-sm text-muted-foreground">Saved.</span>
+          <span className="text-sm text-muted-foreground">{t("saved")}</span>
         )}
       </div>
     </div>
@@ -172,12 +166,13 @@ function DayRow({
   ranges: Range[];
   onChange: (ranges: Range[]) => void;
 }) {
+  const t = useTranslations("availability");
   return (
     <div className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:gap-4">
       <div className="w-28 shrink-0 pt-1.5 text-sm font-medium">{label}</div>
       <div className="flex flex-1 flex-col gap-2">
         {ranges.length === 0 && (
-          <span className="pt-1.5 text-sm text-muted-foreground">Unavailable</span>
+          <span className="pt-1.5 text-sm text-muted-foreground">{t("unavailable")}</span>
         )}
         {ranges.map((r, i) => (
           <div key={i} className="flex items-center gap-2">
@@ -198,7 +193,7 @@ function DayRow({
               type="button"
               variant="ghost"
               size="icon"
-              aria-label="Remove range"
+              aria-label={t("removeRange")}
               onClick={() => onChange(ranges.filter((_, idx) => idx !== i))}
             >
               <Trash2 />
@@ -214,7 +209,7 @@ function DayRow({
             onChange([...ranges, { start: 9 * 60, end: 17 * 60 }])
           }
         >
-          <Plus /> Add hours
+          <Plus /> {t("addHours")}
         </Button>
       </div>
     </div>

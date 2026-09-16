@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { CreditCard, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -14,20 +15,22 @@ import type { Money } from "@/types/teacher";
  *  different, retryable outcome here (vs. bookings, where capture only
  *  happens later at lesson completion). */
 const TEST_METHODS = [
-  { token: "pm_ok", label: "Test card — succeeds", hint: "•••• 4242" },
-  { token: "pm_decline", label: "Test card — declined", hint: "•••• 0002" },
-  { token: "pm_capture_fail", label: "Test card — fails to capture", hint: "•••• 0341" },
+  { token: "pm_ok", label: "testCardOk", hint: "•••• 4242" },
+  { token: "pm_decline", label: "testCardDeclined", hint: "•••• 0002" },
+  { token: "pm_capture_fail", label: "testCardCaptureFail", hint: "•••• 0341" },
 ] as const;
 
-function purchaseErrorMessage(err: unknown): string {
-  if (!(err instanceof CourseError)) return "Could not complete the purchase. Please try again.";
+type T = ReturnType<typeof useTranslations<"courses">>;
+
+function purchaseErrorMessage(err: unknown, t: T): string {
+  if (!(err instanceof CourseError)) return t("purchaseFailed");
   switch (err.code) {
     case "payment_failed":
-      return "That payment method was declined. Try a different test card.";
+      return t("paymentDeclined");
     case "capture_failed":
-      return "The payment authorized but couldn't be captured. This is retryable — try purchasing again.";
+      return t("captureFailed");
     case "purchase_unavailable":
-      return "Purchases aren't available right now. Please try again later.";
+      return t("purchaseUnavailable");
     default:
       return err.message;
   }
@@ -52,6 +55,8 @@ export function PurchaseCoursePanel({
   const [method, setMethod] = useState<(typeof TEST_METHODS)[number]["token"]>("pm_ok");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const t = useTranslations("courses");
+  const locale = useLocale();
 
   async function handlePurchase() {
     setBusy(true);
@@ -60,7 +65,7 @@ export function PurchaseCoursePanel({
       const { enrollment } = await purchaseCourse(courseId, free ? undefined : method);
       onPurchased(enrollment);
     } catch (err) {
-      setError(purchaseErrorMessage(err));
+      setError(purchaseErrorMessage(err, t));
     } finally {
       setBusy(false);
     }
@@ -75,7 +80,7 @@ export function PurchaseCoursePanel({
           </p>
         )}
         <Button size="lg" className="w-full" onClick={() => void handlePurchase()} disabled={busy}>
-          {busy ? "Enrolling…" : "Enroll for free"}
+          {busy ? t("enrolling") : t("enrollFree")}
         </Button>
       </div>
     );
@@ -84,11 +89,11 @@ export function PurchaseCoursePanel({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Lock className="size-3" /> Simulated payment — no real charge
+        <Lock className="size-3" /> {t("simulated")}
       </div>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 text-sm font-medium">Payment method</legend>
+        <legend className="mb-1 text-sm font-medium">{t("paymentMethod")}</legend>
         {TEST_METHODS.map((m) => (
           <label
             key={m.token}
@@ -109,7 +114,7 @@ export function PurchaseCoursePanel({
               className="accent-primary"
             />
             <CreditCard className="size-4 text-muted-foreground" />
-            <span className="font-medium">{m.label}</span>
+            <span className="font-medium">{t(m.label)}</span>
             <span className="ml-auto text-muted-foreground">{m.hint}</span>
           </label>
         ))}
@@ -122,7 +127,7 @@ export function PurchaseCoursePanel({
       )}
 
       <Button size="lg" className="w-full" onClick={() => void handlePurchase()} disabled={busy}>
-        {busy ? "Processing…" : `Buy for ${formatMoney(price)}`}
+        {busy ? t("processing") : t("buyFor", { price: formatMoney(price, locale) })}
       </Button>
     </div>
   );

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, ImageIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,8 @@ function unitsFromMinor(amountMinor: number): number {
 export function CourseEditor({ initial }: { initial?: CourseDetail }) {
   const router = useRouter();
   const isEdit = !!initial;
+  const t = useTranslations("courses");
+  const locale = useLocale();
 
   const [course, setCourse] = useState<CourseDetail | undefined>(initial);
 
@@ -96,7 +99,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
         return;
       }
     } catch (err) {
-      setError(err instanceof CourseError ? err.message : "Something went wrong.");
+      setError(err instanceof CourseError ? err.message : t("somethingWrong"));
     } finally {
       setSaving(false);
     }
@@ -109,7 +112,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
       const up = await uploadFile(file);
       setCoverAssetId(up.id);
     } catch (err) {
-      setError(err instanceof ResourceError ? err.message : "Could not upload the cover image.");
+      setError(err instanceof ResourceError ? err.message : t("couldNotUploadCover"));
     }
     setCoverBusy(false);
   }
@@ -121,7 +124,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
       const updated = await fn();
       setCourse(updated);
     } catch (err) {
-      setError(err instanceof CourseError ? err.message : "Something went wrong.");
+      setError(err instanceof CourseError ? err.message : t("somethingWrong"));
     } finally {
       setBusy(false);
     }
@@ -129,7 +132,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
 
   async function handleDelete() {
     if (!course) return;
-    if (!confirm(`Delete "${course.title}"? This can't be undone.`)) return;
+    if (!confirm(t("confirmDelete", { title: course.title }))) return;
     setBusy(true);
     setError(null);
     try {
@@ -137,7 +140,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
       router.push("/courses");
       router.refresh();
     } catch (err) {
-      setError(err instanceof CourseError ? err.message : "Could not delete the course.");
+      setError(err instanceof CourseError ? err.message : t("couldNotDelete"));
       setBusy(false);
     }
   }
@@ -157,24 +160,24 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          My courses
+          {t("libraryTitle")}
         </Link>
-        <h1 className="mt-2 font-display text-2xl">{isEdit ? "Edit course" : "New course"}</h1>
+        <h1 className="mt-2 font-display text-2xl">{isEdit ? t("metaEdit") : t("metaNew")}</h1>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-6">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="title">Title</Label>
+          <Label htmlFor="title">{t("title")}</Label>
           <Input id="title" required value={title} onChange={(e) => setTitle(e.target.value)} />
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="subtitle">Subtitle (optional)</Label>
+          <Label htmlFor="subtitle">{t("subtitle")}</Label>
           <Input id="subtitle" value={subtitle} onChange={(e) => setSubtitle(e.target.value)} />
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="description">Description (optional)</Label>
+          <Label htmlFor="description">{t("description")}</Label>
           <textarea
             id="description"
             rows={4}
@@ -186,7 +189,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
 
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="price">Price</Label>
+            <Label htmlFor="price">{t("price")}</Label>
             <Input
               id="price"
               type="number"
@@ -198,7 +201,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="currency">Currency</Label>
+            <Label htmlFor="currency">{t("currency")}</Label>
             <Select value={currency} onValueChange={(v) => setCurrency(v as Money["currency"])}>
               <SelectTrigger id="currency" className="w-24">
                 <SelectValue />
@@ -211,14 +214,14 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
           </div>
           <p className="pb-1.5 text-sm text-muted-foreground">
             {priceUnits === 0
-              ? "Free course"
-              : formatMoney({ amountMinor: Math.round(priceUnits * 100), currency })}
+              ? t("freeCourse")
+              : formatMoney({ amountMinor: Math.round(priceUnits * 100), currency }, locale)}
           </p>
         </div>
 
         {isEdit && (
           <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">Cover image</span>
+            <span className="text-sm font-medium">{t("coverImage")}</span>
             {coverAssetId ? (
               <div className="flex items-start gap-3">
                 <div className="relative aspect-video w-48 shrink-0 overflow-hidden rounded-lg border border-border bg-muted">
@@ -226,7 +229,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
                     // eslint-disable-next-line @next/next/no-img-element -- object URL, not a static asset
                     <img src={coverUrl} alt="" className="size-full object-cover" />
                   ) : coverState === "error" ? (
-                    <p className="p-2 text-xs text-destructive">Could not load the cover.</p>
+                    <p className="p-2 text-xs text-destructive">{t("couldNotLoadCover")}</p>
                   ) : (
                     <div className="size-full animate-pulse" />
                   )}
@@ -239,7 +242,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
                   onClick={() => setCoverAssetId(null)}
                 >
                   <X className="size-4" />
-                  Remove
+                  {t("remove")}
                 </Button>
               </div>
             ) : (
@@ -263,7 +266,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
                   onClick={() => coverInputRef.current?.click()}
                 >
                   <ImageIcon className="size-4" />
-                  {coverBusy ? "Uploading…" : "Choose a cover image"}
+                  {coverBusy ? t("uploading") : t("chooseCover")}
                 </Button>
               </div>
             )}
@@ -278,7 +281,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
 
         <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center gap-3 border-t border-border bg-background px-4 py-4 sm:-mx-6 sm:px-6">
           <Button type="submit" disabled={saving}>
-            {saving ? "Saving…" : isEdit ? "Save changes" : "Create course"}
+            {saving ? t("saving") : isEdit ? t("saveChanges") : t("createCourse")}
           </Button>
 
           {isEdit && course && (
@@ -290,7 +293,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
                   disabled={busy}
                   onClick={() => run(() => setCoursePublished(course.id, false))}
                 >
-                  Unpublish
+                  {t("unpublish")}
                 </Button>
               ) : (
                 <Button
@@ -299,7 +302,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
                   disabled={busy}
                   onClick={() => run(() => setCoursePublished(course.id, true))}
                 >
-                  Publish
+                  {t("publish")}
                 </Button>
               )}
               <Button
@@ -308,24 +311,24 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
                 disabled={busy}
                 onClick={() => run(() => setCourseArchived(course.id, !course.archived))}
               >
-                {course.archived ? "Restore" : "Archive"}
+                {course.archived ? t("restore") : t("archive")}
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 className="ml-auto text-destructive hover:text-destructive"
                 disabled={busy || knownBlocked}
-                title={knownBlocked ? "Published courses can't be deleted — archive it instead." : undefined}
+                title={knownBlocked ? t("publishedNoDelete") : undefined}
                 onClick={() => void handleDelete()}
               >
-                Delete
+                {t("delete")}
               </Button>
             </>
           )}
         </div>
         {isEdit && knownBlocked && (
           <p className="-mt-3 text-xs text-muted-foreground">
-            This course has been published, so it can&apos;t be deleted — archive it instead.
+            {t("publishedNoDeleteLong")}
           </p>
         )}
       </form>

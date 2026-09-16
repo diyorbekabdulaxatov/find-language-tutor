@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import { Suspense } from "react";
 import { RequireUser } from "@/features/auth/require-user";
 import { GradingInbox } from "@/features/submissions/components/grading-inbox";
 
-export const metadata: Metadata = { title: "Homework to grade" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("grading");
+  return { title: t("meta") };
+}
 
 export default function GradingPage() {
   return (

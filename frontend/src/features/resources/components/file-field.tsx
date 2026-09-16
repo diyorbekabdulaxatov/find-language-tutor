@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Paperclip, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ResourceError, uploadFile } from "@/features/resources/api";
@@ -25,6 +26,7 @@ export function FileField({
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const t = useTranslations("resources");
 
   async function pick(file: File) {
     setError(null);
@@ -33,7 +35,7 @@ export function FileField({
       const up = await uploadFile(file);
       onChange(up.id, up.filename);
     } catch (err) {
-      setError(err instanceof ResourceError ? err.message : "Upload failed.");
+      setError(err instanceof ResourceError ? err.message : t("uploadFailed"));
     }
     setBusy(false);
   }
@@ -44,10 +46,10 @@ export function FileField({
       {value ? (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
           <Paperclip className="size-4 shrink-0 text-muted-foreground" />
-          <span className="truncate">{filename ?? "Uploaded file"}</span>
+          <span className="truncate">{filename ?? t("uploadedFile")}</span>
           <button
             type="button"
-            aria-label="Remove file"
+            aria-label={t("removeFile")}
             className="ml-auto rounded p-0.5 hover:bg-muted"
             onClick={() => onChange(undefined, undefined)}
           >
@@ -74,7 +76,7 @@ export function FileField({
             disabled={busy}
             onClick={() => inputRef.current?.click()}
           >
-            {busy ? "Uploading…" : "Choose a file"}
+            {busy ? t("uploading") : t("chooseFile")}
           </Button>
         </div>
       )}

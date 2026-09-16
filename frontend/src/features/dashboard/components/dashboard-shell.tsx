@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useAuth } from "@/features/auth/auth-context";
 import { getMyProfile } from "@/features/dashboard/api";
 import { ProfileEditor } from "@/features/dashboard/components/profile-editor";
@@ -26,6 +27,7 @@ export function DashboardShell() {
   const { user } = useAuth();
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const t = useTranslations("dashboard");
 
   useEffect(() => {
     let alive = true;
@@ -48,10 +50,8 @@ export function DashboardShell() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
       <header className="mb-8">
-        <h1 className="font-display text-3xl">Teacher dashboard</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Signed in as {user.displayName}.
-        </p>
+        <h1 className="font-display text-3xl">{t("title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("signedInAs", { name: user.displayName })}</p>
       </header>
 
       {state === "loading" && (
@@ -60,7 +60,7 @@ export function DashboardShell() {
 
       {state === "error" && (
         <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          Could not load your dashboard. Refresh to try again.
+          {t("couldNotLoad")}
         </p>
       )}
 
@@ -70,16 +70,16 @@ export function DashboardShell() {
           review notice above and a way back, not the whole editor. */}
       {state === "ready" && profile?.status === "pending" && (
         <Button asChild variant="outline">
-          <Link href="/">Back to home</Link>
+          <Link href="/">{t("backHome")}</Link>
         </Button>
       )}
 
       {state === "ready" && profile?.status !== "pending" && (
         <Tabs defaultValue="profile">
           <TabsList>
-            <TabsTrigger value="profile">Profile</TabsTrigger>
-            <TabsTrigger value="availability">Availability</TabsTrigger>
-            <TabsTrigger value="earnings">Earnings</TabsTrigger>
+            <TabsTrigger value="profile">{t("tabProfile")}</TabsTrigger>
+            <TabsTrigger value="availability">{t("tabAvailability")}</TabsTrigger>
+            <TabsTrigger value="earnings">{t("tabEarnings")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="profile" className="mt-6">
@@ -91,8 +91,7 @@ export function DashboardShell() {
               <AvailabilityEditor slug={profile.slug} />
             ) : (
               <p className="rounded-xl bg-accent/60 px-4 py-3 text-sm text-accent-foreground">
-                Create your teacher profile first, then set your weekly hours
-                here.
+                {t("needProfileAvailability")}
               </p>
             )}
           </TabsContent>
@@ -102,8 +101,7 @@ export function DashboardShell() {
               <EarningsPanel />
             ) : (
               <p className="rounded-xl bg-accent/60 px-4 py-3 text-sm text-accent-foreground">
-                Earnings appear here once you have a teacher profile and a
-                completed lesson.
+                {t("needProfileEarnings")}
               </p>
             )}
           </TabsContent>
@@ -114,26 +112,23 @@ export function DashboardShell() {
 }
 
 function ModerationBanner({ profile }: { profile: TeacherProfile }) {
+  const t = useTranslations("dashboard");
   if (profile.status === "approved") return null;
 
   const copy: Record<string, { title: string; body: string; tone: string }> = {
     pending: {
-      title: "Your profile is awaiting review",
-      body: "It isn't visible to students yet. We usually review new profiles within a day.",
+      title: t("pendingTitle"),
+      body: t("pendingBody"),
       tone: "bg-star/10 text-star",
     },
     rejected: {
-      title: "Your profile wasn't approved",
-      body:
-        profile.moderationNote ||
-        "Please update your profile and it will be reviewed again.",
+      title: t("rejectedTitle"),
+      body: profile.moderationNote || t("rejectedBody"),
       tone: "bg-destructive/10 text-destructive",
     },
     suspended: {
-      title: "Your profile is suspended",
-      body:
-        profile.moderationNote ||
-        "Contact support to resolve this. Existing bookings are unaffected.",
+      title: t("suspendedTitle"),
+      body: profile.moderationNote || t("suspendedBody"),
       tone: "bg-destructive/10 text-destructive",
     },
   };
