@@ -53,6 +53,8 @@ go test ./internal/bookings/ -run TestSlotGeneration -v   # single package / tes
 
 **Cross-module dependencies go through ports defined in the *consuming* module**, with adapters wired in `cmd/api`. `bookings` never imports `payments`, `lessons`, or `reviews`; instead it declares `bookings.PaymentGateway`, `bookings.ReminderScheduler`, `bookings.Notifier`, `bookings.ReviewReader`, and `cmd/api` injects the implementations (`payments.NewGateway(...)`, `lessons.NewScheduler(...)`, `reviews.NewBookingGateway(...)`) via `bookingService.Set*(...)`. A nil port is a guarded no-op, so `cmd/api` without Redis and the unit tests still work. The reverse direction (a payment authorization moving a booking to `confirmed`) happens inside the payments webhook transaction as a guarded `UPDATE` on the bookings row.
 
+**Observability.** Structured request logs (`slog`, one line per request with `request_id`) and a Prometheus endpoint at `GET /metrics`: `http_requests_total{method,route,status}` and `http_request_duration_seconds{method,route}` labelled by the *registered route pattern* (never the raw path, so cardinality stays bounded), `http_requests_in_flight`, and `pgxpool_*` pool gauges. `METRICS_TOKEN` makes it require a bearer token; leave it empty only when the port is private. No error-tracking vendor is wired (needs an account).
+
 **Data.** `sqlc` + `pgx/v5` (pgxpool). Hand-written SQL in `internal/db/queries/` is the input; `internal/db/sqlc/` is generated — never edit it. Migrations are `golang-migrate` SQL files in `migrations/`, run as a *library* through `cmd/migrate` (not the CLI). Every migration must be reversible (down-tested).
 
 **Conventions.**

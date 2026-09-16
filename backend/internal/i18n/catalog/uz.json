@@ -13,6 +13,7 @@
   "A role with that name already exists.": "Bunday nomli rol allaqachon mavjud.",
   "A valid access token is required.": "Yaroqli kirish tokeni kerak.",
   "A valid email address is required.": "To'g'ri elektron pochta manzilini kiriting.",
+  "A valid metrics token is required.": "Metrikalar uchun yaroqli token kerak.",
   "A video item can't also reference a resource.": "Video elementi bir vaqtda materialga ham havola qila olmaydi.",
   "A video item needs `video_asset_id`.": "Video elementiga `video_asset_id` kerak.",
   "A writing task needs a prompt.": "Yozma topshiriqqa mavzu kerak.",

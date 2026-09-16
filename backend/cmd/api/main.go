@@ -81,6 +81,8 @@ func run(logger *slog.Logger) error {
 		logger.Warn("TRUSTED_PROXIES is empty: if the API sits behind a reverse proxy, every client shares the proxy's address and the per-IP rate limits will throttle everyone together")
 	}
 
+	httpapi.RegisterPoolMetrics(pool)
+
 	tokenManager := auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTL)
 
 	// RBAC: per-request permission resolution. Also feeds the caller's

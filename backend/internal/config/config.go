@@ -57,6 +57,11 @@ type Config struct {
 	// ShutdownTimeout bounds graceful shutdown.
 	ShutdownTimeout time.Duration
 
+	// MetricsToken, when set, is the bearer token GET /metrics requires
+	// (METRICS_TOKEN). Empty leaves the endpoint open — only acceptable when
+	// the port isn't reachable from the internet.
+	MetricsToken string
+
 	// Payments. PaymentsProvider selects the payments.Provider implementation
 	// ("fake" is the only one for the MVP — Stripe does not operate in
 	// Uzbekistan). PaymentsWebhookSecret, when set, is the HMAC-SHA256 key the
@@ -123,6 +128,7 @@ func Load() (*Config, error) {
 		CookieDomain:    os.Getenv("AUTH_COOKIE_DOMAIN"),
 		CookieSecure:    getenvBool("AUTH_COOKIE_SECURE", env == "production"),
 		ShutdownTimeout: getenvDuration("SHUTDOWN_TIMEOUT", 10*time.Second),
+		MetricsToken:    os.Getenv("METRICS_TOKEN"),
 
 		PaymentsProvider:           getenv("PAYMENTS_PROVIDER", "fake"),
 		PaymentsWebhookSecret:      os.Getenv("PAYMENTS_WEBHOOK_SECRET"),

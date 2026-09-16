@@ -13,6 +13,7 @@
   "A role with that name already exists.": "Роль с таким названием уже существует.",
   "A valid access token is required.": "Нужен действительный токен доступа.",
   "A valid email address is required.": "Укажите корректный адрес эл. почты.",
+  "A valid metrics token is required.": "Нужен действительный токен для метрик.",
   "A video item can't also reference a resource.": "Элемент-видео не может одновременно ссылаться на материал.",
   "A video item needs `video_asset_id`.": "Элементу-видео нужен `video_asset_id`.",
   "A writing task needs a prompt.": "Для письменного задания нужна тема.",

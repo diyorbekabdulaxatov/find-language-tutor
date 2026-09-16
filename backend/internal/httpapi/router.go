@@ -72,6 +72,7 @@ func NewRouter(d Deps) *gin.Engine {
 
 	r.Use(
 		RequestID(),
+		Metrics(),
 		StructuredLogger(d.Logger),
 		Recovery(d.Logger),
 		SecurityHeaders(d.Config.CookieSecure),
@@ -81,6 +82,7 @@ func NewRouter(d Deps) *gin.Engine {
 	)
 
 	r.GET("/healthz", healthHandler(d.Pool, d.Redis))
+	r.GET("/metrics", MetricsHandler(d.Config.MetricsToken))
 
 	limiter := d.RateLimiter
 	if limiter == nil {
