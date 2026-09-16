@@ -72,9 +72,10 @@ npm run dev        # http://localhost:3000 (needs the backend on :8080)
 npm run build      # production build + typecheck
 npm run lint       # eslint (no separate tsc step; build does the full typecheck)
 npm run gen:api    # regenerate src/lib/api/schema.ts from ../openapi.yaml
+npm test           # vitest — pure logic (timezone math, formatting, locale negotiation, the auth fetch wrapper) + message-catalogue parity/ICU checks
 ```
 
-There is no frontend unit-test setup — verification is `npm run build` + `npm run lint` + clicking through against the live backend.
+Unit tests live next to the code as `*.test.ts` and run in node (no React rendering; `vitest.config.ts` maps `@/`). Anything UI-shaped is still verified by `npm run build` + `npm run lint` + clicking through against the live backend.
 
 ### Architecture
 

@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "gen:api": "openapi-typescript ../openapi.yaml -o src/lib/api/schema.ts"
+    "gen:api": "openapi-typescript ../openapi.yaml -o src/lib/api/schema.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -32,6 +34,7 @@
     "eslint-config-next": "16.3.4",
     "openapi-typescript": "^7.13.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.7"
   }
 }
