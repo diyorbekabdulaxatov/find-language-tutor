@@ -121,9 +121,10 @@ export interface Booking {
 }
 
 /** Simulated payment methods the fake provider recognises. */
+/** Labels live in the `bookings.testCard*` messages. */
 export const TEST_METHODS = [
-  { token: "pm_ok", label: "Test card — succeeds", hint: "•••• 4242" },
-  { token: "pm_decline", label: "Test card — declined", hint: "•••• 0002" },
+  { token: "pm_ok", hint: "•••• 4242" },
+  { token: "pm_decline", hint: "•••• 0002" },
 ] as const;
 export type MethodToken = (typeof TEST_METHODS)[number]["token"];
 

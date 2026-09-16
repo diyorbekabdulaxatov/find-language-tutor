@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Plus, Trash2 } from "lucide-react";
 import type { LanguageLevel } from "@/types/teacher";
 import {
@@ -39,6 +40,7 @@ export function ProfileEditor({
   onSaved: (p: TeacherProfile) => void;
 }) {
   const router = useRouter();
+  const t = useTranslations("profileEditor");
   const isCreate = initial === null;
   const [values, setValues] = useState<ProfileFormValues>(
     initial ? profileToForm(initial) : emptyProfileForm(),
@@ -82,11 +84,7 @@ export function ProfileEditor({
       }
     } catch (err) {
       setStatus("idle");
-      setError(
-        err instanceof ProfileError
-          ? err.message
-          : "Something went wrong. Please try again.",
-      );
+      setError(err instanceof ProfileError ? err.message : t("somethingWrong"));
     }
   }
 
@@ -94,13 +92,12 @@ export function ProfileEditor({
     <form onSubmit={handleSubmit} className="flex flex-col gap-8">
       {isCreate && (
         <p className="rounded-xl bg-accent/60 px-4 py-3 text-sm text-accent-foreground">
-          You don&apos;t have a teacher profile yet. Fill this in to appear in
-          search and start taking bookings.
+          {t("noProfileYet")}
         </p>
       )}
 
-      <Section title="Basics">
-        <Field label="Display name" htmlFor="displayName">
+      <Section title={t("basics")}>
+        <Field label={t("displayName")} htmlFor="displayName">
           <Input
             id="displayName"
             value={values.displayName}
@@ -108,7 +105,7 @@ export function ProfileEditor({
             required
           />
         </Field>
-        <Field label="Headline" htmlFor="headline" hint="One line, shown under your name.">
+        <Field label={t("headline")} htmlFor="headline" hint={t("headlineHint")}>
           <Input
             id="headline"
             value={values.headline}
@@ -116,7 +113,7 @@ export function ProfileEditor({
             required
           />
         </Field>
-        <Field label="Teacher type" htmlFor="kind">
+        <Field label={t("teacherType")} htmlFor="kind">
           <Select
             value={values.kind}
             onValueChange={(v) => set("kind", v as ProfileFormValues["kind"])}
@@ -125,16 +122,16 @@ export function ProfileEditor({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="professional">Professional</SelectItem>
-              <SelectItem value="community">Community tutor</SelectItem>
+              <SelectItem value="professional">{t("professional")}</SelectItem>
+              <SelectItem value="community">{t("communityTutor")}</SelectItem>
             </SelectContent>
           </Select>
         </Field>
       </Section>
 
-      <Section title="Location & time">
+      <Section title={t("locationTime")}>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="City" htmlFor="city">
+          <Field label={t("city")} htmlFor="city">
             <Input
               id="city"
               value={values.city}
@@ -142,7 +139,7 @@ export function ProfileEditor({
               required
             />
           </Field>
-          <Field label="Country" htmlFor="countryName">
+          <Field label={t("country")} htmlFor="countryName">
             <Input
               id="countryName"
               value={values.countryName}
@@ -150,7 +147,7 @@ export function ProfileEditor({
               required
             />
           </Field>
-          <Field label="Country code" htmlFor="countryCode" hint="ISO, e.g. UZ">
+          <Field label={t("countryCode")} htmlFor="countryCode" hint={t("countryCodeHint")}>
             <Input
               id="countryCode"
               value={values.countryCode}
@@ -161,11 +158,7 @@ export function ProfileEditor({
               required
             />
           </Field>
-          <Field
-            label="Timezone"
-            htmlFor="timezone"
-            hint="Your lesson times are shown to students in their own zone."
-          >
+          <Field label={t("timezone")} htmlFor="timezone" hint={t("timezoneHint")}>
             <TimezoneSelect
               id="timezone"
               value={values.timezone}
@@ -175,9 +168,9 @@ export function ProfileEditor({
         </div>
       </Section>
 
-      <Section title="Pricing" hint="In so'm per hour.">
+      <Section title={t("pricing")} hint={t("pricingHint")}>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Price per hour (so'm)" htmlFor="price">
+          <Field label={t("pricePerHour")} htmlFor="price">
             <Input
               id="price"
               type="number"
@@ -190,11 +183,7 @@ export function ProfileEditor({
               required
             />
           </Field>
-          <Field
-            label="Trial lesson price (so'm)"
-            htmlFor="trial"
-            hint="Leave blank if you don't offer one."
-          >
+          <Field label={t("trialPrice")} htmlFor="trial" hint={t("trialPriceHint")}>
             <Input
               id="trial"
               type="number"
@@ -216,14 +205,14 @@ export function ProfileEditor({
         </div>
       </Section>
 
-      <Section title="Languages">
+      <Section title={t("languages")}>
         <LanguageRows
           rows={values.languages}
           onChange={(rows) => set("languages", rows)}
         />
       </Section>
 
-      <Section title="Focus areas" hint="Comma-separated, e.g. Conversational, Business, Exam prep.">
+      <Section title={t("focusAreas")} hint={t("focusHint")}>
         <Input
           value={values.focus.join(", ")}
           onChange={(e) =>
@@ -238,8 +227,8 @@ export function ProfileEditor({
         />
       </Section>
 
-      <Section title="About">
-        <Field label="Bio" htmlFor="about">
+      <Section title={t("about")}>
+        <Field label={t("bio")} htmlFor="about">
           <textarea
             id="about"
             rows={4}
@@ -248,7 +237,7 @@ export function ProfileEditor({
             onChange={(e) => set("about", e.target.value)}
           />
         </Field>
-        <Field label="Teaching style" htmlFor="style">
+        <Field label={t("teachingStyle")} htmlFor="style">
           <textarea
             id="style"
             rows={3}
@@ -259,22 +248,22 @@ export function ProfileEditor({
         </Field>
       </Section>
 
-      <Section title="Media" hint="Paste URLs for now — uploads come later.">
-        <Field label="Avatar URL" htmlFor="avatar">
+      <Section title={t("media")} hint={t("mediaHint")}>
+        <Field label={t("avatarUrl")} htmlFor="avatar">
           <Input
             id="avatar"
             value={values.avatarUrl}
             onChange={(e) => set("avatarUrl", e.target.value)}
           />
         </Field>
-        <Field label="Intro video URL" htmlFor="video">
+        <Field label={t("introVideoUrl")} htmlFor="video">
           <Input
             id="video"
             value={values.introVideoUrl}
             onChange={(e) => set("introVideoUrl", e.target.value)}
           />
         </Field>
-        <Field label="Video thumbnail URL" htmlFor="thumb">
+        <Field label={t("videoThumbnailUrl")} htmlFor="thumb">
           <Input
             id="thumb"
             value={values.videoThumbnailUrl}
@@ -283,11 +272,8 @@ export function ProfileEditor({
         </Field>
       </Section>
 
-      <Section
-        title="Video room"
-        hint="Your default meeting link. Students see it once a lesson is confirmed; you can override it per booking."
-      >
-        <Field label="Meeting link" htmlFor="meeting">
+      <Section title={t("videoRoom")} hint={t("videoRoomHint")}>
+        <Field label={t("meetingLink")} htmlFor="meeting">
           <Input
             id="meeting"
             type="url"
@@ -298,7 +284,7 @@ export function ProfileEditor({
         </Field>
       </Section>
 
-      <Section title="Experience">
+      <Section title={t("experience")}>
         <ExperienceRows
           rows={values.experience}
           onChange={(rows) => set("experience", rows)}
@@ -316,14 +302,10 @@ export function ProfileEditor({
 
       <div className="sticky bottom-0 -mx-4 flex items-center gap-3 border-t border-border bg-background px-4 py-4 shadow-[0_-10px_20px_-12px_rgba(23,23,51,0.18)] sm:-mx-6 sm:px-6">
         <Button type="submit" disabled={status === "saving"}>
-          {status === "saving"
-            ? "Saving…"
-            : isCreate
-              ? "Create profile"
-              : "Save changes"}
+          {status === "saving" ? t("saving") : isCreate ? t("createProfile") : t("saveChanges")}
         </Button>
         {status === "saved" && (
-          <span className="text-sm text-muted-foreground">Saved.</span>
+          <span className="text-sm text-muted-foreground">{t("saved")}</span>
         )}
       </div>
     </form>
@@ -377,6 +359,8 @@ function LanguageRows({
   rows: ProfileFormValues["languages"];
   onChange: (rows: ProfileFormValues["languages"]) => void;
 }) {
+  const t = useTranslations("profileEditor");
+  const tLang = useTranslations("languages");
   function update(i: number, patch: Partial<ProfileFormValues["languages"][number]>) {
     onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   }
@@ -385,7 +369,7 @@ function LanguageRows({
       {rows.map((row, i) => (
         <div key={i} className="flex flex-wrap items-end gap-2">
           <div className="flex flex-col gap-1">
-            <Label className="text-xs">Role</Label>
+            <Label className="text-xs">{t("role")}</Label>
             <Select
               value={row.role}
               onValueChange={(v) =>
@@ -396,13 +380,13 @@ function LanguageRows({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="teaches">Teaches</SelectItem>
-                <SelectItem value="also_speaks">Also speaks</SelectItem>
+                <SelectItem value="teaches">{t("teaches")}</SelectItem>
+                <SelectItem value="also_speaks">{t("alsoSpeaks")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="flex flex-col gap-1">
-            <Label className="text-xs">Code</Label>
+            <Label className="text-xs">{t("code")}</Label>
             <Input
               className="w-16"
               value={row.code}
@@ -411,16 +395,16 @@ function LanguageRows({
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label className="text-xs">Name</Label>
+            <Label className="text-xs">{t("name")}</Label>
             <Input
               className="w-32"
               value={row.name}
               onChange={(e) => update(i, { name: e.target.value })}
-              placeholder="English"
+              placeholder={tLang("en")}
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label className="text-xs">Level</Label>
+            <Label className="text-xs">{t("level")}</Label>
             <Select
               value={row.level}
               onValueChange={(v) => update(i, { level: v as LanguageLevel })}
@@ -442,7 +426,7 @@ function LanguageRows({
             variant="ghost"
             size="icon"
             onClick={() => onChange(rows.filter((_, idx) => idx !== i))}
-            aria-label="Remove language"
+            aria-label={t("removeLanguage")}
           >
             <Trash2 />
           </Button>
@@ -460,7 +444,7 @@ function LanguageRows({
           ])
         }
       >
-        <Plus /> Add language
+        <Plus /> {t("addLanguage")}
       </Button>
     </div>
   );
@@ -473,6 +457,7 @@ function ExperienceRows({
   rows: ProfileFormValues["experience"];
   onChange: (rows: ProfileFormValues["experience"]) => void;
 }) {
+  const t = useTranslations("profileEditor");
   function update(i: number, patch: Partial<ProfileFormValues["experience"][number]>) {
     onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   }
@@ -481,7 +466,7 @@ function ExperienceRows({
       {rows.map((row, i) => (
         <div key={i} className="flex flex-wrap items-end gap-2">
           <div className="flex flex-col gap-1">
-            <Label className="text-xs">Title</Label>
+            <Label className="text-xs">{t("title")}</Label>
             <Input
               className="w-44"
               value={row.title}
@@ -489,7 +474,7 @@ function ExperienceRows({
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label className="text-xs">Organisation</Label>
+            <Label className="text-xs">{t("organisation")}</Label>
             <Input
               className="w-44"
               value={row.org}
@@ -497,12 +482,12 @@ function ExperienceRows({
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label className="text-xs">Period</Label>
+            <Label className="text-xs">{t("period")}</Label>
             <Input
               className="w-40"
               value={row.period}
               onChange={(e) => update(i, { period: e.target.value })}
-              placeholder="2020 – present"
+              placeholder={t("periodPlaceholder")}
             />
           </div>
           <Button
@@ -510,7 +495,7 @@ function ExperienceRows({
             variant="ghost"
             size="icon"
             onClick={() => onChange(rows.filter((_, idx) => idx !== i))}
-            aria-label="Remove experience"
+            aria-label={t("removeExperience")}
           >
             <Trash2 />
           </Button>
@@ -525,7 +510,7 @@ function ExperienceRows({
           onChange([...rows, { title: "", org: "", period: "" }])
         }
       >
-        <Plus /> Add experience
+        <Plus /> {t("addExperience")}
       </Button>
     </div>
   );

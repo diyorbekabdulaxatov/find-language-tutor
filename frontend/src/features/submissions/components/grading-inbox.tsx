@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { ChevronDown, ChevronUp, PenLine } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { intlLocale } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getResource } from "@/features/resources/api";
@@ -15,15 +17,15 @@ import {
   type InboxStatus,
 } from "@/features/submissions/api";
 
-const FILTERS: { value: InboxStatus; label: string }[] = [
-  { value: "submitted", label: "Awaiting grade" },
-  { value: "graded", label: "Graded" },
-  { value: "all", label: "All" },
+const FILTERS: { value: InboxStatus; label: "filterSubmitted" | "filterGraded" | "filterAll" }[] = [
+  { value: "submitted", label: "filterSubmitted" },
+  { value: "graded", label: "filterGraded" },
+  { value: "all", label: "filterAll" },
 ];
 
-function fmtDate(iso: string | null): string {
+function fmtDate(iso: string | null, locale: string): string {
   if (!iso) return "—";
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -42,6 +44,7 @@ export function GradingInbox() {
   const [titles, setTitles] = useState<Record<string, string>>({});
   const [state, setState] = useState<"loading" | "ready" | "error" | "no-teacher">("loading");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const t = useTranslations("grading");
 
   useEffect(() => {
     let alive = true;
@@ -79,7 +82,7 @@ export function GradingInbox() {
             const r = await getResource(id);
             return [id, r.title] as const;
           } catch {
-            return [id, "Homework"] as const;
+            return [id, t("homework")] as const;
           }
         }),
       );
@@ -105,10 +108,10 @@ export function GradingInbox() {
     return (
       <div className="rounded-2xl border border-border bg-card px-6 py-12 text-center">
         <p className="text-sm text-muted-foreground">
-          Grading is part of your teaching toolkit — create a teacher profile first.
+          {t("needProfile")}
         </p>
         <Button asChild className="mt-4">
-          <Link href="/dashboard">Go to the dashboard</Link>
+          <Link href="/dashboard">{t("goDashboard")}</Link>
         </Button>
       </div>
     );
@@ -117,10 +120,8 @@ export function GradingInbox() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="font-display text-3xl">Homework to grade</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Writing tasks your students have submitted.
-        </p>
+        <h1 className="font-display text-3xl">{t("title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("intro")}</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -133,20 +134,20 @@ export function GradingInbox() {
               filter === f.value ? "border-primary bg-accent" : "border-border hover:bg-muted",
             )}
           >
-            {f.label}
+            {t(f.label)}
           </button>
         ))}
       </div>
 
       {state === "error" ? (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Could not load your grading inbox.
+          {t("couldNotLoad")}
         </p>
       ) : state === "loading" ? (
         <div className="h-48 animate-pulse rounded-2xl bg-muted" />
       ) : items.length === 0 ? (
         <p className="rounded-2xl border border-border bg-card px-4 py-12 text-center text-sm text-muted-foreground">
-          Nothing here.
+          {t("nothingHere")}
         </p>
       ) : (
         <ul className="flex flex-col gap-3">
@@ -154,7 +155,7 @@ export function GradingInbox() {
             <GradingRow
               key={s.id}
               submission={s}
-              title={titles[s.resourceId] ?? "Homework"}
+              title={titles[s.resourceId] ?? t("homework")}
               expanded={expanded === s.id}
               onToggle={() => setExpanded((cur) => (cur === s.id ? null : s.id))}
               onGraded={(updated) => onGraded(s.id, updated)}
@@ -183,6 +184,8 @@ function GradingRow({
   const [feedback, setFeedback] = useState(s.teacherFeedback);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const t = useTranslations("grading");
+  const locale = useLocale();
   const essay = s.answers.text?.[0] ?? "";
   const wordCount = essay.trim() === "" ? 0 : essay.trim().split(/\s+/).length;
 
@@ -193,14 +196,14 @@ function GradingRow({
       const trimmed = score.trim();
       const parsed = trimmed === "" ? null : Number(trimmed);
       if (parsed !== null && (!Number.isFinite(parsed) || parsed < 0)) {
-        setError("Score must be a non-negative number, or left blank.");
+        setError(t("scoreInvalid"));
         setBusy(false);
         return;
       }
       const updated = await gradeSubmission(s.id, { score: parsed, feedback: feedback.trim() });
       onGraded(updated);
     } catch (err) {
-      setError(err instanceof SubmissionError ? err.message : "Could not save the grade.");
+      setError(err instanceof SubmissionError ? err.message : t("couldNotSaveGrade"));
     } finally {
       setBusy(false);
     }
@@ -219,7 +222,9 @@ function GradingRow({
           <div>
             <p className="text-sm font-medium">{title}</p>
             <p className="text-xs text-muted-foreground">
-              {s.status === "graded" ? "Graded" : "Submitted"} {fmtDate(s.submittedAt ?? s.gradedAt)}
+              {t(s.status === "graded" ? "gradedOn" : "submittedOn", {
+                date: fmtDate(s.submittedAt ?? s.gradedAt, locale),
+              })}
               {s.bookingId && (
                 <>
                   {" · "}
@@ -228,14 +233,14 @@ function GradingRow({
                     className="underline hover:text-foreground"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    View lesson
+                    {t("viewLesson")}
                   </Link>
                 </>
               )}
               {!s.bookingId && (
                 <>
                   {" · "}
-                  <span className="text-muted-foreground/70">Course homework</span>
+                  <span className="text-muted-foreground/70">{t("courseHomework")}</span>
                 </>
               )}
             </p>
@@ -244,7 +249,7 @@ function GradingRow({
         <div className="flex items-center gap-2">
           {s.status === "graded" && (
             <Badge className="bg-primary/15 text-primary">
-              {s.teacherScore != null ? `Score ${s.teacherScore}` : "Graded"}
+              {s.teacherScore != null ? t("scoreBadge", { score: s.teacherScore }) : t("graded")}
             </Badge>
           )}
           {expanded ? (
@@ -259,10 +264,10 @@ function GradingRow({
         <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4">
           <div>
             <p className="text-xs font-medium text-muted-foreground">
-              Essay ({wordCount} word{wordCount === 1 ? "" : "s"})
+              {t("essayWords", { count: wordCount })}
             </p>
             <div className="mt-1 max-h-72 overflow-y-auto rounded-xl border border-border bg-background/40 p-3 text-sm whitespace-pre-wrap">
-              {essay || "The student hasn't written anything yet."}
+              {essay || t("nothingWritten")}
             </div>
           </div>
 
@@ -271,7 +276,7 @@ function GradingRow({
             // re-grade endpoint, so a graded row is a read-only record.
             <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm">
               <p className="font-medium">
-                {s.teacherScore != null ? `Score: ${s.teacherScore}` : "Graded, no score"}
+                {s.teacherScore != null ? t("scoreLine", { score: s.teacherScore }) : t("gradedNoScore")}
               </p>
               {s.teacherFeedback && (
                 <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
@@ -283,7 +288,7 @@ function GradingRow({
             <>
               <div className="flex flex-col gap-1.5">
                 <label htmlFor={`score-${s.id}`} className="text-sm font-medium">
-                  Score (optional)
+                  {t("scoreOptional")}
                 </label>
                 <input
                   id={`score-${s.id}`}
@@ -291,21 +296,21 @@ function GradingRow({
                   min={0}
                   value={score}
                   onChange={(e) => setScore(e.target.value)}
-                  placeholder="No score — feedback only"
+                  placeholder={t("noScorePlaceholder")}
                   className="w-32 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
                 <label htmlFor={`feedback-${s.id}`} className="text-sm font-medium">
-                  Feedback
+                  {t("feedback")}
                 </label>
                 <textarea
                   id={`feedback-${s.id}`}
                   rows={4}
                   value={feedback}
                   onChange={(e) => setFeedback(e.target.value)}
-                  placeholder="What did they do well? What should they work on?"
+                  placeholder={t("feedbackPlaceholder")}
                   className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 />
               </div>
@@ -317,7 +322,7 @@ function GradingRow({
               )}
 
               <Button onClick={() => void submit()} disabled={busy} className="self-start">
-                {busy ? "Saving…" : "Save grade"}
+                {busy ? t("saving") : t("saveGrade")}
               </Button>
             </>
           )}

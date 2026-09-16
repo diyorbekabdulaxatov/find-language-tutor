@@ -12,6 +12,15 @@ export function languageName(t: LanguagesT, lang: { code: string; name: string }
   return t.has(lang.code as never) ? t(lang.code as never) : lang.name;
 }
 
+/**
+ * The BCP-47 tag to hand `Intl` for a UI locale. English keeps the British
+ * day-first, 24-hour conventions the app has always used ("Mon 3 Feb",
+ * "14:30"); ru and uz map straight through.
+ */
+export function intlLocale(locale: string): string {
+  return locale === "en" ? "en-GB" : locale;
+}
+
 /** A greeting in each language we currently have teachers for, used as a motif. */
 const GREETINGS: Record<string, string> = {
   en: "Hello",

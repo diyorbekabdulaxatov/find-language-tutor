@@ -2,14 +2,17 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { Film } from "lucide-react";
 import { formatMoney } from "@/lib/format";
+import { intlLocale } from "@/lib/i18n";
 import { courseCoverUrl, listEnrollments } from "@/features/courses/api";
 import type { CourseEnrollment } from "@/features/courses/types";
 
 export function MyLearning() {
   const [enrollments, setEnrollments] = useState<CourseEnrollment[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const t = useTranslations("courses");
 
   useEffect(() => {
     let alive = true;
@@ -33,10 +36,8 @@ export function MyLearning() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:py-14">
       <header className="max-w-2xl">
-        <h1 className="font-display text-3xl tracking-tight sm:text-4xl">My learning</h1>
-        <p className="mt-3 text-muted-foreground">
-          Courses you&rsquo;ve enrolled in — pick up where you left off.
-        </p>
+        <h1 className="font-display text-3xl tracking-tight sm:text-4xl">{t("learningTitle")}</h1>
+        <p className="mt-3 text-muted-foreground">{t("learningIntro")}</p>
       </header>
 
       <div className="mt-8">
@@ -50,21 +51,19 @@ export function MyLearning() {
 
         {state === "error" && (
           <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            Could not load your courses. Please try again.
+            {t("couldNotLoadCourses")}
           </p>
         )}
 
         {state === "ready" && enrollments.length === 0 && (
           <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center">
-            <p className="font-display text-xl">Nothing here yet</p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Enroll in a course to see it in your learning list.
-            </p>
+            <p className="font-display text-xl">{t("nothingYetTitle")}</p>
+            <p className="mt-2 text-sm text-muted-foreground">{t("nothingYetBody")}</p>
             <Link
               href="/courses/catalog"
               className="mt-4 inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
             >
-              Browse courses
+              {t("browseCourses")}
             </Link>
           </div>
         )}
@@ -84,6 +83,8 @@ export function MyLearning() {
 function EnrollmentRow({ enrollment }: { enrollment: CourseEnrollment }) {
   const { course } = enrollment;
   const complete = enrollment.progressPercent >= 100;
+  const t = useTranslations("courses");
+  const locale = useLocale();
 
   return (
     <li className="flex flex-col gap-4 rounded-2xl bg-card p-4 ring-1 ring-border shadow-soft sm:flex-row sm:items-center">
@@ -103,11 +104,13 @@ function EnrollmentRow({ enrollment }: { enrollment: CourseEnrollment }) {
           {course.title}
         </Link>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {enrollment.source === "free" ? "Free" : formatMoney(enrollment.amountPaid)} ·{" "}
-          enrolled {new Date(enrollment.createdAt).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
+          {enrollment.source === "free" ? t("free") : formatMoney(enrollment.amountPaid, locale)} ·{" "}
+          {t("enrolledOn", {
+            date: new Date(enrollment.createdAt).toLocaleDateString(intlLocale(locale), {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            }),
           })}
         </p>
 
@@ -128,7 +131,7 @@ function EnrollmentRow({ enrollment }: { enrollment: CourseEnrollment }) {
         href={`/learn/${course.id}`}
         className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
       >
-        {complete ? "Review" : "Continue"}
+        {complete ? t("review") : t("continue")}
       </Link>
     </li>
   );

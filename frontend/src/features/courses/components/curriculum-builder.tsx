@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import {
   ChevronDown,
   ChevronUp,
@@ -69,6 +70,7 @@ export function CurriculumBuilder({
   const [addingSection, setAddingSection] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const t = useTranslations("courses");
 
   // The teacher's own published resources, loaded once for the "use a
   // resource" item picker. Also gives us a title to prefill on add, since an
@@ -96,7 +98,7 @@ export function CurriculumBuilder({
     try {
       onCourseChange(await fn());
     } catch (err) {
-      setError(errMsg(err, "Something went wrong."));
+      setError(errMsg(err, t("somethingWrong")));
     } finally {
       setBusy(false);
     }
@@ -113,7 +115,7 @@ export function CurriculumBuilder({
       setNewSectionTitle("");
       setAddingSection(false);
     } catch (err) {
-      setError(errMsg(err, "Could not add that section."));
+      setError(errMsg(err, t("couldNotAddSection")));
     } finally {
       setBusy(false);
     }
@@ -131,10 +133,8 @@ export function CurriculumBuilder({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h2 className="font-display text-xl">Curriculum</h2>
-        <p className="text-xs text-muted-foreground">
-          {sections.length} section{sections.length === 1 ? "" : "s"}
-        </p>
+        <h2 className="font-display text-xl">{t("curriculum")}</h2>
+        <p className="text-xs text-muted-foreground">{t("sectionCount", { count: sections.length })}</p>
       </div>
 
       {error && (
@@ -145,7 +145,7 @@ export function CurriculumBuilder({
 
       {sections.length === 0 && !addingSection && (
         <p className="rounded-2xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-          No sections yet. A course needs at least one section with an item before it can be published.
+          {t("noSections")}
         </p>
       )}
 
@@ -171,12 +171,12 @@ export function CurriculumBuilder({
         <form onSubmit={handleAddSection} className="flex items-center gap-2">
           <Input
             autoFocus
-            placeholder="Section title"
+            placeholder={t("sectionTitle")}
             value={newSectionTitle}
             onChange={(e) => setNewSectionTitle(e.target.value)}
           />
           <Button type="submit" size="sm" disabled={busy || !newSectionTitle.trim()}>
-            Add
+            {t("add")}
           </Button>
           <Button
             type="button"
@@ -187,7 +187,7 @@ export function CurriculumBuilder({
               setNewSectionTitle("");
             }}
           >
-            Cancel
+            {t("cancel")}
           </Button>
         </form>
       ) : (
@@ -199,7 +199,7 @@ export function CurriculumBuilder({
           onClick={() => setAddingSection(true)}
         >
           <Plus className="size-4" />
-          Add section
+          {t("addSection")}
         </Button>
       )}
     </div>
@@ -231,6 +231,7 @@ function SectionCard({
 }) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(section.title);
+  const t = useTranslations("courses");
 
   async function run(fn: () => Promise<CourseDetail>) {
     setBusy(true);
@@ -238,7 +239,7 @@ function SectionCard({
     try {
       onCourseChange(await fn());
     } catch (err) {
-      setError(errMsg(err, "Something went wrong."));
+      setError(errMsg(err, t("somethingWrong")));
     } finally {
       setBusy(false);
     }
@@ -258,8 +259,8 @@ function SectionCard({
     if (
       !confirm(
         section.items.length > 0
-          ? `Delete "${section.title}" and its ${section.items.length} item${section.items.length === 1 ? "" : "s"}?`
-          : `Delete "${section.title}"?`,
+          ? t("confirmDeleteSectionItems", { title: section.title, count: section.items.length })
+          : t("confirmDeleteSection", { title: section.title }),
       )
     ) {
       return;
@@ -282,7 +283,7 @@ function SectionCard({
         <div className="flex flex-col">
           <button
             type="button"
-            aria-label="Move section up"
+            aria-label={t("moveSectionUp")}
             disabled={isFirst || busy}
             onClick={() => onMove(-1)}
             className="rounded p-0.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
@@ -291,7 +292,7 @@ function SectionCard({
           </button>
           <button
             type="button"
-            aria-label="Move section down"
+            aria-label={t("moveSectionDown")}
             disabled={isLast || busy}
             onClick={() => onMove(1)}
             className="rounded p-0.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
@@ -331,7 +332,7 @@ function SectionCard({
 
         <button
           type="button"
-          aria-label="Delete section"
+          aria-label={t("deleteSection")}
           disabled={busy}
           onClick={() => void handleDeleteSection()}
           className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
@@ -342,7 +343,7 @@ function SectionCard({
 
       <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
         {items.length === 0 && (
-          <p className="text-xs text-muted-foreground">No items in this section yet.</p>
+          <p className="text-xs text-muted-foreground">{t("noItems")}</p>
         )}
         {items.map((item, i) => (
           <ItemRow
@@ -401,10 +402,11 @@ function ItemRow({
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(item.title);
   const [previewing, setPreviewing] = useState(false);
+  const t = useTranslations("courses");
 
   const linkedResource = item.kind === "resource" ? resources?.find((r) => r.id === item.resourceId) : undefined;
   const displayTitle =
-    item.title || linkedResource?.title || (item.kind === "video" ? "Untitled video" : "Untitled resource");
+    item.title || linkedResource?.title || (item.kind === "video" ? t("untitledVideo") : t("untitledResource"));
 
   async function run(fn: () => Promise<CourseDetail>) {
     setBusy(true);
@@ -412,7 +414,7 @@ function ItemRow({
     try {
       onCourseChange(await fn());
     } catch (err) {
-      setError(errMsg(err, "Something went wrong."));
+      setError(errMsg(err, t("somethingWrong")));
     } finally {
       setBusy(false);
     }
@@ -426,7 +428,7 @@ function ItemRow({
   }
 
   async function handleDelete() {
-    if (!confirm(`Remove "${displayTitle}" from this section?`)) return;
+    if (!confirm(t("confirmRemoveItem", { title: displayTitle }))) return;
     void run(() => deleteItem(course.id, section.id, item.id));
   }
 
@@ -436,7 +438,7 @@ function ItemRow({
         <div className="flex flex-col">
           <button
             type="button"
-            aria-label="Move item up"
+            aria-label={t("moveItemUp")}
             disabled={isFirst || busy}
             onClick={() => onMove(-1)}
             className="rounded p-0.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
@@ -445,7 +447,7 @@ function ItemRow({
           </button>
           <button
             type="button"
-            aria-label="Move item down"
+            aria-label={t("moveItemDown")}
             disabled={isLast || busy}
             onClick={() => onMove(1)}
             className="rounded p-0.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
@@ -493,7 +495,7 @@ function ItemRow({
             className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => setPreviewing((p) => !p)}
           >
-            {previewing ? "Hide" : "Preview"}
+            {previewing ? t("hide") : t("preview")}
           </button>
         )}
         {item.kind === "resource" && item.resourceId && (
@@ -501,13 +503,13 @@ function ItemRow({
             href={`/resources/${item.resourceId}/edit`}
             className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
           >
-            Open
+            {t("open")}
           </Link>
         )}
 
         <button
           type="button"
-          aria-label="Delete item"
+          aria-label={t("deleteItem")}
           disabled={busy}
           onClick={() => void handleDelete()}
           className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
@@ -525,9 +527,10 @@ function ItemRow({
 
 function VideoPreview({ fileAssetId }: { fileAssetId: string }) {
   const { url, state } = useFileObjectUrl(fileAssetId);
+  const t = useTranslations("courses");
   return (
     <div className="mt-2">
-      {state === "error" && <p className="text-xs text-destructive">Could not load the video.</p>}
+      {state === "error" && <p className="text-xs text-destructive">{t("couldNotLoadVideoPreview")}</p>}
       {state !== "error" && !url && <div className="h-40 animate-pulse rounded-lg bg-muted" />}
       {url && <video controls src={url} className="max-h-64 w-full rounded-lg bg-black" />}
     </div>
@@ -552,6 +555,7 @@ function AddItemForm({
   const [selectedResourceId, setSelectedResourceId] = useState<string>("");
   const [adding, setAdding] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const t = useTranslations("courses");
 
   async function handleVideoFile(file: File) {
     setError(null);
@@ -566,7 +570,7 @@ function AddItemForm({
       onCourseChange(updated);
       setMode("closed");
     } catch (err) {
-      setError(errMsg(err, "Could not add that video."));
+      setError(errMsg(err, t("couldNotAddVideo")));
     } finally {
       setUploading(false);
     }
@@ -587,7 +591,7 @@ function AddItemForm({
       setMode("closed");
       setSelectedResourceId("");
     } catch (err) {
-      setError(errMsg(err, "Could not add that resource."));
+      setError(errMsg(err, t("couldNotAddResource")));
     } finally {
       setAdding(false);
     }
@@ -598,11 +602,11 @@ function AddItemForm({
       <div className="mt-1 flex flex-wrap gap-2">
         <Button type="button" variant="outline" size="sm" onClick={() => setMode("video")}>
           <Upload className="size-3.5" />
-          Upload a video
+          {t("uploadVideo")}
         </Button>
         <Button type="button" variant="outline" size="sm" onClick={() => setMode("resource")}>
           <FileText className="size-3.5" />
-          Use a resource
+          {t("useResource")}
         </Button>
       </div>
     );
@@ -629,25 +633,27 @@ function AddItemForm({
             disabled={uploading}
             onClick={() => fileInputRef.current?.click()}
           >
-            {uploading ? "Uploading…" : "Choose a video file"}
+            {uploading ? t("uploading") : t("chooseVideoFile")}
           </Button>
-          <span className="text-xs text-muted-foreground">Up to 500MB.</span>
+          <span className="text-xs text-muted-foreground">{t("upTo500")}</span>
         </>
       )}
       {mode === "resource" &&
         (resources && resources.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            You have no published resources yet.{" "}
-            <Link href="/resources/new" className="underline">
-              Create one
-            </Link>
-            .
+            {t.rich("noPublishedResources", {
+              link: (chunks) => (
+                <Link href="/resources/new" className="underline">
+                  {chunks}
+                </Link>
+              ),
+            })}
           </p>
         ) : (
           <>
             <Select value={selectedResourceId} onValueChange={setSelectedResourceId}>
               <SelectTrigger className="w-56">
-                <SelectValue placeholder={resources ? "Choose a resource…" : "Loading…"} />
+                <SelectValue placeholder={resources ? t("chooseResource") : t("loading")} />
               </SelectTrigger>
               <SelectContent>
                 {(resources ?? []).map((r) => (
@@ -663,13 +669,13 @@ function AddItemForm({
               disabled={!selectedResourceId || adding}
               onClick={() => void handleAddResource()}
             >
-              Add
+              {t("add")}
             </Button>
           </>
         ))}
       <button
         type="button"
-        aria-label="Cancel"
+        aria-label={t("cancel")}
         className={cn("ml-auto rounded p-1 text-muted-foreground hover:bg-muted", uploading && "pointer-events-none opacity-50")}
         onClick={() => setMode("closed")}
       >

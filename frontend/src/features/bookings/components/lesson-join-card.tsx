@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -36,6 +37,7 @@ export function LessonJoinCard({
   isTeacher: boolean;
 }) {
   const [now, setNow] = useState(() => Date.now());
+  const t = useTranslations("bookings");
 
   const start = new Date(startAt).getTime();
   const end = new Date(endAt).getTime();
@@ -52,23 +54,23 @@ export function LessonJoinCard({
   return (
     <div className="mt-5 rounded-xl bg-primary/8 p-4">
       <div className="flex items-center gap-2 text-sm font-medium">
-        <Video className="size-4" /> Video call
+        <Video className="size-4" /> {t("videoCall")}
       </div>
 
       {ended ? (
         <p className="mt-1 text-sm text-muted-foreground">
-          This lesson has ended.
+          {t("lessonEnded")}
         </p>
       ) : (
         <>
           <p className="mt-1 text-sm text-muted-foreground">
             {joinOpen
               ? meetingUrl
-                ? "You can join now."
+                ? t("joinNow")
                 : isTeacher
-                  ? "Add a meeting link below so your student can join."
-                  : "Waiting for the teacher to share the meeting link."
-              : `Starts in ${countdownLabel(untilStart)}.`}
+                  ? t("addLinkTeacher")
+                  : t("waitingForLink")
+              : t("startsIn", { countdown: countdownLabel(untilStart) })}
           </p>
 
           {meetingUrl ? (
@@ -80,10 +82,10 @@ export function LessonJoinCard({
             >
               {joinOpen ? (
                 <a href={meetingUrl} target="_blank" rel="noopener noreferrer">
-                  Join lesson
+                  {t("joinLesson")}
                 </a>
               ) : (
-                <span>Join opens 10 min before</span>
+                <span>{t("joinOpens")}</span>
               )}
             </Button>
           ) : null}

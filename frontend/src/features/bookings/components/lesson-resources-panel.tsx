@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ComponentType } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import {
   BookOpen,
   BookOpenText,
@@ -66,6 +67,7 @@ export function LessonResourcesPanel({
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
   const tz = viewerTimezone();
+  const t = useTranslations("bookings");
 
   useEffect(() => {
     let alive = true;
@@ -78,9 +80,7 @@ export function LessonResourcesPanel({
         setState("ready");
       } catch (err) {
         if (!alive) return;
-        setError(
-          err instanceof ResourceError ? err.message : "Could not load this lesson's resources.",
-        );
+        setError(err instanceof ResourceError ? err.message : t("resourcesCouldNotLoad"));
         setState("error");
       }
     }
@@ -88,7 +88,7 @@ export function LessonResourcesPanel({
     return () => {
       alive = false;
     };
-  }, [booking.id]);
+  }, [booking.id, t]);
 
   async function refresh() {
     try {
@@ -100,19 +100,13 @@ export function LessonResourcesPanel({
   }
 
   async function handleDetach(attachmentId: string) {
-    if (
-      !confirm(
-        "Remove this resource from the lesson? Any submission already filed against it is kept.",
-      )
-    ) {
-      return;
-    }
+    if (!confirm(t("confirmDetach"))) return;
     setError(null);
     try {
       await detachBookingResource(booking.id, attachmentId);
       setAttachments((prev) => prev.filter((a) => a.id !== attachmentId));
     } catch (err) {
-      setError(err instanceof ResourceError ? err.message : "Could not remove that resource.");
+      setError(err instanceof ResourceError ? err.message : t("couldNotRemove"));
     }
   }
 
@@ -132,7 +126,7 @@ export function LessonResourcesPanel({
     <div className="mt-4 rounded-2xl border border-border bg-card p-6">
       <div className="flex items-center justify-between gap-3">
         <h2 className="inline-flex items-center gap-2 font-display text-lg">
-          <BookOpen className="size-4 text-primary" /> Lesson resources
+          <BookOpen className="size-4 text-primary" /> {t("lessonResources")}
         </h2>
         {isTeacher && (
           <AttachResourceSheet bookingId={booking.id} onAttached={() => void refresh()} />
@@ -146,9 +140,9 @@ export function LessonResourcesPanel({
       )}
 
       <ResourceGroup
-        title="Materials"
+        title={t("materials")}
         items={materials}
-        emptyHint={isTeacher ? "Attach a file, link or article for your student." : null}
+        emptyHint={isTeacher ? t("attachHintMaterial") : null}
         bookingId={booking.id}
         isTeacher={isTeacher}
         isStudent={isStudent}
@@ -157,9 +151,9 @@ export function LessonResourcesPanel({
         onSubmissionChange={() => void refresh()}
       />
       <ResourceGroup
-        title="Homework"
+        title={t("homework")}
         items={homework}
-        emptyHint={isTeacher ? "Assign a quiz, listening, reading or writing task." : null}
+        emptyHint={isTeacher ? t("attachHintHomework") : null}
         bookingId={booking.id}
         isTeacher={isTeacher}
         isStudent={isStudent}
@@ -239,19 +233,22 @@ function ResourceRow({
   onSubmissionChange: (s: Submission) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useTranslations("bookings");
+  const tType = useTranslations("resourceTypes");
+  const locale = useLocale();
   const Icon = TYPE_ICON[a.type];
   const canOpen = a.kind === "material" || isStudent;
 
   const openLabel =
     a.kind === "material"
-      ? "View"
+      ? t("view")
       : !a.submission || a.submission.status === "in_progress"
         ? a.submission
-          ? "Continue"
-          : "Start"
+          ? t("continueWork")
+          : t("start")
         : a.submission.status === "submitted"
-          ? "Review"
-          : "View feedback";
+          ? t("review")
+          : t("viewFeedback");
 
   return (
     <li className="flex items-start gap-3 rounded-xl border border-border bg-background/40 p-3">
@@ -261,8 +258,8 @@ function ResourceRow({
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{a.title}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {a.type}
-          {a.dueAt && <> · Due {formatFull(a.dueAt, tz)}</>}
+          {tType(a.type)}
+          {a.dueAt && <> · {t("due", { date: formatFull(a.dueAt, tz, locale) })}</>}
         </p>
         {a.kind === "homework" && isStudent && (
           <div className="mt-1.5">
@@ -301,7 +298,7 @@ function ResourceRow({
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="Remove from lesson"
+            aria-label={t("removeFromLesson")}
             className="text-muted-foreground hover:text-destructive"
             onClick={() => onDetach(a.id)}
           >
@@ -328,6 +325,8 @@ function AttachResourceSheet({
   const [dueAt, setDueAt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const t = useTranslations("bookings");
+  const tType = useTranslations("resourceTypes");
 
   useEffect(() => {
     if (!open) return;
@@ -375,7 +374,7 @@ function AttachResourceSheet({
       setDueAt("");
       onAttached();
     } catch (err) {
-      setError(err instanceof ResourceError ? err.message : "Could not attach that resource.");
+      setError(err instanceof ResourceError ? err.message : t("couldNotAttach"));
     } finally {
       setBusy(false);
     }
@@ -386,31 +385,33 @@ function AttachResourceSheet({
       <SheetTrigger asChild>
         <Button size="sm">
           <Plus className="size-4" />
-          Attach a resource
+          {t("attachResource")}
         </Button>
       </SheetTrigger>
       <SheetContent side="right" className="w-full max-w-md">
         <SheetHeader>
-          <SheetTitle>Attach a resource</SheetTitle>
+          <SheetTitle>{t("attachResource")}</SheetTitle>
         </SheetHeader>
 
         {loadState === "loading" ? (
           <div className="h-40 animate-pulse rounded-xl bg-muted" />
         ) : loadState === "error" ? (
-          <p className="text-sm text-destructive">Could not load your resources.</p>
+          <p className="text-sm text-destructive">{t("couldNotLoadResources")}</p>
         ) : resources.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            You have no published resources yet — publish one from{" "}
-            <a href="/resources" className="underline">
-              Teaching resources
-            </a>{" "}
-            first.
+            {t.rich("noPublished", {
+              link: (chunks) => (
+                <a href="/resources" className="underline">
+                  {chunks}
+                </a>
+              ),
+            })}
           </p>
         ) : (
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="attach-resource" className="text-sm font-medium">
-                Resource
+                {t("resource")}
               </label>
               <select
                 id="attach-resource"
@@ -418,17 +419,17 @@ function AttachResourceSheet({
                 onChange={(e) => selectResource(e.target.value)}
                 className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               >
-                <option value="">Choose a resource…</option>
+                <option value="">{t("chooseResource")}</option>
                 {resources.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.title} ({r.type})
+                    {r.title} ({tType(r.type)})
                   </option>
                 ))}
               </select>
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">Assign as</span>
+              <span className="text-sm font-medium">{t("assignAs")}</span>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -439,7 +440,7 @@ function AttachResourceSheet({
                       : "border-border hover:bg-muted"
                   }`}
                 >
-                  Material
+                  {t("material")}
                 </button>
                 <button
                   type="button"
@@ -451,13 +452,12 @@ function AttachResourceSheet({
                       : "border-border hover:bg-muted"
                   }`}
                 >
-                  Homework
+                  {t("homework")}
                 </button>
               </div>
               {selected && !canHomework && (
                 <p className="text-xs text-muted-foreground">
-                  {selected.type === "material" ? "Materials" : "Articles"} have no submission
-                  flow — attach as material.
+                  {t("noSubmissionFlow", { type: selected.type })}
                 </p>
               )}
             </div>
@@ -465,7 +465,7 @@ function AttachResourceSheet({
             {kind === "homework" && (
               <div className="flex flex-col gap-1.5">
                 <label htmlFor="attach-due" className="text-sm font-medium">
-                  Due date (optional)
+                  {t("dueOptional")}
                 </label>
                 <input
                   id="attach-due"
@@ -484,7 +484,7 @@ function AttachResourceSheet({
             )}
 
             <Button onClick={() => void submit()} disabled={busy || !resourceId} className="self-start">
-              {busy ? "Attaching…" : "Attach"}
+              {busy ? t("attaching") : t("attach")}
             </Button>
           </div>
         )}

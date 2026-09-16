@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { Film, GraduationCap, Layers } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 import { courseCoverUrl } from "@/features/courses/api";
@@ -11,6 +12,8 @@ import type { CourseCatalogEntry } from "@/features/courses/types";
  */
 export function CourseCatalogCard({ course }: { course: CourseCatalogEntry }) {
   const free = course.price.amountMinor === 0;
+  const t = useTranslations("courses");
+  const locale = useLocale();
 
   return (
     <Link
@@ -35,7 +38,7 @@ export function CourseCatalogCard({ course }: { course: CourseCatalogEntry }) {
 
         {free && (
           <span className="absolute left-3 top-3 rounded-full bg-mint/90 px-2.5 py-1 text-xs font-semibold text-mint-foreground shadow-soft backdrop-blur">
-            Free
+            {t("free")}
           </span>
         )}
       </div>
@@ -58,16 +61,15 @@ export function CourseCatalogCard({ course }: { course: CourseCatalogEntry }) {
 
         <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <Layers className="size-3.5" />
-          {course.sectionCount} {course.sectionCount === 1 ? "section" : "sections"} ·{" "}
-          {course.itemCount} {course.itemCount === 1 ? "lesson" : "lessons"}
+          {t("sections", { count: course.sectionCount })} · {t("lessons", { count: course.itemCount })}
         </p>
 
         <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-3">
           <span className="font-display text-base text-foreground">
-            {free ? "Free" : formatMoney(course.price)}
+            {free ? t("free") : formatMoney(course.price, locale)}
           </span>
           <span className="rounded-lg bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-colors group-hover:bg-primary/90">
-            View course
+            {t("viewCourse")}
           </span>
         </div>
       </div>

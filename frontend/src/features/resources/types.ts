@@ -65,18 +65,9 @@ export interface UploadedFile {
   url: string;
 }
 
-export const RESOURCE_TYPES: { value: ResourceType; label: string; blurb: string }[] = [
-  { value: "material", label: "Material", blurb: "A file or link to share (PDF, slides, doc)." },
-  { value: "article", label: "Article", blurb: "Text to read." },
-  { value: "quiz", label: "Quiz", blurb: "Auto-graded questions." },
-  { value: "listening", label: "Listening task", blurb: "Audio + auto-graded questions." },
-  { value: "reading", label: "Reading task", blurb: "A passage + auto-graded questions." },
-  { value: "writing", label: "Writing task", blurb: "A prompt the student writes to; you grade it." },
-];
-
-export function typeLabel(t: ResourceType): string {
-  return RESOURCE_TYPES.find((x) => x.value === t)?.label ?? t;
-}
+/** Every type, in the order the type picker shows them. Labels and blurbs
+ *  live in the `resourceTypes` messages. */
+export const RESOURCE_TYPES: ResourceType[] = ["material", "article", "quiz", "listening", "reading", "writing"];
 
 export function isQuizLike(t: ResourceType): boolean {
   return t === "quiz" || t === "listening" || t === "reading";

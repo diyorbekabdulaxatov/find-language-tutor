@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import { Suspense } from "react";
 import { RequireUser } from "@/features/auth/require-user";
 import { EditResource } from "@/features/resources/components/edit-resource";
 
-export const metadata: Metadata = { title: "Edit resource" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("resources");
+  return { title: t("metaEdit") };
+}
 
 export default async function EditResourcePage({
   params,

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, CalendarCheck, CheckCircle2 } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 import { useAuth } from "@/features/auth/auth-context";
@@ -34,6 +35,9 @@ export function BookingFlow({
 }) {
   const { status } = useAuth();
   const router = useRouter();
+  const t = useTranslations("bookings");
+  const tBook = useTranslations("bookPage");
+  const locale = useLocale();
 
   const [step, setStep] = useState<Step>("pick");
   const [selection, setSelection] = useState<SlotSelection | null>(null);
@@ -75,17 +79,11 @@ export function BookingFlow({
         err instanceof BookingError &&
         (err.code === "slot_taken" || err.code === "slot_unavailable")
       ) {
-        setError(
-          "That time isn't available any more — someone may have just booked it. Pick another.",
-        );
+        setError(t("slotGone"));
         setStep("pick");
         return;
       }
-      setError(
-        err instanceof BookingError
-          ? err.message
-          : "Could not create the booking. Please try again.",
-      );
+      setError(err instanceof BookingError ? err.message : t("couldNotCreate"));
     }
   }
 
@@ -94,34 +92,22 @@ export function BookingFlow({
     return (
       <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-card p-8 text-center">
         <CheckCircle2 className="size-10 text-primary" />
-        <h2 className="font-display text-2xl">
-          {paid ? "Lesson booked" : "Lesson reserved"}
-        </h2>
+        <h2 className="font-display text-2xl">{paid ? t("lessonBooked") : t("lessonReserved")}</h2>
         <p className="max-w-sm text-sm text-muted-foreground">
-          {paid ? (
-            <>
-              Your lesson with {teacherName} is confirmed. {teacherName} is paid
-              once the lesson takes place.
-            </>
-          ) : (
-            <>
-              Your lesson with {teacherName} is held, but payment didn&apos;t go
-              through. Finish paying from your bookings to confirm it.
-            </>
-          )}
+          {paid ? t("bookedBody", { name: teacherName }) : t("reservedBody", { name: teacherName })}
         </p>
         <p className="text-sm">
-          {formatFull(booking.startAt, viewerTz)}{" "}
+          {formatFull(booking.startAt, viewerTz, locale)}{" "}
           <span className="text-muted-foreground">
-            ({booking.durationMinutes} min · {formatMoney(booking.price)})
+            ({t("min", { count: booking.durationMinutes })} · {formatMoney(booking.price, locale)})
           </span>
         </p>
         <div className="flex gap-3">
           <Button asChild>
-            <Link href={`/bookings/${booking.id}`}>View booking</Link>
+            <Link href={`/bookings/${booking.id}`}>{t("viewBooking")}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/bookings">All bookings</Link>
+            <Link href="/bookings">{t("allBookings")}</Link>
           </Button>
         </div>
       </div>
@@ -136,7 +122,7 @@ export function BookingFlow({
           onClick={() => setStep("done")}
           className="inline-flex items-center gap-1.5 self-start text-sm font-medium text-muted-foreground hover:text-foreground"
         >
-          Skip for now
+          {t("skipForNow")}
         </button>
         <PaymentForm
           bookingId={booking.id}
@@ -158,32 +144,29 @@ export function BookingFlow({
           onClick={() => setStep("pick")}
           className="inline-flex items-center gap-1.5 self-start text-sm font-medium text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="size-4" /> Change time
+          <ArrowLeft className="size-4" /> {t("changeTime")}
         </button>
 
         <div className="rounded-2xl border border-border bg-card p-6">
-          <h2 className="font-display text-xl">Confirm your lesson</h2>
+          <h2 className="font-display text-xl">{t("confirmYourLesson")}</h2>
           <dl className="mt-4 flex flex-col gap-3 text-sm">
-            <Row label="Teacher">{teacherName}</Row>
-            <Row label="When">{formatFull(selection.slot.startAt, viewerTz)}</Row>
-            <Row label="Your timezone">{viewerTz}</Row>
+            <Row label={t("teacher")}>{teacherName}</Row>
+            <Row label={t("when")}>{formatFull(selection.slot.startAt, viewerTz, locale)}</Row>
+            <Row label={t("yourTimezone")}>{viewerTz}</Row>
             {viewerTz !== teacherTimezone && (
-              <Row label="Teacher's time">
-                {formatFull(selection.slot.startAt, teacherTimezone)}
+              <Row label={t("teachersTime")}>
+                {formatFull(selection.slot.startAt, teacherTimezone, locale)}
               </Row>
             )}
-            <Row label="Length">
+            <Row label={t("length")}>
               {selection.isTrial
-                ? `Trial lesson (${selection.durationMinutes} min)`
-                : `${selection.durationMinutes} min`}
+                ? t("trialLength", { count: selection.durationMinutes })
+                : t("min", { count: selection.durationMinutes })}
             </Row>
-            <Row label="Price">{formatMoney(selection.slot.price)}</Row>
+            <Row label={t("price")}>{formatMoney(selection.slot.price, locale)}</Row>
           </dl>
 
-          <p className="mt-4 rounded-lg bg-primary/8 p-3 text-xs text-muted-foreground">
-            Next you&apos;ll pay to hold the slot. The teacher is only paid after
-            the lesson — cancel before then for a full refund.
-          </p>
+          <p className="mt-4 rounded-lg bg-primary/8 p-3 text-xs text-muted-foreground">{t("nextPay")}</p>
 
           {error && (
             <p className="mt-4 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -197,7 +180,7 @@ export function BookingFlow({
             onClick={handleConfirm}
             disabled={submitting}
           >
-            {submitting ? "Reserving…" : "Continue to payment"}
+            {submitting ? t("reserving") : t("continueToPayment")}
           </Button>
         </div>
       </div>
@@ -208,7 +191,7 @@ export function BookingFlow({
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <CalendarCheck className="size-4" />
-        {isTrial ? "Book a trial lesson" : "Book a lesson"} with {teacherName}
+        {t("bookWith", { title: tBook(isTrial ? "bookTrial" : "bookLesson"), name: teacherName })}
       </div>
       {error && (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">

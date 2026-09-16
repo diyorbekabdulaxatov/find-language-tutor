@@ -5,6 +5,7 @@
  */
 
 import type { BookableSlot } from "./api";
+import { intlLocale } from "@/lib/i18n";
 
 export function viewerTimezone(): string {
   return (
@@ -13,8 +14,8 @@ export function viewerTimezone(): string {
 }
 
 /** "Mon 3 Feb" in the given zone. */
-export function formatDayLabel(iso: string, tz: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+export function formatDayLabel(iso: string, tz: string, locale = "en"): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     timeZone: tz,
     weekday: "short",
     day: "numeric",
@@ -23,8 +24,8 @@ export function formatDayLabel(iso: string, tz: string): string {
 }
 
 /** "14:30" in the given zone. */
-export function formatTime(iso: string, tz: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+export function formatTime(iso: string, tz: string, locale = "en"): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     timeZone: tz,
     hour: "2-digit",
     minute: "2-digit",
@@ -33,8 +34,8 @@ export function formatTime(iso: string, tz: string): string {
 }
 
 /** "Monday, 3 February 2025 at 14:30" in the given zone. */
-export function formatFull(iso: string, tz: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+export function formatFull(iso: string, tz: string, locale = "en"): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     timeZone: tz,
     weekday: "long",
     day: "numeric",
@@ -64,13 +65,13 @@ export interface SlotDay {
 }
 
 /** Group slots into days by the viewer's local calendar date. */
-export function groupByDay(slots: BookableSlot[], viewerTz: string): SlotDay[] {
+export function groupByDay(slots: BookableSlot[], viewerTz: string, locale = "en"): SlotDay[] {
   const days = new Map<string, SlotDay>();
   for (const slot of slots) {
     const key = dayKey(slot.startAt, viewerTz);
     let day = days.get(key);
     if (!day) {
-      day = { key, label: formatDayLabel(slot.startAt, viewerTz), slots: [] };
+      day = { key, label: formatDayLabel(slot.startAt, viewerTz, locale), slots: [] };
       days.set(key, day);
     }
     day.slots.push(slot);

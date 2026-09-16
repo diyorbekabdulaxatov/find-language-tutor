@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { FileText, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,6 @@ import {
   type Resource,
   type ResourceStatus,
   type ResourceType,
-  typeLabel,
 } from "@/features/resources/types";
 
 type TypeFilter = ResourceType | "all";
@@ -32,6 +32,8 @@ export function ResourceLibrary() {
   const [items, setItems] = useState<Resource[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error" | "no-teacher">("loading");
   const [reloadKey, setReloadKey] = useState(0);
+  const t = useTranslations("resources");
+  const tType = useTranslations("resourceTypes");
 
   useEffect(() => {
     let alive = true;
@@ -63,11 +65,10 @@ export function ResourceLibrary() {
     return (
       <div className="rounded-2xl border border-border bg-card px-6 py-12 text-center">
         <p className="text-sm text-muted-foreground">
-          Resources are part of your teaching toolkit — create a teacher profile
-          first.
+          {t("needProfile")}
         </p>
         <Button asChild className="mt-4">
-          <Link href="/dashboard">Go to the dashboard</Link>
+          <Link href="/dashboard">{t("goDashboard")}</Link>
         </Button>
       </div>
     );
@@ -77,32 +78,30 @@ export function ResourceLibrary() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl">Teaching resources</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Build materials and tasks once, then attach them to lessons.
-          </p>
+          <h1 className="font-display text-3xl">{t("title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("intro")}</p>
         </div>
         <Button asChild>
           <Link href="/resources/new">
             <Plus className="size-4" />
-            New resource
+            {t("newResource")}
           </Link>
         </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <Chip active={type === "all"} onClick={() => setType("all")}>
-          All types
+          {t("allTypes")}
         </Chip>
-        {RESOURCE_TYPES.map((t) => (
-          <Chip key={t.value} active={type === t.value} onClick={() => setType(t.value)}>
-            {t.label}
+        {RESOURCE_TYPES.map((rt) => (
+          <Chip key={rt} active={type === rt} onClick={() => setType(rt)}>
+            {tType(`long.${rt}`)}
           </Chip>
         ))}
         <span className="mx-1 h-4 w-px bg-border" />
         {(["all", "draft", "published"] as StatusFilter[]).map((s) => (
           <Chip key={s} active={status === s} onClick={() => setStatus(s)}>
-            {s === "all" ? "Any status" : s}
+            {s === "all" ? t("anyStatus") : t(s)}
           </Chip>
         ))}
         <label className="ml-1 flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -112,19 +111,19 @@ export function ResourceLibrary() {
             onChange={(e) => setShowArchived(e.target.checked)}
             className="accent-primary"
           />
-          Archived
+          {t("archived")}
         </label>
       </div>
 
       {state === "error" ? (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Could not load your resources.
+          {t("couldNotLoad")}
         </p>
       ) : state === "loading" ? (
         <div className="h-64 animate-pulse rounded-2xl bg-muted" />
       ) : items.length === 0 ? (
         <p className="rounded-2xl border border-border bg-card px-4 py-12 text-center text-sm text-muted-foreground">
-          Nothing here yet.
+          {t("nothingYet")}
         </p>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
@@ -150,7 +149,7 @@ function Chip({
     <button
       onClick={onClick}
       className={cn(
-        "rounded-lg border px-2.5 py-1 text-xs font-medium capitalize transition-colors",
+        "rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
         active ? "border-primary bg-accent" : "border-border hover:bg-muted",
       )}
     >
@@ -161,6 +160,8 @@ function Chip({
 
 function ResourceCard({ resource: r, onChanged }: { resource: Resource; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
+  const t = useTranslations("resources");
+  const tType = useTranslations("resourceTypes");
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -186,12 +187,9 @@ function ResourceCard({ resource: r, onChanged }: { resource: Resource; onChange
             {r.title}
           </Link>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {typeLabel(r.type)}
+            {tType(`long.${r.type}`)}
             {(r.type === "quiz" || r.type === "listening" || r.type === "reading") &&
-              (() => {
-                const n = r.content.questions?.length ?? 0;
-                return ` · ${n} question${n === 1 ? "" : "s"}`;
-              })()}
+              ` ${t("questionCount", { count: r.content.questions?.length ?? 0 })}`}
           </p>
         </div>
         <span
@@ -204,22 +202,22 @@ function ResourceCard({ resource: r, onChanged }: { resource: Resource; onChange
                 : "bg-star/15 text-star",
           )}
         >
-          {r.archived ? "Archived" : r.status}
+          {r.archived ? t("archived") : t(r.status)}
         </span>
       </div>
 
       <div className="flex flex-wrap gap-2 border-t border-border pt-3">
         <Button asChild size="sm" variant="outline">
-          <Link href={`/resources/${r.id}/edit`}>Edit</Link>
+          <Link href={`/resources/${r.id}/edit`}>{t("edit")}</Link>
         </Button>
         {!r.archived &&
           (r.status === "published" ? (
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => unpublishResource(r.id))}>
-              Unpublish
+              {t("unpublish")}
             </Button>
           ) : (
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => publishResource(r.id))}>
-              Publish
+              {t("publish")}
             </Button>
           ))}
         <Button
@@ -229,7 +227,7 @@ function ResourceCard({ resource: r, onChanged }: { resource: Resource; onChange
           disabled={busy}
           onClick={() => run(() => (r.archived ? unarchiveResource(r.id) : archiveResource(r.id)))}
         >
-          {r.archived ? "Restore" : "Archive"}
+          {r.archived ? t("restore") : t("archive")}
         </Button>
       </div>
     </li>

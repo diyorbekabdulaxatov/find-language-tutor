@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
 import {
@@ -37,6 +38,8 @@ export function SlotPicker({
   onPick: (sel: SlotSelection) => void;
 }) {
   const viewerTz = useMemo(() => viewerTimezone(), []);
+  const t = useTranslations("bookings");
+  const locale = useLocale();
   const [duration, setDuration] = useState<Duration>(
     isTrial ? TRIAL_DURATION : 60,
   );
@@ -57,11 +60,7 @@ export function SlotPicker({
         if (alive) setSlots(res.slots);
       } catch (err) {
         if (alive) {
-          setError(
-            err instanceof BookingError
-              ? err.message
-              : "Could not load available times.",
-          );
+          setError(err instanceof BookingError ? err.message : t("couldNotLoadTimes"));
         }
       } finally {
         if (alive) setLoading(false);
@@ -71,9 +70,9 @@ export function SlotPicker({
     return () => {
       alive = false;
     };
-  }, [slug, duration]);
+  }, [slug, duration, t]);
 
-  const days = useMemo(() => groupByDay(slots, viewerTz), [slots, viewerTz]);
+  const days = useMemo(() => groupByDay(slots, viewerTz, locale), [slots, viewerTz, locale]);
   const currentDay =
     days.find((d) => d.key === activeDay) ?? days[0] ?? null;
 
@@ -83,7 +82,7 @@ export function SlotPicker({
     <div className="flex flex-col gap-6">
       {!isTrial && (
         <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium">Lesson length</span>
+          <span className="text-sm font-medium">{t("lessonLength")}</span>
           <div className="flex flex-wrap gap-2">
             {DURATION_OPTIONS.map((d) => (
               <button
@@ -97,7 +96,7 @@ export function SlotPicker({
                     : "border-border hover:bg-muted",
                 )}
               >
-                {d} min
+                {t("min", { count: d })}
               </button>
             ))}
           </div>
@@ -106,10 +105,8 @@ export function SlotPicker({
 
       <div>
         <div className="flex items-baseline justify-between">
-          <span className="text-sm font-medium">Pick a time</span>
-          <span className="text-xs text-muted-foreground">
-            Shown in your time ({viewerTz})
-          </span>
+          <span className="text-sm font-medium">{t("pickTime")}</span>
+          <span className="text-xs text-muted-foreground">{t("shownInYourTime", { tz: viewerTz })}</span>
         </div>
 
         {loading && (
@@ -124,7 +121,7 @@ export function SlotPicker({
 
         {!loading && !error && days.length === 0 && (
           <p className="mt-3 rounded-lg bg-muted px-3 py-6 text-center text-sm text-muted-foreground">
-            No open times in the next two weeks. Check back soon.
+            {t("noOpenTimes")}
           </p>
         )}
 
@@ -171,10 +168,10 @@ export function SlotPicker({
                     title={
                       sameZone
                         ? undefined
-                        : `${formatTime(s.startAt, teacherTimezone)} for the teacher`
+                        : t("forTheTeacher", { time: formatTime(s.startAt, teacherTimezone, locale) })
                     }
                   >
-                    {formatTime(s.startAt, viewerTz)}
+                    {formatTime(s.startAt, viewerTz, locale)}
                   </button>
                 );
               })}
@@ -187,23 +184,27 @@ export function SlotPicker({
         <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
           <div className="text-sm">
             <div className="font-medium">
-              {formatTime(selected.startAt, viewerTz)} –{" "}
-              {formatTime(selected.endAt, viewerTz)} your time
+              {t("yourTime", {
+                start: formatTime(selected.startAt, viewerTz, locale),
+                end: formatTime(selected.endAt, viewerTz, locale),
+              })}
             </div>
             {!sameZone && (
               <div className="text-muted-foreground">
-                {formatTime(selected.startAt, teacherTimezone)} –{" "}
-                {formatTime(selected.endAt, teacherTimezone)} for the teacher (
-                {teacherTimezone})
+                {t("teacherTime", {
+                  start: formatTime(selected.startAt, teacherTimezone, locale),
+                  end: formatTime(selected.endAt, teacherTimezone, locale),
+                  tz: teacherTimezone,
+                })}
               </div>
             )}
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">
-              {isTrial ? "Trial lesson" : `${duration} min`}
+              {isTrial ? t("trialLesson") : t("min", { count: duration })}
             </span>
             <span className="font-display text-lg">
-              {formatMoney(selected.price)}
+              {formatMoney(selected.price, locale)}
             </span>
           </div>
           <Button
@@ -211,7 +212,7 @@ export function SlotPicker({
               onPick({ slot: selected, durationMinutes: duration, isTrial })
             }
           >
-            Continue
+            {t("continue")}
           </Button>
         </div>
       )}

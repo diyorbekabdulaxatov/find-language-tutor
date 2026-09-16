@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ export function QuestionBuilder({
   questions: Question[];
   onChange: (next: Question[]) => void;
 }) {
+  const t = useTranslations("resources");
   const update = (i: number, patch: Partial<Question>) =>
     onChange(questions.map((q, idx) => (idx === i ? { ...q, ...patch } : q)));
 
@@ -54,7 +56,7 @@ export function QuestionBuilder({
         onClick={() => onChange([...questions, newQuestion()])}
       >
         <Plus className="size-4" />
-        Add question
+        {t("addQuestion")}
       </Button>
     </div>
   );
@@ -71,6 +73,7 @@ function QuestionCard({
   onChange: (patch: Partial<Question>) => void;
   onRemove: () => void;
 }) {
+  const t = useTranslations("resources");
   function setKind(kind: QuestionKind) {
     if (kind === "text") {
       onChange({ kind, choices: [], correct: [] });
@@ -98,12 +101,12 @@ function QuestionCard({
         <span className="mt-2 text-xs font-semibold text-muted-foreground">Q{index + 1}</span>
         <Input
           value={q.prompt}
-          placeholder="Question prompt"
+          placeholder={t("questionPrompt")}
           onChange={(e) => onChange({ prompt: e.target.value })}
         />
         <button
           type="button"
-          aria-label="Remove question"
+          aria-label={t("removeQuestion")}
           className="mt-1.5 rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
           onClick={onRemove}
         >
@@ -117,12 +120,12 @@ function QuestionCard({
           onChange={(e) => setKind(e.target.value as QuestionKind)}
           className="rounded-lg border border-input bg-transparent px-2 py-1 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         >
-          <option value="single">Single choice</option>
-          <option value="multi">Multiple choice</option>
-          <option value="text">Text answer</option>
+          <option value="single">{t("singleChoice")}</option>
+          <option value="multi">{t("multipleChoice")}</option>
+          <option value="text">{t("textAnswer")}</option>
         </select>
         <label className="flex items-center gap-1.5 text-muted-foreground">
-          Points
+          {t("points")}
           <Input
             type="number"
             min={1}
@@ -144,7 +147,7 @@ function QuestionCard({
             <div key={c.id} className="flex items-center gap-2">
               <button
                 type="button"
-                aria-label={q.correct.includes(c.id) ? "Correct answer" : "Mark correct"}
+                aria-label={q.correct.includes(c.id) ? t("correctAnswer") : t("markCorrect")}
                 onClick={() => toggleCorrect(c.id)}
                 className={cn(
                   "grid size-5 shrink-0 place-items-center border text-xs",
@@ -158,7 +161,7 @@ function QuestionCard({
               </button>
               <Input
                 value={c.text}
-                placeholder="Choice"
+                placeholder={t("choice")}
                 onChange={(e) =>
                   onChange({
                     choices: q.choices.map((x) => (x.id === c.id ? { ...x, text: e.target.value } : x)),
@@ -168,7 +171,7 @@ function QuestionCard({
               {q.choices.length > 2 && (
                 <button
                   type="button"
-                  aria-label="Remove choice"
+                  aria-label={t("removeChoice")}
                   className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
                   onClick={() =>
                     onChange({
@@ -190,7 +193,7 @@ function QuestionCard({
             onClick={() => onChange({ choices: [...q.choices, { id: uid(), text: "" }] })}
           >
             <Plus className="size-3.5" />
-            Add choice
+            {t("addChoice")}
           </Button>
         </div>
       )}
@@ -205,15 +208,16 @@ function TextAnswers({
   accepted: string[];
   onChange: (next: string[]) => void;
 }) {
+  const t = useTranslations("resources");
   const rows = accepted.length ? accepted : [""];
   return (
     <div className="mt-3 flex flex-col gap-2">
-      <span className="text-xs text-muted-foreground">Accepted answers (case-sensitive)</span>
+      <span className="text-xs text-muted-foreground">{t("acceptedAnswers")}</span>
       {rows.map((a, i) => (
         <div key={i} className="flex items-center gap-2">
           <Input
             value={a}
-            placeholder="Accepted answer"
+            placeholder={t("acceptedAnswer")}
             onChange={(e) => {
               const next = [...rows];
               next[i] = e.target.value;
@@ -223,7 +227,7 @@ function TextAnswers({
           {rows.length > 1 && (
             <button
               type="button"
-              aria-label="Remove answer"
+              aria-label={t("removeAnswer")}
               className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
               onClick={() => onChange(rows.filter((_, idx) => idx !== i))}
             >
@@ -240,7 +244,7 @@ function TextAnswers({
         onClick={() => onChange([...rows, ""])}
       >
         <Plus className="size-3.5" />
-        Add accepted answer
+        {t("addAcceptedAnswer")}
       </Button>
     </div>
   );

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { GraduationCap, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ export function CourseLibrary() {
   const [items, setItems] = useState<Course[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error" | "no-teacher">("loading");
   const [reloadKey, setReloadKey] = useState(0);
+  const t = useTranslations("courses");
 
   useEffect(() => {
     let alive = true;
@@ -52,11 +54,10 @@ export function CourseLibrary() {
     return (
       <div className="rounded-2xl border border-border bg-card px-6 py-12 text-center">
         <p className="text-sm text-muted-foreground">
-          Courses are part of your teaching toolkit — create a teacher profile
-          first.
+          {t("needProfile")}
         </p>
         <Button asChild className="mt-4">
-          <Link href="/dashboard">Go to the dashboard</Link>
+          <Link href="/dashboard">{t("goDashboard")}</Link>
         </Button>
       </div>
     );
@@ -66,15 +67,13 @@ export function CourseLibrary() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl">My courses</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Build self-paced video courses from your lessons and resources.
-          </p>
+          <h1 className="font-display text-3xl">{t("libraryTitle")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t("libraryIntro")}</p>
         </div>
         <Button asChild>
           <Link href="/courses/new">
             <Plus className="size-4" />
-            New course
+            {t("newCourse")}
           </Link>
         </Button>
       </div>
@@ -82,7 +81,7 @@ export function CourseLibrary() {
       <div className="flex flex-wrap items-center gap-2">
         {(["all", "draft", "published"] as StatusFilter[]).map((s) => (
           <Chip key={s} active={status === s} onClick={() => setStatus(s)}>
-            {s === "all" ? "Any status" : s}
+            {s === "all" ? t("anyStatus") : t(s)}
           </Chip>
         ))}
         <label className="ml-1 flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -92,19 +91,19 @@ export function CourseLibrary() {
             onChange={(e) => setShowArchived(e.target.checked)}
             className="accent-primary"
           />
-          Archived
+          {t("archived")}
         </label>
       </div>
 
       {state === "error" ? (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Could not load your courses.
+          {t("couldNotLoadLibrary")}
         </p>
       ) : state === "loading" ? (
         <div className="h-64 animate-pulse rounded-2xl bg-muted" />
       ) : items.length === 0 ? (
         <p className="rounded-2xl border border-border bg-card px-4 py-12 text-center text-sm text-muted-foreground">
-          Nothing here yet.
+          {t("nothingHereYet")}
         </p>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
@@ -130,7 +129,7 @@ function Chip({
     <button
       onClick={onClick}
       className={cn(
-        "rounded-lg border px-2.5 py-1 text-xs font-medium capitalize transition-colors",
+        "rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
         active ? "border-primary bg-accent" : "border-border hover:bg-muted",
       )}
     >
@@ -141,6 +140,8 @@ function Chip({
 
 function CourseCard({ course: c, onChanged }: { course: Course; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
+  const t = useTranslations("courses");
+  const locale = useLocale();
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -166,7 +167,7 @@ function CourseCard({ course: c, onChanged }: { course: Course; onChanged: () =>
             {c.title}
           </Link>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {c.subtitle || formatMoney(c.price)}
+            {c.subtitle || formatMoney(c.price, locale)}
           </p>
         </div>
         <span
@@ -179,16 +180,16 @@ function CourseCard({ course: c, onChanged }: { course: Course; onChanged: () =>
                 : "bg-star/15 text-star",
           )}
         >
-          {c.archived ? "Archived" : c.status}
+          {c.archived ? t("archived") : t(c.status)}
         </span>
       </div>
 
       <div className="flex flex-wrap gap-2 border-t border-border pt-3">
         <Button asChild size="sm" variant="outline">
-          <Link href={`/courses/${c.id}/edit`}>Edit</Link>
+          <Link href={`/courses/${c.id}/edit`}>{t("edit")}</Link>
         </Button>
         <span className="ml-auto self-center text-xs text-muted-foreground">
-          {formatMoney(c.price)}
+          {formatMoney(c.price, locale)}
         </span>
         {!c.archived && (
           <Button
@@ -198,7 +199,7 @@ function CourseCard({ course: c, onChanged }: { course: Course; onChanged: () =>
             disabled={busy}
             onClick={() => run(() => setCourseArchived(c.id, true))}
           >
-            Archive
+            {t("archive")}
           </Button>
         )}
         {c.archived && (
@@ -209,7 +210,7 @@ function CourseCard({ course: c, onChanged }: { course: Course; onChanged: () =>
             disabled={busy}
             onClick={() => run(() => setCourseArchived(c.id, false))}
           >
-            Restore
+            {t("restore")}
           </Button>
         )}
       </div>

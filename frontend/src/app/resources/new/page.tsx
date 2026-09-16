@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import { Suspense } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -6,14 +7,21 @@ import { RequireUser } from "@/features/auth/require-user";
 import { ResourceEditor } from "@/features/resources/components/resource-editor";
 import { RESOURCE_TYPES, type ResourceType } from "@/features/resources/types";
 
-export const metadata: Metadata = { title: "New resource" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("resources");
+  return { title: t("metaNew") };
+}
 
-const VALID = new Set(RESOURCE_TYPES.map((t) => t.value));
+const VALID = new Set<string>(RESOURCE_TYPES);
 
 export default async function NewResourcePage({
   searchParams,
 }: PageProps<"/resources/new">) {
-  const { type } = await searchParams;
+  const [{ type }, t, tType] = await Promise.all([
+    searchParams,
+    getTranslations("resources"),
+    getTranslations("resourceTypes"),
+  ]);
   const chosen =
     typeof type === "string" && VALID.has(type as ResourceType)
       ? (type as ResourceType)
@@ -32,22 +40,18 @@ export default async function NewResourcePage({
                 className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
               >
                 <ArrowLeft className="size-4" />
-                Resources
+                {t("back")}
               </Link>
-              <h1 className="mt-2 font-display text-2xl">
-                What are you making?
-              </h1>
+              <h1 className="mt-2 font-display text-2xl">{t("whatMaking")}</h1>
               <ul className="mt-6 grid gap-3 sm:grid-cols-2">
-                {RESOURCE_TYPES.map((t) => (
-                  <li key={t.value}>
+                {RESOURCE_TYPES.map((type) => (
+                  <li key={type}>
                     <Link
-                      href={`/resources/new?type=${t.value}`}
+                      href={`/resources/new?type=${type}`}
                       className="block rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/50"
                     >
-                      <span className="font-medium">{t.label}</span>
-                      <p className="mt-0.5 text-sm text-muted-foreground">
-                        {t.blurb}
-                      </p>
+                      <span className="font-medium">{tType(`long.${type}`)}</span>
+                      <p className="mt-0.5 text-sm text-muted-foreground">{tType(`blurb.${type}`)}</p>
                     </Link>
                   </li>
                 ))}

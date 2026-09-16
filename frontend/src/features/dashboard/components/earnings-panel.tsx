@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { formatMoney } from "@/lib/format";
+import { intlLocale } from "@/lib/i18n";
 import {
   BookingError,
   getEarnings,
@@ -14,18 +16,18 @@ import {
 } from "@/features/bookings/datetime";
 import { cn } from "@/lib/utils";
 
-const STATE_LABEL: Record<
+const STATE_STYLE: Record<
   EarningsSummary["lessons"][number]["state"],
-  { label: string; className: string }
+  { label: "stateHeld" | "stateAvailable" | "statePaid" | "stateReversed"; className: string }
 > = {
-  held: { label: "Held", className: "bg-star/15 text-star" },
-  available: { label: "Available", className: "bg-primary/15 text-primary" },
-  paid: { label: "Paid out", className: "bg-mint/15 text-mint" },
-  reversed: { label: "Refunded", className: "bg-destructive/10 text-destructive" },
+  held: { label: "stateHeld", className: "bg-star/15 text-star" },
+  available: { label: "stateAvailable", className: "bg-primary/15 text-primary" },
+  paid: { label: "statePaid", className: "bg-mint/15 text-mint" },
+  reversed: { label: "stateReversed", className: "bg-destructive/10 text-destructive" },
 };
 
-function formatClearingDate(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatClearingDate(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     day: "numeric",
     month: "short",
   }).format(new Date(iso));
@@ -35,6 +37,8 @@ export function EarningsPanel() {
   const [data, setData] = useState<EarningsSummary | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const viewerTz = viewerTimezone();
+  const t = useTranslations("dashboard");
+  const locale = useLocale();
 
   useEffect(() => {
     let alive = true;
@@ -65,7 +69,7 @@ export function EarningsPanel() {
   if (state === "error") {
     return (
       <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
-        Could not load your earnings. Refresh to try again.
+        {t("earningsCouldNotLoad")}
       </p>
     );
   }
@@ -73,8 +77,7 @@ export function EarningsPanel() {
   if (!data || data.lessons.length === 0) {
     return (
       <p className="rounded-xl bg-muted px-4 py-10 text-center text-sm text-muted-foreground">
-        No earnings yet. Once a lesson you taught is marked complete, it shows
-        up here.
+        {t("noEarnings")}
       </p>
     );
   }
@@ -82,20 +85,20 @@ export function EarningsPanel() {
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Stat label="Total earned" value={formatMoney(data.totalEarned)} />
-        <Stat label="Held" value={formatMoney(data.held)} hint="Inside the clearing window" />
-        <Stat label="Available" value={formatMoney(data.available)} accent hint="Waiting on the next payout" />
-        <Stat label="Paid out" value={formatMoney(data.paid)} />
+        <Stat label={t("totalEarned")} value={formatMoney(data.totalEarned, locale)} />
+        <Stat label={t("held")} value={formatMoney(data.held, locale)} hint={t("heldHint")} />
+        <Stat label={t("available")} value={formatMoney(data.available, locale)} accent hint={t("availableHint")} />
+        <Stat label={t("paidOut")} value={formatMoney(data.paid, locale)} />
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-border">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
             <tr>
-              <th className="px-4 py-2 font-medium">Student</th>
-              <th className="px-4 py-2 font-medium">Lesson / course</th>
-              <th className="px-4 py-2 text-right font-medium">Amount</th>
-              <th className="px-4 py-2 text-right font-medium">Status</th>
+              <th className="px-4 py-2 font-medium">{t("colStudent")}</th>
+              <th className="px-4 py-2 font-medium">{t("colLesson")}</th>
+              <th className="px-4 py-2 text-right font-medium">{t("colAmount")}</th>
+              <th className="px-4 py-2 text-right font-medium">{t("colStatus")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -108,27 +111,27 @@ export function EarningsPanel() {
                       href={`/bookings/${l.bookingId}`}
                       className="hover:text-foreground hover:underline"
                     >
-                      {formatDayLabel(l.startAt, viewerTz)}
+                      {formatDayLabel(l.startAt, viewerTz, locale)}
                     </Link>
                   ) : (
-                    <span>{l.courseTitle} · course sale</span>
+                    <span>{t("courseSale", { title: l.courseTitle ?? "" })}</span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-right font-medium">
-                  {formatMoney(l.amount)}
+                  {formatMoney(l.amount, locale)}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <span
                     className={cn(
                       "inline-flex rounded-full px-2 py-0.5 text-xs font-semibold",
-                      STATE_LABEL[l.state].className,
+                      STATE_STYLE[l.state].className,
                     )}
                   >
-                    {STATE_LABEL[l.state].label}
+                    {t(STATE_STYLE[l.state].label)}
                   </span>
                   {l.state === "held" && (
                     <div className="mt-0.5 text-xs text-muted-foreground">
-                      clears {formatClearingDate(l.availableAt)}
+                      {t("clears", { date: formatClearingDate(l.availableAt, locale) })}
                     </div>
                   )}
                 </td>

@@ -1,3 +1,4 @@
+import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import type { SubmissionStatus } from "@/features/resources/types";
 
@@ -17,24 +18,25 @@ export function SubmissionStatusBadge({
   autoMax?: number | null;
   teacherScore?: number | null;
 }) {
-  if (status === "" ) {
+  const t = useTranslations("submissionStatus");
+  if (status === "") {
     return (
       <Badge variant="outline" className="text-muted-foreground">
-        Not started
+        {t("notStarted")}
       </Badge>
     );
   }
   if (status === "in_progress") {
     return (
       <Badge variant="secondary" className="text-star">
-        In progress
+        {t("inProgress")}
       </Badge>
     );
   }
   if (status === "submitted") {
     return (
       <Badge variant="secondary" className="text-star">
-        Submitted, awaiting feedback
+        {t("submitted")}
       </Badge>
     );
   }
@@ -42,7 +44,8 @@ export function SubmissionStatusBadge({
   const hasAuto = autoScore != null && autoMax != null;
   return (
     <Badge className="bg-primary/15 text-primary">
-      Graded{hasAuto ? ` · ${autoScore}/${autoMax}` : teacherScore != null ? ` · ${teacherScore}` : ""}
+      {t("graded")}
+      {hasAuto ? ` · ${autoScore}/${autoMax}` : teacherScore != null ? ` · ${teacherScore}` : ""}
     </Badge>
   );
 }
