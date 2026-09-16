@@ -8,13 +8,6 @@ import { ArrowLeft, ImageIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { formatMoney } from "@/lib/format";
 import { ResourceError, uploadFile } from "@/features/resources/api";
 import {
@@ -26,7 +19,6 @@ import {
   updateCourse,
 } from "@/features/courses/api";
 import type { CourseDetail } from "@/features/courses/types";
-import type { Money } from "@/types/teacher";
 import { useFileObjectUrl } from "../use-file-object-url";
 import { CurriculumBuilder } from "./curriculum-builder";
 
@@ -60,7 +52,8 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
   const [priceUnits, setPriceUnits] = useState(
     initial ? unitsFromMinor(initial.price.amountMinor) : 0,
   );
-  const [currency, setCurrency] = useState<Money["currency"]>(initial?.price.currency ?? "UZS");
+  // Courses are priced in so'm like lessons; the wire field is fixed to UZS.
+  const currency = "UZS" as const;
   const [coverAssetId, setCoverAssetId] = useState<string | null>(initial?.coverAssetId ?? null);
   const [coverBusy, setCoverBusy] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -168,12 +161,12 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
       <form onSubmit={handleSubmit} className="flex flex-col gap-6">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="title">{t("title")}</Label>
-          <Input id="title" required value={title} onChange={(e) => setTitle(e.target.value)} />
+          <Input id="title" required maxLength={120} value={title} onChange={(e) => setTitle(e.target.value)} />
         </div>
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="subtitle">{t("subtitle")}</Label>
-          <Input id="subtitle" value={subtitle} onChange={(e) => setSubtitle(e.target.value)} />
+          <Input id="subtitle" maxLength={200} value={subtitle} onChange={(e) => setSubtitle(e.target.value)} />
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -181,6 +174,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
           <textarea
             id="description"
             rows={4}
+            maxLength={8000}
             className={textareaCls}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -202,15 +196,7 @@ export function CourseEditor({ initial }: { initial?: CourseDetail }) {
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="currency">{t("currency")}</Label>
-            <Select value={currency} onValueChange={(v) => setCurrency(v as Money["currency"])}>
-              <SelectTrigger id="currency" className="w-24">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="UZS">UZS</SelectItem>
-                <SelectItem value="USD">USD</SelectItem>
-              </SelectContent>
-            </Select>
+            <Input id="currency" value={currency} readOnly disabled className="w-24" />
           </div>
           <p className="pb-1.5 text-sm text-muted-foreground">
             {priceUnits === 0

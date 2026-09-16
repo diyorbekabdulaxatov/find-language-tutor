@@ -41,7 +41,7 @@ func (r *repositoryPostgres) TeacherSummaryByID(ctx context.Context, teacherID u
 	if err != nil {
 		return TeacherSummary{}, fmt.Errorf("get teacher summary: %w", err)
 	}
-	return TeacherSummary{ID: row.ID, DisplayName: row.DisplayName, Slug: row.Slug}, nil
+	return TeacherSummary{ID: row.ID, DisplayName: row.DisplayName, Slug: row.Slug, Approved: row.Approved}, nil
 }
 
 func (r *repositoryPostgres) CatalogList(ctx context.Context, q CatalogQuery) ([]CatalogEntry, int, error) {

@@ -78,6 +78,9 @@ type TeacherSummary struct {
 	ID          uuid.UUID
 	DisplayName string
 	Slug        string
+	// Approved is the moderation gate: only an approved teacher's courses may
+	// be published, shown on the storefront, or bought.
+	Approved bool
 }
 
 // CatalogQuery is the validated input to the public catalog list.

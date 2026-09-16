@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -298,6 +299,12 @@ func (r *repositoryPostgres) Create(ctx context.Context, ownerID uuid.UUID, slug
 		Verified: false,
 	})
 	if err != nil {
+		// teachers_user_id_uniq: the account already owns a profile — the
+		// service's pre-check lost a race with a concurrent create.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "teachers_user_id_uniq" {
+			return uuid.Nil, ErrProfileExists
+		}
 		return uuid.Nil, fmt.Errorf("create teacher: %w", err)
 	}
 

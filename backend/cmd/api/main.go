@@ -298,10 +298,12 @@ func run(logger *slog.Logger) error {
 	})
 
 	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           router,
+		Addr:    ":" + cfg.Port,
+		Handler: router,
+		// No ReadTimeout: in net/http it bounds reading the *whole* body, which
+		// would cut off a 500 MB course-video upload after 15 s. Headers are
+		// still bounded, and the upload handler sets its own body deadline.
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}

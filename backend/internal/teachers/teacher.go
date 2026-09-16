@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -403,6 +404,17 @@ func blank(s string) bool { return strings.TrimSpace(s) == "" }
 
 // validateProfile checks a fully-populated ProfileInput. Shared by create and
 // update so both endpoints enforce the same rules.
+// Field caps: short text is what appears in cards, headers and emails; long
+// text is the profile body. Measured in runes so Cyrillic isn't penalised.
+const (
+	maxShortField = 120  // display_name, headline, city, country_name, experience fields
+	maxLongField  = 4000 // about, teaching_style
+	maxFocusTags  = 20
+	maxFocusTag   = 40
+	maxLanguages  = 20
+	maxExperience = 20
+)
+
 func validateProfile(in ProfileInput) error {
 	required := []struct{ name, val string }{
 		{"display_name", in.DisplayName},
@@ -416,6 +428,28 @@ func validateProfile(in ProfileInput) error {
 		if blank(f.val) {
 			return invalid("%s is required.", f.name)
 		}
+	}
+	for _, f := range []struct {
+		name string
+		val  string
+		max  int
+	}{
+		{"display_name", in.DisplayName, maxShortField},
+		{"headline", in.Headline, maxShortField},
+		{"city", in.City, maxShortField},
+		{"country_name", in.CountryName, maxShortField},
+		{"about", in.About, maxLongField},
+		{"teaching_style", in.TeachingStyle, maxLongField},
+	} {
+		if utf8.RuneCountInString(f.val) > f.max {
+			return invalid("%s must be at most %d characters.", f.name, f.max)
+		}
+	}
+	if len(in.CountryCode) != 2 {
+		return invalid("country_code must be a 2-letter ISO code.")
+	}
+	if len(in.Languages) > maxLanguages || len(in.Focus) > maxFocusTags || len(in.Experience) > maxExperience {
+		return invalid("Too many entries: at most %d languages, %d focus tags and %d experience items.", maxLanguages, maxFocusTags, maxExperience)
 	}
 
 	if !in.Kind.valid() {
@@ -461,10 +495,16 @@ func validateProfile(in ProfileInput) error {
 		if blank(tag) {
 			return invalid("focus[%d]: tag must not be empty.", i)
 		}
+		if utf8.RuneCountInString(tag) > maxFocusTag {
+			return invalid("focus[%d]: tag must be at most %d characters.", i, maxFocusTag)
+		}
 	}
 	for i, e := range in.Experience {
 		if blank(e.Title) || blank(e.Org) || blank(e.Period) {
 			return invalid("experience[%d]: title, org and period are required.", i)
+		}
+		if utf8.RuneCountInString(e.Title) > maxShortField || utf8.RuneCountInString(e.Org) > maxShortField || utf8.RuneCountInString(e.Period) > maxShortField {
+			return invalid("experience[%d]: fields must be at most %d characters.", i, maxShortField)
 		}
 	}
 	return nil

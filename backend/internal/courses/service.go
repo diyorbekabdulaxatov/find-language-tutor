@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -211,6 +212,9 @@ func (s *Service) Create(ctx context.Context, ownerID uuid.UUID, title, subtitle
 	if title == "" {
 		return CourseDetail{}, invalid("Give the course a title.")
 	}
+	if err := validateCourseText(title, subtitle, description); err != nil {
+		return CourseDetail{}, err
+	}
 	if priceAmountMinor < 0 {
 		return CourseDetail{}, invalid("Price can't be negative.")
 	}
@@ -252,6 +256,9 @@ func (s *Service) Update(ctx context.Context, ownerID, id uuid.UUID, title, subt
 	if title == "" {
 		return CourseDetail{}, invalid("Give the course a title.")
 	}
+	if err := validateCourseText(title, subtitle, description); err != nil {
+		return CourseDetail{}, err
+	}
 	if priceAmountMinor < 0 {
 		return CourseDetail{}, invalid("Price can't be negative.")
 	}
@@ -278,10 +285,17 @@ func (s *Service) Update(ctx context.Context, ownerID, id uuid.UUID, title, subt
 // one section, each with at least one item; price may be 0 (a free course is
 // valid). Unpublishing has no curriculum requirement.
 func (s *Service) SetPublished(ctx context.Context, ownerID, id uuid.UUID, publish bool) (CourseDetail, error) {
-	if _, _, err := s.owned(ctx, ownerID, id); err != nil {
+	_, tid, err := s.owned(ctx, ownerID, id)
+	if err != nil {
 		return CourseDetail{}, err
 	}
 	if publish {
+		// Moderation gate: a pending / rejected / suspended teacher can draft,
+		// but nothing of theirs goes on the storefront. The catalog and
+		// purchase paths re-check, so a later suspension takes effect too.
+		if err := s.requireApprovedTeacher(ctx, tid); err != nil {
+			return CourseDetail{}, err
+		}
 		sections, err := s.repo.ListSections(ctx, id)
 		if err != nil {
 			return CourseDetail{}, err
@@ -351,6 +365,9 @@ func (s *Service) AddSection(ctx context.Context, ownerID, courseID uuid.UUID, t
 	if title == "" {
 		return CourseDetail{}, invalid("Give the section a title.")
 	}
+	if utf8.RuneCountInString(title) > maxCourseTitle {
+		return CourseDetail{}, invalid("Title must be at most %d characters.", maxCourseTitle)
+	}
 	if _, err := s.repo.AddSection(ctx, courseID, title); err != nil {
 		return CourseDetail{}, err
 	}
@@ -366,6 +383,9 @@ func (s *Service) RenameSection(ctx context.Context, ownerID, courseID, sectionI
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return CourseDetail{}, invalid("Give the section a title.")
+	}
+	if utf8.RuneCountInString(title) > maxCourseTitle {
+		return CourseDetail{}, invalid("Title must be at most %d characters.", maxCourseTitle)
 	}
 	if _, err := s.repo.RenameSection(ctx, sectionID, title); err != nil {
 		return CourseDetail{}, err
@@ -618,15 +638,47 @@ func (s *Service) checkFileOwned(ctx context.Context, fileAssetID, callerID uuid
 
 // normalizeCurrency defaults "" to UZS and validates against the
 // currency_code enum (UZS, USD).
+// Text caps for the course fields the catalog renders.
+const (
+	maxCourseTitle       = 120
+	maxCourseSubtitle    = 200
+	maxCourseDescription = 8000
+)
+
+func validateCourseText(title, subtitle, description string) error {
+	switch {
+	case utf8.RuneCountInString(title) > maxCourseTitle:
+		return invalid("Title must be at most %d characters.", maxCourseTitle)
+	case utf8.RuneCountInString(subtitle) > maxCourseSubtitle:
+		return invalid("Subtitle must be at most %d characters.", maxCourseSubtitle)
+	case utf8.RuneCountInString(description) > maxCourseDescription:
+		return invalid("Description must be at most %d characters.", maxCourseDescription)
+	}
+	return nil
+}
+
+// normalizeCurrency: UZS only, like teacher pricing — the payout ledger sums
+// without a currency dimension, so a second currency would silently mix.
 func normalizeCurrency(c string) (string, error) {
 	switch c {
-	case "":
+	case "", "UZS":
 		return "UZS", nil
-	case "UZS", "USD":
-		return c, nil
 	default:
-		return "", invalid("`price_currency` must be UZS or USD.")
+		return "", invalid("`price_currency` must be UZS.")
 	}
+}
+
+// requireApprovedTeacher is the moderation gate shared by publish, the
+// storefront and purchase.
+func (s *Service) requireApprovedTeacher(ctx context.Context, teacherID uuid.UUID) error {
+	t, err := s.repo.TeacherSummaryByID(ctx, teacherID)
+	if err != nil {
+		return err
+	}
+	if !t.Approved {
+		return ErrTeacherNotApproved
+	}
+	return nil
 }
 
 // validateIDSet reports whether proposed contains exactly the ids in current,

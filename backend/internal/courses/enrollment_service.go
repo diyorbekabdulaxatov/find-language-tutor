@@ -2,6 +2,7 @@ package courses
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"strings"
@@ -59,6 +60,11 @@ func (s *Service) CatalogDetail(ctx context.Context, callerID, courseID uuid.UUI
 	teacher, err := s.repo.TeacherSummaryByID(ctx, c.TeacherID)
 	if err != nil {
 		return CatalogDetail{}, err
+	}
+	// Same gate as the catalog list: an unapproved / suspended teacher's
+	// course is not on the storefront, direct link or not.
+	if !teacher.Approved {
+		return CatalogDetail{}, ErrNotFound
 	}
 	sections, err := s.repo.ListSections(ctx, courseID)
 	if err != nil {
@@ -133,6 +139,12 @@ func (s *Service) Purchase(ctx context.Context, callerID, courseID uuid.UUID, me
 	}
 	if c.Status != StatusPublished || c.ArchivedAt != nil || c.SuspendedAt != nil {
 		return EnrollmentSummary{}, false, ErrNotFound
+	}
+	if err := s.requireApprovedTeacher(ctx, c.TeacherID); err != nil {
+		if errors.Is(err, ErrTeacherNotApproved) {
+			return EnrollmentSummary{}, false, ErrNotFound
+		}
+		return EnrollmentSummary{}, false, err
 	}
 	if s.isCourseOwner(ctx, callerID, c.TeacherID) {
 		return EnrollmentSummary{}, false, ErrCannotBuyOwnCourse

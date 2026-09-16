@@ -1884,7 +1884,14 @@ paths:
         "200": { description: The course, now published., content: { application/json: { schema: { $ref: "#/components/schemas/CourseDetail" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
-        "403": { $ref: "#/components/responses/Forbidden" }
+        "403":
+          description: >-
+            `forbidden` — not the owner; or `teacher_not_approved` — the owning
+            teacher profile is pending / rejected / suspended. Only an approved
+            teacher's courses go on the storefront; the catalog detail and
+            purchase routes 404 a course whose teacher is not approved, so a
+            later suspension takes it down without touching the course row.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /v1/courses/{id}/unpublish:
@@ -4202,7 +4209,7 @@ components:
         subtitle: { type: string }
         description: { type: string }
         price_amount_minor: { type: integer, format: int64, minimum: 0, default: 0 }
-        price_currency: { $ref: "#/components/schemas/Currency" }
+        price_currency: { type: string, enum: [UZS], default: UZS, description: "UZS only — same as teacher pricing; the payout ledger has no currency dimension." }
 
     UpdateCourseRequest:
       type: object
@@ -4217,7 +4224,7 @@ components:
           nullable: true
           description: Must be one of the caller's own uploaded image files.
         price_amount_minor: { type: integer, format: int64, minimum: 0, default: 0 }
-        price_currency: { $ref: "#/components/schemas/Currency" }
+        price_currency: { type: string, enum: [UZS], default: UZS, description: "UZS only — same as teacher pricing; the payout ledger has no currency dimension." }
 
     CourseItemKind:
       type: string

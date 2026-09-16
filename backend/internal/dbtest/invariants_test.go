@@ -291,6 +291,30 @@ func TestPayoutLedger_ExactlyOneSource(t *testing.T) {
 	}
 }
 
+// TestTeachers_OneProfilePerAccount: the service pre-checks, the database
+// decides. A second profile for the same user is a unique violation; the
+// unclaimed seed profiles (user_id NULL) are unaffected.
+func TestTeachers_OneProfilePerAccount(t *testing.T) {
+	pool := Pool(t)
+	f := seed(t, pool)
+	ctx := context.Background()
+	insert := func(slug string, user any) error {
+		_, err := pool.Exec(ctx, `
+			INSERT INTO teachers (slug, display_name, headline, kind, country_code, country_name, city, timezone, price_per_hour_minor, user_id, status)
+			VALUES ($1, 'T', 'h', 'community', 'UZ', 'Uzbekistan', 'Tashkent', 'Asia/Tashkent', 1, $2, 'pending')`, slug, user)
+		return err
+	}
+	if err := insert("dup", f.teacherUser); pgCode(err) != sqlstateUnique {
+		t.Fatalf("second profile for the same user: err=%v, want SQLSTATE %s", err, sqlstateUnique)
+	}
+	if err := insert("unclaimed-1", nil); err != nil {
+		t.Fatalf("first unclaimed profile: %v", err)
+	}
+	if err := insert("unclaimed-2", nil); err != nil {
+		t.Fatalf("second unclaimed profile (NULL user_id must not collide): %v", err)
+	}
+}
+
 func TestUsers_LocaleIsConstrained(t *testing.T) {
 	pool := Pool(t)
 	ctx := context.Background()

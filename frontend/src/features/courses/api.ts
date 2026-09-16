@@ -126,7 +126,7 @@ export async function createCourse(input: {
   subtitle?: string;
   description?: string;
   priceAmountMinor?: number;
-  priceCurrency?: Money["currency"];
+  priceCurrency?: "UZS";
 }): Promise<CourseDetail> {
   const { data, error, response } = await browserApi.POST("/v1/courses", {
     body: {
@@ -157,7 +157,7 @@ export async function updateCourse(
     description: string;
     coverAssetId: string | null;
     priceAmountMinor: number;
-    priceCurrency: Money["currency"];
+    priceCurrency: "UZS";
   },
 ): Promise<CourseDetail> {
   const { data, error, response } = await browserApi.PATCH("/v1/courses/{id}", {

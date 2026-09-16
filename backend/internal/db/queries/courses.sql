@@ -238,7 +238,7 @@ WHERE ci.id = ordered.id AND ci.section_id = sqlc.arg('section_id');
 SELECT user_id FROM teachers WHERE id = $1;
 
 -- name: GetTeacherSummary :one
-SELECT id, slug, display_name FROM teachers WHERE id = $1;
+SELECT id, slug, display_name, (status = 'approved') AS approved FROM teachers WHERE id = $1;
 
 -- Catalog: published, non-archived, non-suspended courses only, from an
 -- approved teacher (mirrors GetBookingTeacherContext's status = 'approved'
