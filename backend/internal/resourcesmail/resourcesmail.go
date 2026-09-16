@@ -36,8 +36,8 @@ func New(emailer email.Emailer, baseURL string, logger *slog.Logger) *Mailer {
 
 var _ resources.Mailer = (*Mailer)(nil)
 
-func (m *Mailer) SubmissionGraded(ctx context.Context, to, studentName, resourceTitle string, score, max *int, feedback string) error {
-	subject, html, text := email.SubmissionGradedContent(studentName, resourceTitle, score, max, feedback)
+func (m *Mailer) SubmissionGraded(ctx context.Context, locale, to, studentName, resourceTitle string, score, max *int, feedback string) error {
+	subject, html, text := email.SubmissionGradedContent(locale, studentName, resourceTitle, score, max, feedback)
 	return m.emailer.Send(ctx, email.Message{
 		To: to, ToName: studentName, Subject: subject, HTMLBody: html, TextBody: text,
 	})

@@ -60,7 +60,7 @@ func (r *fakeRepo) CreateUser(_ context.Context, in NewUser) (User, error) {
 		return User{}, ErrEmailTaken
 	}
 	now := time.Now()
-	u := User{ID: uuid.New(), Email: in.Email, DisplayName: in.DisplayName, CreatedAt: now, UpdatedAt: now}
+	u := User{ID: uuid.New(), Email: in.Email, DisplayName: in.DisplayName, Locale: in.Locale, CreatedAt: now, UpdatedAt: now}
 	su := &storedUser{user: u, hash: in.PasswordHash}
 	r.usersByEmail[in.Email] = su
 	r.usersByID[u.ID] = su
@@ -87,14 +87,19 @@ func (r *fakeRepo) UserByID(_ context.Context, id uuid.UUID) (User, error) {
 	return su.user, nil
 }
 
-func (r *fakeRepo) UpdateUser(_ context.Context, id uuid.UUID, displayName string) (User, error) {
+func (r *fakeRepo) UpdateUser(_ context.Context, id uuid.UUID, patch UserPatch) (User, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	su, ok := r.usersByID[id]
 	if !ok {
 		return User{}, ErrUserNotFound
 	}
-	su.user.DisplayName = displayName
+	if patch.DisplayName != nil {
+		su.user.DisplayName = *patch.DisplayName
+	}
+	if patch.Locale != nil {
+		su.user.Locale = *patch.Locale
+	}
 	su.user.UpdatedAt = time.Now()
 	return su.user, nil
 }

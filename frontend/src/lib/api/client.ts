@@ -1,4 +1,5 @@
 import createClient from "openapi-fetch";
+import { getLocale } from "next-intl/server";
 import type { components, paths } from "./schema";
 
 /**
@@ -12,5 +13,14 @@ import type { components, paths } from "./schema";
 const baseUrl = process.env.API_URL ?? "http://localhost:8080";
 
 export const api = createClient<paths>({ baseUrl });
+
+// Server components fetch on the viewer's behalf: pass their UI locale on so
+// any error message the backend returns is already in their language.
+api.use({
+  async onRequest({ request }) {
+    request.headers.set("Accept-Language", await getLocale());
+    return request;
+  },
+});
 
 export type ApiSchemas = components["schemas"];

@@ -54,8 +54,10 @@ SELECT
     t.user_id         AS teacher_user_id,
     t.meeting_url     AS teacher_meeting_url,
     COALESCE(tu.email, '')::text AS teacher_email,
+    COALESCE(tu.locale, 'en')::text AS teacher_locale,
     u.display_name    AS student_display_name,
-    u.email::text     AS student_email
+    u.email::text     AS student_email,
+    u.locale::text    AS student_locale
 FROM bookings b
 JOIN teachers t ON t.id = b.teacher_id
 JOIN users    u ON u.id = b.student_id
@@ -79,8 +81,10 @@ SELECT
     t.user_id         AS teacher_user_id,
     t.meeting_url     AS teacher_meeting_url,
     COALESCE(tu.email, '')::text AS teacher_email,
+    COALESCE(tu.locale, 'en')::text AS teacher_locale,
     u.display_name    AS student_display_name,
-    u.email::text     AS student_email
+    u.email::text     AS student_email,
+    u.locale::text    AS student_locale
 FROM bookings b
 JOIN teachers t ON t.id = b.teacher_id
 JOIN users    u ON u.id = b.student_id

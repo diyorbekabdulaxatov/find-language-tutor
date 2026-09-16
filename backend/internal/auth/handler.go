@@ -172,15 +172,15 @@ func (h *Handler) UpdateMe(c *gin.Context) {
 
 	var req updateMeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		web.BadRequest(c, `Request body must be {"display_name": "..."}.`)
+		web.BadRequest(c, `Request body must be {"display_name"?: "...", "locale"?: "en|ru|uz"}.`)
 		return
 	}
 
-	user, err := h.svc.UpdateCurrentUser(c.Request.Context(), uid, req.DisplayName)
+	user, err := h.svc.UpdateCurrentUser(c.Request.Context(), uid, UserPatch{DisplayName: req.DisplayName, Locale: req.Locale})
 	var ve ValidationError
 	switch {
 	case errors.As(err, &ve):
-		web.BadRequest(c, ve.Error())
+		web.BadRequestErr(c, ve)
 		return
 	case errors.Is(err, ErrUserNotFound):
 		web.Unauthorized(c, "Account no longer exists.")
@@ -269,7 +269,7 @@ func (h *Handler) renderRecoveryError(c *gin.Context, err error, op string) bool
 	case err == nil:
 		return false
 	case errors.As(err, &ve):
-		web.BadRequest(c, ve.Error())
+		web.BadRequestErr(c, ve)
 	case errors.Is(err, ErrInvalidToken):
 		web.WriteError(c, http.StatusBadRequest, "invalid_token", "This link is invalid or has expired. Request a new one.")
 	default:
@@ -287,7 +287,7 @@ func (h *Handler) renderAuthError(c *gin.Context, err error, op string) bool {
 	case err == nil:
 		return false
 	case errors.As(err, &ve):
-		web.BadRequest(c, ve.Error())
+		web.BadRequestErr(c, ve)
 	case errors.Is(err, ErrEmailTaken):
 		web.WriteError(c, http.StatusConflict, "email_taken", "That email is already registered.")
 	case errors.Is(err, ErrInvalidCredentials):

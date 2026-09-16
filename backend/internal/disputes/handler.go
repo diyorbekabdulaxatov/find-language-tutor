@@ -161,7 +161,7 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 	case errors.Is(err, ErrAlreadyResolved):
 		web.WriteError(c, http.StatusConflict, "already_resolved", "This dispute has already been resolved.")
 	case errors.As(err, &ve):
-		web.BadRequest(c, ve.Error())
+		web.BadRequestErr(c, ve)
 	default:
 		anys := make([]any, 0, len(attrs)+1)
 		for _, a := range attrs {

@@ -13,17 +13,30 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { LOCALE_LABELS, LOCALES, type Locale } from "@/i18n/config";
 import { setLocale } from "@/i18n/actions";
+import { useAuth } from "@/features/auth/auth-context";
+import { updateProfile } from "@/features/auth/api";
 
 export function LocaleSwitcher() {
   const locale = useLocale();
   const t = useTranslations("common");
   const router = useRouter();
+  const { status, setUser } = useAuth();
   const [pending, startTransition] = useTransition();
 
   function choose(next: Locale) {
     if (next === locale) return;
     startTransition(async () => {
       await setLocale(next);
+      // A signed-in person also wants their email in this language. Best
+      // effort: the cookie already switched the UI, so a failure here is not
+      // worth interrupting them over.
+      if (status === "authenticated") {
+        try {
+          setUser(await updateProfile({ locale: next }));
+        } catch {
+          /* keep the UI switch */
+        }
+      }
       router.refresh();
     });
   }

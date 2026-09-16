@@ -157,7 +157,7 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 	case errors.Is(err, ErrRoleInUse):
 		web.WriteError(c, http.StatusConflict, "role_in_use", "This role is still assigned to one or more users. Unassign it first.")
 	case errors.As(err, &ve):
-		web.WriteError(c, http.StatusBadRequest, ve.Code, ve.Error())
+		web.WriteErrorFrom(c, http.StatusBadRequest, ve.Code, ve)
 	default:
 		anys := make([]any, 0, len(attrs)+1)
 		for _, a := range attrs {

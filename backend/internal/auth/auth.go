@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/i18n"
 )
 
 // User is the account aggregate as the rest of the app sees it — never the
@@ -22,6 +24,7 @@ type User struct {
 	ID            uuid.UUID
 	Email         string
 	DisplayName   string
+	Locale        string // en | ru | uz — the language email addresses them in
 	EmailVerified bool
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
@@ -85,8 +88,8 @@ const (
 
 // ValidationError is a client-fixable problem with registration input (bad
 // email, short password). The handler renders it as a 400.
-type ValidationError struct{ msg string }
+type ValidationError struct{ i18n.Msg }
 
-func (e ValidationError) Error() string { return e.msg }
+func (e ValidationError) Error() string { return e.Msg.String() }
 
-func invalid(msg string) error { return ValidationError{msg: msg} }
+func invalid(format string, args ...any) error { return ValidationError{i18n.Message(format, args...)} }

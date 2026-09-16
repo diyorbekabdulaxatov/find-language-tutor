@@ -17,7 +17,7 @@ type fakeMailer struct {
 	err          error
 }
 
-func (m *fakeMailer) SendPasswordReset(_ context.Context, _, _, raw string) error {
+func (m *fakeMailer) SendPasswordReset(_ context.Context, _, _, _, raw string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.resetCalls++
@@ -25,7 +25,7 @@ func (m *fakeMailer) SendPasswordReset(_ context.Context, _, _, raw string) erro
 	return m.err
 }
 
-func (m *fakeMailer) SendEmailVerification(_ context.Context, _, _, raw string) error {
+func (m *fakeMailer) SendEmailVerification(_ context.Context, _, _, _, raw string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.verifyCalls++

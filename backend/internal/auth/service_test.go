@@ -199,7 +199,7 @@ func TestService_UpdateCurrentUser(t *testing.T) {
 
 	// happy path: display name changes, email untouched.
 	name := "New Name"
-	u, err := svc.UpdateCurrentUser(ctx, reg.User.ID, &name)
+	u, err := svc.UpdateCurrentUser(ctx, reg.User.ID, UserPatch{DisplayName: &name})
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -208,14 +208,14 @@ func TestService_UpdateCurrentUser(t *testing.T) {
 	}
 
 	// nil pointer is a no-op that returns the current account.
-	u, err = svc.UpdateCurrentUser(ctx, reg.User.ID, nil)
+	u, err = svc.UpdateCurrentUser(ctx, reg.User.ID, UserPatch{})
 	if err != nil || u.DisplayName != "New Name" {
 		t.Fatalf("nil update = (%+v, %v)", u, err)
 	}
 
 	// blank display name is a validation error.
 	blank := "   "
-	if _, err := svc.UpdateCurrentUser(ctx, reg.User.ID, &blank); err == nil {
+	if _, err := svc.UpdateCurrentUser(ctx, reg.User.ID, UserPatch{DisplayName: &blank}); err == nil {
 		t.Fatal("blank display name should be rejected")
 	} else {
 		var ve ValidationError
@@ -226,7 +226,7 @@ func TestService_UpdateCurrentUser(t *testing.T) {
 
 	// unknown user.
 	valid := "X"
-	if _, err := svc.UpdateCurrentUser(ctx, testUser().ID, &valid); !errors.Is(err, ErrUserNotFound) {
+	if _, err := svc.UpdateCurrentUser(ctx, testUser().ID, UserPatch{DisplayName: &valid}); !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("err = %v, want ErrUserNotFound", err)
 	}
 }

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/i18n"
 )
 
 // minPasswordLen is the floor enforced at registration. No max here — argon2
@@ -19,6 +21,13 @@ type NewUser struct {
 	Email        string
 	PasswordHash string
 	DisplayName  string
+	Locale       string
+}
+
+// UserPatch is a partial update of the caller's own account; nil = unchanged.
+type UserPatch struct {
+	DisplayName *string
+	Locale      *string
 }
 
 type NewSession struct {
@@ -41,7 +50,7 @@ type Repository interface {
 	UserByID(ctx context.Context, id uuid.UUID) (User, error)
 	// UpdateUser edits the mutable account fields (currently just the display
 	// name) and returns the updated account, or ErrUserNotFound.
-	UpdateUser(ctx context.Context, id uuid.UUID, displayName string) (User, error)
+	UpdateUser(ctx context.Context, id uuid.UUID, patch UserPatch) (User, error)
 
 	// CreateSession stores a new refresh-token session.
 	CreateSession(ctx context.Context, in NewSession) (Session, error)
@@ -165,7 +174,11 @@ func (s *Service) Register(ctx context.Context, email, password, displayName, us
 		return AuthResult{}, err
 	}
 
-	user, err := s.repo.CreateUser(ctx, NewUser{Email: email, PasswordHash: hash, DisplayName: displayName})
+	user, err := s.repo.CreateUser(ctx, NewUser{
+		Email: email, PasswordHash: hash, DisplayName: displayName,
+		// The language the person signed up in is the language we write to them in.
+		Locale: i18n.FromContext(ctx),
+	})
 	if err != nil {
 		return AuthResult{}, err // ErrEmailTaken or a real failure
 	}
@@ -205,7 +218,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 		s.logger.Error("password reset: store token", slog.Any("error", err))
 		return nil
 	}
-	if err := s.mailer.SendPasswordReset(ctx, user.Email, user.DisplayName, raw); err != nil {
+	if err := s.mailer.SendPasswordReset(ctx, user.Locale, user.Email, user.DisplayName, raw); err != nil {
 		s.logger.Error("password reset: send mail", slog.String("user_id", user.ID.String()), slog.Any("error", err))
 	}
 	return nil
@@ -278,7 +291,7 @@ func (s *Service) issueEmailVerification(ctx context.Context, user User) {
 		s.logger.Error("email verification: store token", slog.Any("error", err))
 		return
 	}
-	if err := s.mailer.SendEmailVerification(ctx, user.Email, user.DisplayName, raw); err != nil {
+	if err := s.mailer.SendEmailVerification(ctx, user.Locale, user.Email, user.DisplayName, raw); err != nil {
 		s.logger.Error("email verification: send mail", slog.String("user_id", user.ID.String()), slog.Any("error", err))
 	}
 }
@@ -376,19 +389,25 @@ func (s *Service) CurrentUser(ctx context.Context, id uuid.UUID) (User, error) {
 	return s.repo.UserByID(ctx, id)
 }
 
-// UpdateCurrentUser edits the caller's own account. displayName is nil when the
-// client did not send the field (a no-op that just returns the current account);
-// an empty/whitespace display name is a ValidationError. Email changes are out
-// of scope and silently ignored by the handler.
-func (s *Service) UpdateCurrentUser(ctx context.Context, id uuid.UUID, displayName *string) (User, error) {
-	if displayName == nil {
+// UpdateCurrentUser edits the caller's own account. A nil field was not sent
+// and is left alone; an empty/whitespace display name or an unknown locale is
+// a ValidationError. Email changes are out of scope and silently ignored by
+// the handler.
+func (s *Service) UpdateCurrentUser(ctx context.Context, id uuid.UUID, patch UserPatch) (User, error) {
+	if patch.DisplayName == nil && patch.Locale == nil {
 		return s.repo.UserByID(ctx, id)
 	}
-	name := strings.TrimSpace(*displayName)
-	if name == "" {
-		return User{}, invalid("A display name is required.")
+	if patch.DisplayName != nil {
+		name := strings.TrimSpace(*patch.DisplayName)
+		if name == "" {
+			return User{}, invalid("A display name is required.")
+		}
+		patch.DisplayName = &name
 	}
-	return s.repo.UpdateUser(ctx, id, name)
+	if patch.Locale != nil && !i18n.Supported(*patch.Locale) {
+		return User{}, invalid("Locale must be one of en, ru, uz.")
+	}
+	return s.repo.UpdateUser(ctx, id, patch)
 }
 
 // sessionResult carries the new session id back to Refresh without exposing it

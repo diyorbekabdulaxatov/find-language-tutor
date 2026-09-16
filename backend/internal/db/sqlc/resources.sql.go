@@ -374,19 +374,20 @@ func (q *Queries) GetSubmissionByID(ctx context.Context, id uuid.UUID) (Submissi
 }
 
 const getUserContact = `-- name: GetUserContact :one
-SELECT email::text AS email, display_name FROM users WHERE id = $1
+SELECT email::text AS email, display_name, locale::text AS locale FROM users WHERE id = $1
 `
 
 type GetUserContactRow struct {
 	Email       string
 	DisplayName string
+	Locale      string
 }
 
 // A plain contact lookup, used only for the grading-done email.
 func (q *Queries) GetUserContact(ctx context.Context, id uuid.UUID) (GetUserContactRow, error) {
 	row := q.db.QueryRow(ctx, getUserContact, id)
 	var i GetUserContactRow
-	err := row.Scan(&i.Email, &i.DisplayName)
+	err := row.Scan(&i.Email, &i.DisplayName, &i.Locale)
 	return i, err
 }
 

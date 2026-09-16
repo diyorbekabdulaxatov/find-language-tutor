@@ -122,10 +122,11 @@ export async function resendVerification(): Promise<void> {
 
 /** Update the signed-in user's own account (currently just the display name). */
 export async function updateProfile(input: {
-  displayName: string;
+  displayName?: string;
+  locale?: "en" | "ru" | "uz";
 }): Promise<AuthUser> {
   const { data, error, response } = await browserApi.PATCH("/v1/auth/me", {
-    body: { display_name: input.displayName },
+    body: { display_name: input.displayName, locale: input.locale },
   });
   if (error || !data) {
     throw toAuthError(error, response.status, "Could not save your changes.");

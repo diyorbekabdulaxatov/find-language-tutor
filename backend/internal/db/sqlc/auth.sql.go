@@ -103,15 +103,16 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 
 const createUser = `-- name: CreateUser :one
 
-INSERT INTO users (email, password_hash, display_name)
-VALUES ($1, $2, $3)
-RETURNING id, email, password_hash, display_name, email_verified_at, created_at, updated_at
+INSERT INTO users (email, password_hash, display_name, locale)
+VALUES ($1, $2, $3, $4)
+RETURNING id, email, password_hash, display_name, email_verified_at, locale, created_at, updated_at
 `
 
 type CreateUserParams struct {
 	Email        string
 	PasswordHash string
 	DisplayName  string
+	Locale       string
 }
 
 type CreateUserRow struct {
@@ -120,13 +121,19 @@ type CreateUserRow struct {
 	PasswordHash    string
 	DisplayName     string
 	EmailVerifiedAt pgtype.Timestamptz
+	Locale          string
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
 }
 
 // Auth module: user accounts and refresh-token sessions.
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.PasswordHash, arg.DisplayName)
+	row := q.db.QueryRow(ctx, createUser,
+		arg.Email,
+		arg.PasswordHash,
+		arg.DisplayName,
+		arg.Locale,
+	)
 	var i CreateUserRow
 	err := row.Scan(
 		&i.ID,
@@ -134,6 +141,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.PasswordHash,
 		&i.DisplayName,
 		&i.EmailVerifiedAt,
+		&i.Locale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -218,7 +226,7 @@ func (q *Queries) GetSessionByRefreshHash(ctx context.Context, refreshTokenHash 
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, display_name, email_verified_at, created_at, updated_at
+SELECT id, email, password_hash, display_name, email_verified_at, locale, created_at, updated_at
 FROM users
 WHERE email = $1
 `
@@ -229,6 +237,7 @@ type GetUserByEmailRow struct {
 	PasswordHash    string
 	DisplayName     string
 	EmailVerifiedAt pgtype.Timestamptz
+	Locale          string
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
 }
@@ -242,6 +251,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 		&i.PasswordHash,
 		&i.DisplayName,
 		&i.EmailVerifiedAt,
+		&i.Locale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -249,7 +259,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, display_name, email_verified_at, created_at, updated_at
+SELECT id, email, password_hash, display_name, email_verified_at, locale, created_at, updated_at
 FROM users
 WHERE id = $1
 `
@@ -260,6 +270,7 @@ type GetUserByIDRow struct {
 	PasswordHash    string
 	DisplayName     string
 	EmailVerifiedAt pgtype.Timestamptz
+	Locale          string
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
 }
@@ -273,6 +284,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (GetUserByIDRow
 		&i.PasswordHash,
 		&i.DisplayName,
 		&i.EmailVerifiedAt,
+		&i.Locale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -371,14 +383,17 @@ func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams
 
 const updateUser = `-- name: UpdateUser :one
 UPDATE users
-SET display_name = $2, updated_at = now()
+SET display_name = coalesce($2, display_name),
+    locale       = coalesce($3, locale),
+    updated_at   = now()
 WHERE id = $1
-RETURNING id, email, password_hash, display_name, email_verified_at, created_at, updated_at
+RETURNING id, email, password_hash, display_name, email_verified_at, locale, created_at, updated_at
 `
 
 type UpdateUserParams struct {
 	ID          uuid.UUID
-	DisplayName string
+	DisplayName pgtype.Text
+	Locale      pgtype.Text
 }
 
 type UpdateUserRow struct {
@@ -387,14 +402,16 @@ type UpdateUserRow struct {
 	PasswordHash    string
 	DisplayName     string
 	EmailVerifiedAt pgtype.Timestamptz
+	Locale          string
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
 }
 
 // Edit the caller's own account. Email is immutable here (changing it needs a
-// verification flow that does not exist yet).
+// verification flow that does not exist yet). A NULL arg leaves that column
+// as it is.
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error) {
-	row := q.db.QueryRow(ctx, updateUser, arg.ID, arg.DisplayName)
+	row := q.db.QueryRow(ctx, updateUser, arg.ID, arg.DisplayName, arg.Locale)
 	var i UpdateUserRow
 	err := row.Scan(
 		&i.ID,
@@ -402,6 +419,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateU
 		&i.PasswordHash,
 		&i.DisplayName,
 		&i.EmailVerifiedAt,
+		&i.Locale,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

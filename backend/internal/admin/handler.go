@@ -271,7 +271,7 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 	case errors.Is(err, ErrInvalidState):
 		web.WriteError(c, http.StatusConflict, "invalid_state", "The booking is not in a state that allows this action.")
 	case errors.As(err, &ve):
-		web.BadRequest(c, ve.Error())
+		web.BadRequestErr(c, ve)
 	default:
 		anys := make([]any, 0, len(attrs)+1)
 		for _, a := range attrs {

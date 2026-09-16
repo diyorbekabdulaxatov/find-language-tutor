@@ -1,6 +1,8 @@
 package courses
 
 import (
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/i18n"
+
 	"context"
 	"errors"
 
@@ -50,9 +52,13 @@ var ErrCaptureFailed = errors.New("courses: could not capture payment")
 // render 402 payment_failed with a useful message.
 type PaymentFailedError struct{ Reason string }
 
-func (e PaymentFailedError) Error() string {
+func (e PaymentFailedError) Error() string { return e.Localize(i18n.Default) }
+
+// Localize renders the message in loc; the provider's reason is itself a
+// catalog string (see payments.FakeProvider).
+func (e PaymentFailedError) Localize(loc string) string {
 	if e.Reason == "" {
-		return "payment failed"
+		return i18n.T(loc, "Payment failed.")
 	}
-	return "payment failed: " + e.Reason
+	return i18n.Tf(loc, "Payment failed: %s", i18n.T(loc, e.Reason))
 }

@@ -4,12 +4,13 @@
 package teachers
 
 import (
-	"fmt"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/i18n"
 )
 
 type Kind string
@@ -390,12 +391,12 @@ func mergePatch(cur *Teacher, p ProfilePatch) ProfileInput {
 
 // ValidationError is a client-fixable problem with a write request. The handler
 // renders it as a 400; anything else from the service is a 500.
-type ValidationError struct{ msg string }
+type ValidationError struct{ i18n.Msg }
 
-func (e ValidationError) Error() string { return e.msg }
+func (e ValidationError) Error() string { return e.Msg.String() }
 
 func invalid(format string, args ...any) error {
-	return ValidationError{msg: fmt.Sprintf(format, args...)}
+	return ValidationError{i18n.Message(format, args...)}
 }
 
 func blank(s string) bool { return strings.TrimSpace(s) == "" }

@@ -189,7 +189,7 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 	case errors.Is(err, ErrReviewNotFound):
 		web.NotFound(c, "No review with that id.")
 	case errors.As(err, &ve):
-		web.BadRequest(c, ve.Error())
+		web.BadRequestErr(c, ve)
 	default:
 		anys := make([]any, 0, len(attrs)+1)
 		for _, a := range attrs {

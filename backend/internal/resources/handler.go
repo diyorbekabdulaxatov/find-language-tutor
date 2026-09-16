@@ -432,7 +432,7 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 	var ve ValidationError
 	switch {
 	case errors.As(err, &ve):
-		web.BadRequest(c, ve.Error())
+		web.BadRequestErr(c, ve)
 	case errors.Is(err, ErrNoTeacher):
 		web.WriteError(c, http.StatusForbidden, "no_teacher_profile",
 			"Create a teacher profile before building resources.")

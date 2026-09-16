@@ -238,7 +238,7 @@ WHERE (content ->> 'file_asset_id') = sqlc.arg('file_asset_id')::text
 
 -- name: GetUserContact :one
 -- A plain contact lookup, used only for the grading-done email.
-SELECT email::text AS email, display_name FROM users WHERE id = $1;
+SELECT email::text AS email, display_name, locale::text AS locale FROM users WHERE id = $1;
 
 -- name: DeleteAllSubmissions :exec
 -- Seed-only. submissions.booking_id cascades, but resource_id / student_id

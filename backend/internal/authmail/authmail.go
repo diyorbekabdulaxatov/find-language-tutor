@@ -34,15 +34,15 @@ func New(emailer email.Emailer, baseURL string, logger *slog.Logger) *Mailer {
 
 var _ auth.Mailer = (*Mailer)(nil)
 
-func (m *Mailer) SendPasswordReset(ctx context.Context, to, name, rawToken string) error {
-	subject, html, text := email.PasswordResetContent(name, m.link("/reset-password/", rawToken))
+func (m *Mailer) SendPasswordReset(ctx context.Context, locale, to, name, rawToken string) error {
+	subject, html, text := email.PasswordResetContent(locale, name, m.link("/reset-password/", rawToken))
 	return m.emailer.Send(ctx, email.Message{
 		To: to, ToName: name, Subject: subject, HTMLBody: html, TextBody: text,
 	})
 }
 
-func (m *Mailer) SendEmailVerification(ctx context.Context, to, name, rawToken string) error {
-	subject, html, text := email.EmailVerificationContent(name, m.link("/verify-email/", rawToken))
+func (m *Mailer) SendEmailVerification(ctx context.Context, locale, to, name, rawToken string) error {
+	subject, html, text := email.EmailVerificationContent(locale, name, m.link("/verify-email/", rawToken))
 	return m.emailer.Send(ctx, email.Message{
 		To: to, ToName: name, Subject: subject, HTMLBody: html, TextBody: text,
 	})

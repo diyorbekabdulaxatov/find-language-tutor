@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/i18n"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/web"
 )
 
@@ -100,6 +101,20 @@ func MaxBodyBytes(limit int64, skip ...string) gin.HandlerFunc {
 	}
 }
 
+// Locale negotiates the request's language from Accept-Language and makes it
+// available both to handlers (gin context, read by web.WriteError) and to
+// services (request context, read by anything that addresses the caller).
+// The frontend sends the UI locale as a single explicit tag.
+func Locale() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		loc := i18n.Negotiate(c.GetHeader("Accept-Language"))
+		c.Set(web.LocaleKey, loc)
+		c.Request = c.Request.WithContext(i18n.WithLocale(c.Request.Context(), loc))
+		c.Header("Content-Language", loc)
+		c.Next()
+	}
+}
+
 // NoStore marks responses as uncacheable — for the auth surface, where a
 // body may carry an access token.
 func NoStore() gin.HandlerFunc {
@@ -126,7 +141,7 @@ func CORS(allowedOrigins []string) gin.HandlerFunc {
 			c.Header("Access-Control-Allow-Credentials", "true")
 			c.Header("Vary", "Origin")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
-			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, "+requestIDHeader)
+			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept-Language, "+requestIDHeader)
 			c.Header("Access-Control-Expose-Headers", "Retry-After, "+requestIDHeader)
 			c.Header("Access-Control-Max-Age", "600")
 		}

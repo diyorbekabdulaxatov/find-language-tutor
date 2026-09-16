@@ -77,7 +77,7 @@ func (h *Handler) Replace(c *gin.Context) {
 		web.Forbidden(c, "You can only edit your own availability.")
 		return
 	case errors.As(err, &ve):
-		web.BadRequest(c, ve.Error())
+		web.BadRequestErr(c, ve)
 		return
 	case err != nil:
 		h.logger.Error("replace availability", slog.String("slug", slug), slog.Any("error", err))

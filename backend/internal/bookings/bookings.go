@@ -17,11 +17,12 @@
 package bookings
 
 import (
-	"fmt"
 	"sort"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/i18n"
 )
 
 // Status is the booking lifecycle state.
@@ -160,6 +161,10 @@ type Booking struct {
 	// address transactional mail. Never serialized.
 	StudentEmail string
 	TeacherEmail string
+	// StudentLocale / TeacherLocale are the languages each participant is
+	// emailed in (users.locale).
+	StudentLocale string
+	TeacherLocale string
 }
 
 // EffectiveMeetingURL is the per-booking override if present, else the teacher's
@@ -198,12 +203,12 @@ type SlotResult struct {
 
 // ValidationError is a client-fixable problem with a request. The handler
 // renders it as 400; anything else unexpected from the service is a 500.
-type ValidationError struct{ msg string }
+type ValidationError struct{ i18n.Msg }
 
-func (e ValidationError) Error() string { return e.msg }
+func (e ValidationError) Error() string { return e.Msg.String() }
 
 func invalid(format string, args ...any) error {
-	return ValidationError{msg: fmt.Sprintf(format, args...)}
+	return ValidationError{i18n.Message(format, args...)}
 }
 
 // hourlyPrice = round(perHourMinor * durationMinutes / 60), half-up, in integer

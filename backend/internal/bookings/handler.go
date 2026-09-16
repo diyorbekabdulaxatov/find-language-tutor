@@ -322,11 +322,11 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 	case errors.Is(err, ErrInvalidTransition):
 		web.WriteError(c, http.StatusConflict, "invalid_state", "The booking is not in a state that allows this action.")
 	case errors.As(err, &payFailed):
-		web.WriteError(c, http.StatusPaymentRequired, "payment_failed", payFailed.Error())
+		web.WriteErrorFrom(c, http.StatusPaymentRequired, "payment_failed", payFailed)
 	case errors.Is(err, ErrCaptureFailed):
 		web.WriteError(c, http.StatusBadGateway, "capture_failed", "The payment could not be captured. Please try again.")
 	case errors.As(err, &ve):
-		web.BadRequest(c, ve.Error())
+		web.BadRequestErr(c, ve)
 	default:
 		anys := make([]any, 0, len(attrs)+1)
 		for _, a := range attrs {

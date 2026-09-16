@@ -206,6 +206,8 @@ func rowToBooking(row sqlc.GetBookingByIDRow) Booking {
 		NoShowParty:        row.NoShowParty,
 		StudentEmail:       row.StudentEmail,
 		TeacherEmail:       row.TeacherEmail,
+		StudentLocale:      row.StudentLocale,
+		TeacherLocale:      row.TeacherLocale,
 		Teacher: TeacherSummary{
 			Slug:        row.TeacherSlug,
 			DisplayName: row.TeacherDisplayName,

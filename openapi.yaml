@@ -11,6 +11,12 @@ info:
     Money is always an integer amount in MINOR units (tiyin for UZS, cents for
     USD) plus a currency code — never a float.
 
+    Language: every human-readable `error.message` is rendered in the language
+    of the request's `Accept-Language` header (`en`, `ru` or `uz`; anything
+    else falls back to English) and the response carries `Content-Language`.
+    Email is written in the account's stored `locale` (see AuthUser), set from
+    Accept-Language at registration and changed via PATCH /v1/auth/me.
+
 servers:
   - url: http://localhost:8080
     description: Local development
@@ -3136,14 +3142,24 @@ components:
         is left unchanged. `email` is not editable and is ignored if sent.
       properties:
         display_name: { type: string, minLength: 1 }
+        locale:
+          type: string
+          enum: [en, ru, uz]
+          description: The language the account's email is written in.
 
     AuthUser:
       type: object
-      required: [id, email, display_name, email_verified, permissions]
+      required: [id, email, display_name, locale, email_verified, permissions]
       properties:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
         display_name: { type: string }
+        locale:
+          type: string
+          enum: [en, ru, uz]
+          description: >
+            The language transactional email is written in. Defaults to the
+            Accept-Language the account registered with.
         email_verified:
           type: boolean
           description: >

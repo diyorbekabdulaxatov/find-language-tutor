@@ -1,10 +1,14 @@
 package email
 
 import (
-	"fmt"
 	"strings"
 	"time"
+
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/i18n"
 )
+
+// Every template takes the recipient's locale (users.locale) first. The
+// English text below is the catalog key — see internal/i18n.
 
 // ReminderKind selects the wording of the single lesson-reminder template.
 type ReminderKind string
@@ -14,12 +18,12 @@ const (
 	Reminder1h  ReminderKind = "1h"
 )
 
-func (k ReminderKind) phrase() string {
+func (k ReminderKind) phrase(loc string) string {
 	switch k {
 	case Reminder1h:
-		return "in 1 hour"
+		return i18n.T(loc, "in 1 hour")
 	default:
-		return "in 24 hours"
+		return i18n.T(loc, "in 24 hours")
 	}
 }
 
@@ -40,26 +44,26 @@ type LessonInfo struct {
 	MeetingURL      string
 }
 
-func (li LessonInfo) when() string {
-	loc, err := time.LoadLocation(li.Timezone)
+func (li LessonInfo) when(loc string) string {
+	tz, err := time.LoadLocation(li.Timezone)
 	if err != nil || li.Timezone == "" {
-		loc = time.UTC
+		tz = time.UTC
 	}
-	return li.StartAt.In(loc).Format("Mon, 02 Jan 2006 15:04 MST")
+	return i18n.FormatDateTime(loc, li.StartAt.In(tz))
 }
 
-func (li LessonInfo) priceLine() string {
+func (li LessonInfo) priceLine(loc string) string {
 	if li.Currency == "" {
-		return fmt.Sprintf("%d (minor units)", li.PriceMinor)
+		return i18n.Tf(loc, "%d (minor units)", li.PriceMinor)
 	}
-	return fmt.Sprintf("%d %s (minor units)", li.PriceMinor, li.Currency)
+	return i18n.Tf(loc, "%d %s (minor units)", li.PriceMinor, li.Currency)
 }
 
-func meetingLine(url string) string {
+func meetingLine(loc, url string) string {
 	if url == "" {
-		return "Meeting link: (the teacher has not set one yet — check back closer to the lesson)"
+		return i18n.T(loc, "Meeting link: (the teacher has not set one yet — check back closer to the lesson)")
 	}
-	return "Meeting link: " + url
+	return i18n.Tf(loc, "Meeting link: %s", url)
 }
 
 // wrap renders a plain-text body and a minimal HTML body from the same lines.
@@ -87,17 +91,17 @@ func htmlEscape(s string) string {
 }
 
 // BookingConfirmedContent is sent to BOTH participants right after payment.
-func BookingConfirmedContent(li LessonInfo) (subject, html, text string) {
-	subject = fmt.Sprintf("Lesson with %s confirmed — %s", li.TeacherName, li.when())
+func BookingConfirmedContent(loc string, li LessonInfo) (subject, html, text string) {
+	subject = i18n.Tf(loc, "Lesson with %s confirmed — %s", li.TeacherName, li.when(loc))
 	lines := []string{
-		fmt.Sprintf("Your lesson with %s is confirmed.", li.TeacherName),
+		i18n.Tf(loc, "Your lesson with %s is confirmed.", li.TeacherName),
 		"",
-		"When: " + li.when(),
-		fmt.Sprintf("Length: %d minutes", li.DurationMinutes),
-		"Price: " + li.priceLine(),
-		meetingLine(li.MeetingURL),
+		i18n.Tf(loc, "When: %s", li.when(loc)),
+		i18n.Tf(loc, "Length: %d minutes", li.DurationMinutes),
+		i18n.Tf(loc, "Price: %s", li.priceLine(loc)),
+		meetingLine(loc, li.MeetingURL),
 		"",
-		"See you then!",
+		i18n.T(loc, "See you then!"),
 	}
 	html, text = wrap(subject, lines)
 	return subject, html, text
@@ -105,18 +109,18 @@ func BookingConfirmedContent(li LessonInfo) (subject, html, text string) {
 
 // BookingCancelledContent is sent to the other party on a cancellation / teacher
 // no-show.
-func BookingCancelledContent(li LessonInfo, refunded bool) (subject, html, text string) {
-	subject = fmt.Sprintf("Lesson with %s cancelled — %s", li.TeacherName, li.when())
-	refundNote := "No payment had been taken, so there is nothing to refund."
+func BookingCancelledContent(loc string, li LessonInfo, refunded bool) (subject, html, text string) {
+	subject = i18n.Tf(loc, "Lesson with %s cancelled — %s", li.TeacherName, li.when(loc))
+	refundNote := i18n.T(loc, "No payment had been taken, so there is nothing to refund.")
 	if refunded {
-		refundNote = "Any payment you made for this lesson has been refunded in full."
+		refundNote = i18n.T(loc, "Any payment you made for this lesson has been refunded in full.")
 	}
 	lines := []string{
-		fmt.Sprintf("Your lesson with %s scheduled for %s has been cancelled.", li.TeacherName, li.when()),
+		i18n.Tf(loc, "Your lesson with %s scheduled for %s has been cancelled.", li.TeacherName, li.when(loc)),
 		"",
 		refundNote,
 		"",
-		"You can book another time from the teacher's profile.",
+		i18n.T(loc, "You can book another time from the teacher's profile."),
 	}
 	html, text = wrap(subject, lines)
 	return subject, html, text
@@ -125,76 +129,76 @@ func BookingCancelledContent(li LessonInfo, refunded bool) (subject, html, text 
 // --- account recovery ---
 
 // PasswordResetContent is the "reset your password" email.
-func PasswordResetContent(name, resetURL string) (subject, html, text string) {
-	subject = "Reset your FindTutor password"
+func PasswordResetContent(loc, name, resetURL string) (subject, html, text string) {
+	subject = i18n.T(loc, "Reset your FindTutor password")
 	lines := []string{
-		greetingLine(name),
+		greetingLine(loc, name),
 		"",
-		"We got a request to reset your FindTutor password. Open this link to choose a new one:",
+		i18n.T(loc, "We got a request to reset your FindTutor password. Open this link to choose a new one:"),
 		resetURL,
 		"",
-		"The link expires in 1 hour and can be used once. If you didn't ask for this, you can ignore this email — your password won't change.",
+		i18n.T(loc, "The link expires in 1 hour and can be used once. If you didn't ask for this, you can ignore this email — your password won't change."),
 	}
 	html, text = wrap(subject, lines)
 	return subject, html, text
 }
 
 // EmailVerificationContent is the "confirm your address" email.
-func EmailVerificationContent(name, verifyURL string) (subject, html, text string) {
-	subject = "Confirm your FindTutor email"
+func EmailVerificationContent(loc, name, verifyURL string) (subject, html, text string) {
+	subject = i18n.T(loc, "Confirm your FindTutor email")
 	lines := []string{
-		greetingLine(name),
+		greetingLine(loc, name),
 		"",
-		"Confirm your email address to finish setting up your FindTutor account:",
+		i18n.T(loc, "Confirm your email address to finish setting up your FindTutor account:"),
 		verifyURL,
 		"",
-		"The link expires in 24 hours.",
+		i18n.T(loc, "The link expires in 24 hours."),
 	}
 	html, text = wrap(subject, lines)
 	return subject, html, text
 }
 
-func greetingLine(name string) string {
+func greetingLine(loc, name string) string {
 	if strings.TrimSpace(name) == "" {
-		return "Hi,"
+		return i18n.T(loc, "Hi,")
 	}
-	return "Hi " + name + ","
+	return i18n.Tf(loc, "Hi %s,", name)
 }
 
 // SubmissionGradedContent is sent to a student once a teacher grades their
 // writing submission (auto-graded quiz-like types never reach a teacher, so
 // never send this for those). score / max are nil when the teacher left no
 // numeric score (feedback-only grading).
-func SubmissionGradedContent(studentName, resourceTitle string, score, max *int, feedback string) (subject, html, text string) {
-	subject = fmt.Sprintf("Your %q submission was graded", resourceTitle)
+func SubmissionGradedContent(loc, studentName, resourceTitle string, score, max *int, feedback string) (subject, html, text string) {
+	subject = i18n.Tf(loc, "Your %q submission was graded", resourceTitle)
 	lines := []string{
-		greetingLine(studentName),
+		greetingLine(loc, studentName),
 		"",
-		fmt.Sprintf("Your teacher graded your submission for %q.", resourceTitle),
+		i18n.Tf(loc, "Your teacher graded your submission for %q.", resourceTitle),
 	}
 	switch {
 	case score != nil && max != nil:
-		lines = append(lines, fmt.Sprintf("Score: %d / %d", *score, *max))
+		lines = append(lines, i18n.Tf(loc, "Score: %d / %d", *score, *max))
 	case score != nil:
-		lines = append(lines, fmt.Sprintf("Score: %d", *score))
+		lines = append(lines, i18n.Tf(loc, "Score: %d", *score))
 	}
 	feedback = strings.TrimSpace(feedback)
 	if feedback != "" {
-		lines = append(lines, "", "Feedback: "+feedback)
+		lines = append(lines, "", i18n.Tf(loc, "Feedback: %s", feedback))
 	}
 	html, text = wrap(subject, lines)
 	return subject, html, text
 }
 
 // LessonReminderContent is the single reminder template; kind sets the wording.
-func LessonReminderContent(li LessonInfo, kind ReminderKind) (subject, html, text string) {
-	subject = fmt.Sprintf("Reminder: lesson with %s %s", li.TeacherName, kind.phrase())
+func LessonReminderContent(loc string, li LessonInfo, kind ReminderKind) (subject, html, text string) {
+	subject = i18n.Tf(loc, "Reminder: lesson with %s %s", li.TeacherName, kind.phrase(loc))
 	lines := []string{
-		fmt.Sprintf("Your lesson with %s starts %s.", li.TeacherName, kind.phrase()),
+		i18n.Tf(loc, "Your lesson with %s starts %s.", li.TeacherName, kind.phrase(loc)),
 		"",
-		"When: " + li.when(),
-		fmt.Sprintf("Length: %d minutes", li.DurationMinutes),
-		meetingLine(li.MeetingURL),
+		i18n.Tf(loc, "When: %s", li.when(loc)),
+		i18n.Tf(loc, "Length: %d minutes", li.DurationMinutes),
+		meetingLine(loc, li.MeetingURL),
 	}
 	html, text = wrap(subject, lines)
 	return subject, html, text

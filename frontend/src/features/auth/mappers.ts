@@ -11,6 +11,7 @@ export function fromWireUser(u: WireUser): AuthUser {
     id: u.id,
     email: u.email,
     displayName: u.display_name,
+    locale: u.locale,
     emailVerified: u.email_verified,
     permissions: u.permissions ?? [],
   };
