@@ -385,6 +385,13 @@ type testEnv struct {
 	file *fakeFileReader
 }
 
+// fakeAccounts answers the publish-side email-verification gate.
+type fakeAccounts struct{ verified bool }
+
+func (f fakeAccounts) EmailVerified(context.Context, uuid.UUID) (bool, error) {
+	return f.verified, nil
+}
+
 func newTestEnv() *testEnv {
 	repo := newFakeRepo()
 	svc := NewService(repo, discardLogger())
@@ -392,6 +399,7 @@ func newTestEnv() *testEnv {
 	file := newFakeFileReader()
 	svc.SetResourceReader(res)
 	svc.SetFileReader(file)
+	svc.SetAccountReader(fakeAccounts{verified: true})
 	return &testEnv{svc: svc, repo: repo, res: res, file: file}
 }
 

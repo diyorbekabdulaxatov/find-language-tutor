@@ -380,6 +380,11 @@ paths:
         On create, `display_name`, `headline`, `kind`, `country_code`,
         `country_name`, `city`, `timezone`, and `price_per_hour_minor` are
         required; a missing or blank one is a 400.
+
+        The account's email must be confirmed first (403 `email_not_verified`
+        otherwise — resend the link with `POST /v1/auth/resend-verification`).
+        The profile starts `pending`; moderators are alerted and the teacher
+        is emailed on approve / reject / suspend.
       operationId: createTeacherProfile
       security:
         - bearerAuth: []
@@ -398,6 +403,13 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: >-
+            `email_not_verified` — confirm the account's email address before
+            submitting a profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "409":
           description: The account already has a teacher profile.
           content:
@@ -457,6 +469,11 @@ paths:
         `languages` / `focus` / `experience` array (even `[]`) fully replaces
         that collection. The `slug` is immutable and server-controlled
         aggregates cannot be set here.
+
+        Saving a `rejected` profile resubmits it: `status` flips back to
+        `pending` and moderators are alerted, so the teacher answers the
+        moderation note just by editing. Edits in any other status leave
+        `status` alone.
       operationId: updateTeacherProfile
       security:
         - bearerAuth: []
@@ -1886,10 +1903,11 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403":
           description: >-
-            `forbidden` — not the owner; or `teacher_not_approved` — the owning
-            teacher profile is pending / rejected / suspended. Only an approved
-            teacher's courses go on the storefront; the catalog detail and
-            purchase routes 404 a course whose teacher is not approved, so a
+            `forbidden` — not the owner; `teacher_not_approved` — the owning
+            teacher profile is pending / rejected / suspended; or
+            `email_not_verified` — the account's email is unconfirmed. Only an
+            approved teacher's courses go on the storefront; the catalog detail
+            and purchase routes 404 a course whose teacher is not approved, so a
             later suspension takes it down without touching the course row.
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "404": { $ref: "#/components/responses/NotFound" }

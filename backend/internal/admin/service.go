@@ -3,6 +3,8 @@ package admin
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -40,6 +42,16 @@ type Repository interface {
 // The state rule (only pending_payment / confirmed can be cancelled) is checked
 // HERE too, off the detail this service already read, so no bookings-domain
 // error has to cross the port.
+// Mailer is the outbound side of teacher moderation: tell the teacher what
+// happened to their profile. internal/moderationmail adapts internal/email to
+// it; this package never imports internal/email. Optional — a nil mailer
+// means no emails, never a failed transition.
+type Mailer interface {
+	// TeacherStatusChanged is sent to the profile owner after a moderator
+	// moves it to status. note is the moderator's reason (empty on approve).
+	TeacherStatusChanged(ctx context.Context, locale, to, name string, status teachers.Status, note string) error
+}
+
 type BookingModerator interface {
 	// AdminForceCancel cancels the booking regardless of who is asking,
 	// recording cancelled_by = 'admin'. refund=true releases / refunds the
@@ -61,6 +73,11 @@ type Service struct {
 	repo     Repository
 	teachers TeacherProfiles
 	bookings BookingModerator // nil until SetBookingModerator
+	mailer   Mailer           // nil until SetMailer; guarded no-op
+	logger   *slog.Logger
+	// sends tracks detached notification goroutines so tests (and a graceful
+	// shutdown) can wait for them.
+	sends sync.WaitGroup
 }
 
 func NewService(repo Repository, tp TeacherProfiles) *Service {
@@ -71,6 +88,23 @@ func NewService(repo Repository, tp TeacherProfiles) *Service {
 // startup (cmd/api). Without it, force-cancel fails loudly (500) rather than
 // silently pretending to cancel.
 func (s *Service) SetBookingModerator(m BookingModerator) { s.bookings = m }
+
+// SetMailer wires the teacher-facing moderation emails in. Optional.
+func (s *Service) SetMailer(m Mailer) { s.mailer = m }
+
+// SetLogger replaces the default logger used for notification failures.
+func (s *Service) SetLogger(l *slog.Logger) { s.logger = l }
+
+// WaitNotifications blocks until every in-flight moderation email has been
+// handed to the mailer. Tests use it; cmd/api may call it on shutdown.
+func (s *Service) WaitNotifications() { s.sends.Wait() }
+
+func (s *Service) log() *slog.Logger {
+	if s.logger == nil {
+		return slog.Default()
+	}
+	return s.logger
+}
 
 // --- phase A ---
 
@@ -244,5 +278,23 @@ func (s *Service) transition(ctx context.Context, slug string, to teachers.Statu
 	if err := s.repo.SetTeacherStatus(ctx, slug, string(to), note); err != nil {
 		return TeacherDetail{}, err
 	}
+	s.notifyStatus(ctx, slug, mod.Owner, to, note)
 	return s.GetTeacher(ctx, slug)
+}
+
+// notifyStatus emails the profile owner about the transition. Best effort and
+// detached from the request: a mail failure is logged, never surfaced to the
+// moderator, and the send may finish after the response is written.
+func (s *Service) notifyStatus(ctx context.Context, slug string, owner Owner, to teachers.Status, note string) {
+	if s.mailer == nil || owner.Email == "" {
+		return
+	}
+	s.sends.Add(1)
+	go func(ctx context.Context) {
+		defer s.sends.Done()
+		if err := s.mailer.TeacherStatusChanged(ctx, owner.Locale, owner.Email, owner.DisplayName, to, note); err != nil {
+			s.log().Error("send teacher moderation email",
+				slog.String("slug", slug), slog.String("status", string(to)), slog.Any("error", err))
+		}
+	}(context.WithoutCancel(ctx))
 }

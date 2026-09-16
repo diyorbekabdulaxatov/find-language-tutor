@@ -958,3 +958,29 @@ func TestService_UnapprovedTeacher_CannotPublishAndCourseIsNotForSale(t *testing
 		t.Errorf("catalog detail once approved: %v", err)
 	}
 }
+
+func TestService_UnverifiedEmail_CannotPublish(t *testing.T) {
+	for name, wire := range map[string]func(*Service){
+		"unverified": func(s *Service) { s.SetAccountReader(fakeAccounts{verified: false}) },
+		"no reader":  func(s *Service) { s.SetAccountReader(nil) }, // fails closed
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newTestEnv()
+			ctx := context.Background()
+			owner, _ := e.seedTeacher()
+			d, _ := e.publishWithOneVideoItem(t, owner, 1000) // verified reader from newTestEnv
+			if _, err := e.svc.SetPublished(ctx, owner, d.Course.ID, false); err != nil {
+				t.Fatalf("unpublish: %v", err)
+			}
+
+			wire(e.svc)
+			if _, err := e.svc.SetPublished(ctx, owner, d.Course.ID, true); !errors.Is(err, ErrEmailNotVerified) {
+				t.Errorf("publish: want ErrEmailNotVerified, got %v", err)
+			}
+			// Drafting is unaffected; only the storefront is gated.
+			if _, err := e.svc.AddSection(ctx, owner, d.Course.ID, "Section 2"); err != nil {
+				t.Errorf("draft edit while unverified: %v", err)
+			}
+		})
+	}
+}

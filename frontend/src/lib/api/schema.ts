@@ -215,6 +215,7 @@ export interface paths {
          *     The body carries only the editable fields; server-controlled aggregates (`rating`, `review_count`, `lessons_completed`, `student_count`, `response_time_hours`) start at 0, `accepting_students` starts true, and the `slug` is generated from `display_name` (de-duplicated with a numeric suffix). `languages` / `focus` / `experience` are stored as given.
          *
          *     On create, `display_name`, `headline`, `kind`, `country_code`, `country_name`, `city`, `timezone`, and `price_per_hour_minor` are required; a missing or blank one is a 400.
+         *     The account's email must be confirmed first (403 `email_not_verified` otherwise — resend the link with `POST /v1/auth/resend-verification`). The profile starts `pending`; moderators are alerted and the teacher is emailed on approve / reject / suspend.
          */
         post: operations["createTeacherProfile"];
         delete?: never;
@@ -261,6 +262,7 @@ export interface paths {
          * Edit the caller's own teacher profile
          * @description Partial update of the profile at `slug`. Requires a Bearer token whose account owns the profile (`teachers.user_id`); otherwise 401 (no/invalid token) or 403 (not the owner — an unclaimed profile is never editable).
          *     Every field is optional; an omitted field is left unchanged. A present `languages` / `focus` / `experience` array (even `[]`) fully replaces that collection. The `slug` is immutable and server-controlled aggregates cannot be set here.
+         *     Saving a `rejected` profile resubmits it: `status` flips back to `pending` and moderators are alerted, so the teacher answers the moderation note just by editing. Edits in any other status leave `status` alone.
          */
         patch: operations["updateTeacherProfile"];
         trace?: never;
@@ -3719,6 +3721,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description `email_not_verified` — confirm the account's email address before submitting a profile. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description The account already has a teacher profile. */
             409: {
                 headers: {
@@ -5268,7 +5279,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            /** @description `forbidden` — not the owner; or `teacher_not_approved` — the owning teacher profile is pending / rejected / suspended. Only an approved teacher's courses go on the storefront; the catalog detail and purchase routes 404 a course whose teacher is not approved, so a later suspension takes it down without touching the course row. */
+            /** @description `forbidden` — not the owner; `teacher_not_approved` — the owning teacher profile is pending / rejected / suspended; or `email_not_verified` — the account's email is unconfirmed. Only an approved teacher's courses go on the storefront; the catalog detail and purchase routes 404 a course whose teacher is not approved, so a later suspension takes it down without touching the course row. */
             403: {
                 headers: {
                     [name: string]: unknown;

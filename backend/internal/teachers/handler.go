@@ -141,6 +141,10 @@ func (h *Handler) Create(c *gin.Context) {
 	case errors.Is(err, ErrProfileExists):
 		web.WriteError(c, http.StatusConflict, "profile_exists", "Your account already has a teacher profile.")
 		return
+	case errors.Is(err, ErrEmailNotVerified):
+		web.WriteError(c, http.StatusForbidden, "email_not_verified",
+			"Confirm your email address before creating a teacher profile.")
+		return
 	case errors.As(err, &ve):
 		web.BadRequestErr(c, ve)
 		return

@@ -123,7 +123,10 @@ function ModerationBanner({ profile }: { profile: TeacherProfile }) {
     },
     rejected: {
       title: t("rejectedTitle"),
-      body: profile.moderationNote || t("rejectedBody"),
+      // The moderator's note says what to fix; the hint says saving resubmits.
+      body: profile.moderationNote
+        ? `${profile.moderationNote} — ${t("rejectedBody")}`
+        : t("rejectedBody"),
       tone: "bg-destructive/10 text-destructive",
     },
     suspended: {

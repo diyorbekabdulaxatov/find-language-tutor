@@ -28,6 +28,7 @@ import (
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/files"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/httpapi"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/lessons"
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/moderationmail"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payments"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/payouts"
 	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/ratelimit"
@@ -140,6 +141,16 @@ func run(logger *slog.Logger) error {
 	authService.SetMailer(authmail.New(mailer, cfg.AppBaseURL, logger))
 	authService.SetLogger(logger)
 
+	// Teacher moderation. The auth service answers "is this address
+	// confirmed?" for the teacher-submit gate; one moderationmail adapter
+	// serves both directions — queue alerts to MODERATION_NOTIFY_EMAILS and
+	// approve/reject/suspend mail to the teacher (in users.locale).
+	modMail := moderationmail.New(mailer, cfg.AppBaseURL, cfg.ModerationNotifyEmails, logger)
+	teacherService.SetAccountReader(authService)
+	teacherService.SetNotifier(modMail)
+	adminService.SetMailer(modMail)
+	adminService.SetLogger(logger)
+
 	// Payments. The MVP uses a deterministic in-process fake (Stripe does not
 	// operate in Uzbekistan); a real Payme / Click / Uzum adapter drops in
 	// behind payments.Provider later. The fake's event sink is the payments
@@ -228,6 +239,8 @@ func run(logger *slog.Logger) error {
 	courseService := courses.NewService(courses.NewPostgresRepository(pool), logger)
 	courseService.SetResourceReader(resources.NewCourseGateway(resourceService))
 	courseService.SetFileReader(files.NewCourseGateway(fileService))
+	// Publishing also needs a confirmed email (same gate as teacher submit).
+	courseService.SetAccountReader(authService)
 
 	// Phase C2: public catalog, one-time purchase, the enrolled-student
 	// player, and progress tracking.
@@ -328,6 +341,8 @@ func run(logger *slog.Logger) error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return err
 	}
+	// Let detached moderation emails finish handing off to the mail client.
+	adminService.WaitNotifications()
 	logger.Info("server stopped cleanly")
 	return nil
 }

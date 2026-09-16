@@ -146,6 +146,7 @@ type Service struct {
 	resources ResourceReader // nil until SetResourceReader; guarded, fails closed
 	files     FileReader     // nil until SetFileReader; guarded, fails closed
 	payments  PaymentGateway // nil until SetPaymentGateway; guarded, fails closed (phase C2)
+	accounts  AccountReader  // nil until SetAccountReader; publish fails closed
 	now       func() time.Time
 	logger    *slog.Logger
 }
@@ -170,6 +171,10 @@ func (s *Service) SetFileReader(f FileReader) { s.files = f }
 // (phase C2). Optional, but Purchase on a priced course fails closed
 // (ErrPurchaseUnavailable) without it — a free course still enrolls fine.
 func (s *Service) SetPaymentGateway(p PaymentGateway) { s.payments = p }
+
+// SetAccountReader wires the auth module's email-verification lookup in.
+// Publishing fails closed (ErrEmailNotVerified) without it.
+func (s *Service) SetAccountReader(a AccountReader) { s.accounts = a }
 
 // --- courses ---
 
@@ -294,6 +299,12 @@ func (s *Service) SetPublished(ctx context.Context, ownerID, id uuid.UUID, publi
 		// but nothing of theirs goes on the storefront. The catalog and
 		// purchase paths re-check, so a later suspension takes effect too.
 		if err := s.requireApprovedTeacher(ctx, tid); err != nil {
+			return CourseDetail{}, err
+		}
+		// Same idea for the account: nothing goes on sale from an address
+		// nobody has confirmed. Checked at publish only — a teacher who was
+		// approved has already been through it.
+		if err := s.requireVerifiedEmail(ctx, ownerID); err != nil {
 			return CourseDetail{}, err
 		}
 		sections, err := s.repo.ListSections(ctx, id)
@@ -666,6 +677,22 @@ func normalizeCurrency(c string) (string, error) {
 	default:
 		return "", invalid("`price_currency` must be UZS.")
 	}
+}
+
+// requireVerifiedEmail is the publish-side email gate. Fails closed when no
+// AccountReader is wired.
+func (s *Service) requireVerifiedEmail(ctx context.Context, userID uuid.UUID) error {
+	if s.accounts == nil {
+		return ErrEmailNotVerified
+	}
+	ok, err := s.accounts.EmailVerified(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrEmailNotVerified
+	}
+	return nil
 }
 
 // requireApprovedTeacher is the moderation gate shared by publish, the

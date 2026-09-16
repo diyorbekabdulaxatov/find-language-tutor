@@ -72,5 +72,10 @@ test("signing up to teach lands on the profile form", async ({ page }) => {
   await page.getByLabel("Password").fill("password123");
   await page.getByRole("button", { name: "Sign up" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
-  await expect(page.getByRole("button", { name: "Create profile" })).toBeVisible();
+  // A fresh account is unverified: the form is there to fill in, but submit
+  // waits for the email link (the backend would 403 `email_not_verified`).
+  await expect(page.getByText("Confirm your email to submit a profile")).toBeVisible();
+  const submit = page.getByRole("button", { name: "Create profile" });
+  await expect(submit).toBeVisible();
+  await expect(submit).toBeDisabled();
 });

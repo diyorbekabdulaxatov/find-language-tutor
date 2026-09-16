@@ -536,6 +536,9 @@ type Querier interface {
 	// resources.EnrollmentReader.StudentResourceAccess, keeping the course-side
 	// check behind that port rather than a raw join into course_items here.
 	ResourceIDsForFileAsset(ctx context.Context, fileAssetID string) ([]uuid.UUID, error)
+	// A rejected profile that was just edited goes back into the moderation
+	// queue. The note stays so the moderator sees what they asked for last time.
+	ResubmitTeacher(ctx context.Context, id uuid.UUID) error
 	// Reuse-detection hammer: kills every still-active session for a user.
 	RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) error
 	// Marks a session revoked and records the session that replaced it (rotation).

@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Plus, Trash2 } from "lucide-react";
+import { MailWarning, Plus, Trash2 } from "lucide-react";
+import { useAuth } from "@/features/auth/auth-context";
+import { resendVerification } from "@/features/auth/api";
 import type { LanguageLevel } from "@/types/teacher";
 import {
   createMyProfile,
@@ -41,7 +43,11 @@ export function ProfileEditor({
 }) {
   const router = useRouter();
   const t = useTranslations("profileEditor");
+  const { user } = useAuth();
   const isCreate = initial === null;
+  // The backend refuses a new profile from an unconfirmed address (403
+  // `email_not_verified`); say so up front rather than after a long form.
+  const needsVerification = isCreate && !!user && !user.emailVerified;
   const [values, setValues] = useState<ProfileFormValues>(
     initial ? profileToForm(initial) : emptyProfileForm(),
   );
@@ -95,6 +101,7 @@ export function ProfileEditor({
           {t("noProfileYet")}
         </p>
       )}
+      {needsVerification && <VerifyEmailNotice email={user.email} />}
 
       <Section title={t("basics")}>
         <Field label={t("displayName")} htmlFor="displayName">
@@ -303,7 +310,7 @@ export function ProfileEditor({
       )}
 
       <div className="sticky bottom-0 -mx-4 flex items-center gap-3 border-t border-border bg-background px-4 py-4 shadow-[0_-10px_20px_-12px_rgba(23,23,51,0.18)] sm:-mx-6 sm:px-6">
-        <Button type="submit" disabled={status === "saving"}>
+        <Button type="submit" disabled={status === "saving" || needsVerification}>
           {status === "saving" ? t("saving") : isCreate ? t("createProfile") : t("saveChanges")}
         </Button>
         {status === "saved" && (
@@ -514,6 +521,49 @@ function ExperienceRows({
       >
         <Plus /> {t("addExperience")}
       </Button>
+    </div>
+  );
+}
+
+/** Shown above the create form while the account's email is unconfirmed. */
+function VerifyEmailNotice({ email }: { email: string }) {
+  const t = useTranslations("profileEditor");
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function resend() {
+    setBusy(true);
+    try {
+      await resendVerification();
+    } catch {
+      // 409 already-verified / rate-limited both mean "nothing more to do".
+    }
+    setSent(true);
+    setBusy(false);
+  }
+
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-3 rounded-xl border border-star/30 bg-star/10 px-4 py-3 text-sm text-star"
+    >
+      <MailWarning className="mt-0.5 size-4 shrink-0" />
+      <div className="flex-1">
+        <div className="font-semibold">{t("verifyFirstTitle")}</div>
+        <div className="mt-0.5 opacity-90">
+          {sent ? t("verifySent") : t("verifyFirstBody", { email })}
+        </div>
+        {!sent && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={resend}
+            className="mt-1 font-semibold underline underline-offset-2 disabled:opacity-60"
+          >
+            {t("verifyResend")}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

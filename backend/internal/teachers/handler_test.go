@@ -20,7 +20,7 @@ func newTestRouter(repo Repository) *gin.Engine {
 func newTestRouterTM(repo Repository, tm *auth.TokenManager) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h := NewHandler(NewService(repo), discardLogger())
+	h := NewHandler(newVerifiedService(repo), discardLogger())
 	RegisterRoutes(r.Group("/v1/teachers"), h, auth.RequireAuth(tm))
 	return r
 }

@@ -8,8 +8,9 @@ import { resendVerification } from "@/features/auth/api";
 
 /**
  * A slim strip shown to a signed-in user whose email isn't confirmed yet.
- * Nothing is blocked on verification — this is just a nudge. Dismissible for
- * the current page load.
+ * Booking and buying still work unverified; submitting a teacher profile and
+ * publishing a course do not (403 `email_not_verified`), and those screens
+ * carry their own notice. Dismissible for the current page load.
  */
 export function EmailVerificationBanner() {
   const { user, status } = useAuth();
