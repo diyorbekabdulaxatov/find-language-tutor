@@ -76,9 +76,10 @@ npm run build      # production build + typecheck
 npm run lint       # eslint (no separate tsc step; build does the full typecheck)
 npm run gen:api    # regenerate src/lib/api/schema.ts from ../openapi.yaml
 npm test           # vitest — pure logic (timezone math, formatting, locale negotiation, the auth fetch wrapper) + message-catalogue parity/ICU checks
+npm run test:e2e   # playwright golden path (signup → book → pay → confirmed) + locale switch; needs the seeded backend on :8080
 ```
 
-Unit tests live next to the code as `*.test.ts` and run in node (no React rendering; `vitest.config.ts` maps `@/`). Anything UI-shaped is still verified by `npm run build` + `npm run lint` + clicking through against the live backend.
+Unit tests live next to the code as `*.test.ts` and run in node (no React rendering; `vitest.config.ts` maps `@/`). `e2e/` holds Playwright specs against the real stack (`playwright.config.ts` starts `next dev` if :3000 is down and reuses it otherwise; the backend must already be running with the seed). Each e2e run registers a fresh account, so it's repeatable without a DB reset. Anything else UI-shaped is verified by `npm run build` + `npm run lint` + clicking through.
 
 ### Architecture
 

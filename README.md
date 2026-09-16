@@ -208,6 +208,7 @@ dependency.
 | `npm run build` | Production build + full typecheck |
 | `npm run lint` | ESLint |
 | `npm test` | Vitest — pure logic + message-catalogue checks |
+| `npm run test:e2e` | Playwright golden path against the running stack |
 | `npm run gen:api` | Regenerate `src/lib/api/schema.ts` from `../openapi.yaml` |
 
 ## Testing
@@ -221,8 +222,9 @@ dependency.
 - **Frontend:** `npm test` (Vitest) covers the pure logic — timezone math,
   formatting, locale negotiation, the auth fetch wrapper's refresh-and-retry —
   and the message catalogues (key parity, ICU syntax, argument/tag parity).
-  UI is verified by `npm run build` + `npm run lint` + clicking through
-  against the live backend.
+  `npm run test:e2e` (Playwright) drives the golden path in a real browser —
+  sign up, find a teacher, book, pay, see it confirmed — plus the language
+  switcher, against the seeded backend.
 
 ## Branches
 
