@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { ChevronDown, Lock, Plus, Trash2 } from "lucide-react";
 import {
   AdminError,
@@ -21,6 +22,7 @@ export function RolesManager() {
   const [catalog, setCatalog] = useState<PermissionInfo[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [creating, setCreating] = useState(false);
+  const t = useTranslations("admin");
 
   async function reload() {
     const [r, c] = await Promise.all([listRoles(), getPermissionCatalog()]);
@@ -54,7 +56,7 @@ export function RolesManager() {
   if (state === "error" || !roles) {
     return (
       <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-        Could not load roles.
+        {t("couldNotLoadRoles")}
       </p>
     );
   }
@@ -63,11 +65,11 @@ export function RolesManager() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          A role bundles permissions. Assign roles to users on their detail page.
+          {t("rolesIntro")}
         </p>
         {!creating && (
           <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> New role
+            <Plus className="size-4" /> {t("newRole")}
           </Button>
         )}
       </div>
@@ -112,6 +114,7 @@ function RoleCard({
   const [perms, setPerms] = useState<string[]>(role.permissions);
   const [busy, setBusy] = useState<"save" | "delete" | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const t = useTranslations("admin");
 
   const dirty =
     description !== role.description ||
@@ -129,7 +132,7 @@ function RoleCard({
       await onChanged();
       setOpen(false);
     } catch (e) {
-      setErr(e instanceof AdminError ? e.message : "Could not save the role.");
+      setErr(e instanceof AdminError ? e.message : t("couldNotSaveRole"));
     } finally {
       setBusy(null);
     }
@@ -142,7 +145,7 @@ function RoleCard({
       await deleteRole(role.id);
       await onChanged();
     } catch (e) {
-      setErr(e instanceof AdminError ? e.message : "Could not delete the role.");
+      setErr(e instanceof AdminError ? e.message : t("couldNotDeleteRole"));
       setBusy(null);
     }
   }
@@ -160,17 +163,15 @@ function RoleCard({
             <span className="font-medium">{role.name}</span>
             {role.isSystem && (
               <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                <Lock className="size-3" /> system
+                <Lock className="size-3" /> {t("system")}
               </span>
             )}
           </span>
           <span className="mt-0.5 block text-sm text-muted-foreground">
-            {role.description || "No description."}
+            {role.description || t("noDescription")}
           </span>
           <span className="mt-1 block text-xs text-muted-foreground">
-            {role.permissions.length} permission
-            {role.permissions.length === 1 ? "" : "s"} · {role.userCount} user
-            {role.userCount === 1 ? "" : "s"}
+            {t("permsUsers", { perms: role.permissions.length, users: role.userCount })}
           </span>
         </span>
         <ChevronDown
@@ -184,7 +185,7 @@ function RoleCard({
       {open && (
         <div className="border-t border-border px-5 py-4">
           <label className="text-xs font-medium text-muted-foreground">
-            Description
+            {t("description")}
           </label>
           <Input
             value={description}
@@ -193,7 +194,7 @@ function RoleCard({
           />
 
           <p className="mt-4 text-xs font-medium text-muted-foreground">
-            Permissions{role.isSystem && " (locked for a system role)"}
+            {role.isSystem ? t("permissionsLocked") : t("permissions")}
           </p>
           <PermissionChecklist
             catalog={catalog}
@@ -216,7 +217,7 @@ function RoleCard({
 
           <div className="mt-4 flex items-center gap-2">
             <Button size="sm" disabled={!dirty || busy !== null} onClick={save}>
-              {busy === "save" ? "Saving…" : "Save changes"}
+              {busy === "save" ? t("saving") : t("saveChanges")}
             </Button>
             {!role.isSystem && (
               <Button
@@ -224,15 +225,11 @@ function RoleCard({
                 variant="ghost"
                 className="text-destructive hover:text-destructive"
                 disabled={busy !== null || role.userCount > 0}
-                title={
-                  role.userCount > 0
-                    ? "Unassign this role from every user first"
-                    : undefined
-                }
+                title={role.userCount > 0 ? t("unassignFirst") : undefined}
                 onClick={remove}
               >
                 <Trash2 className="size-4" />
-                {busy === "delete" ? "Deleting…" : "Delete"}
+                {busy === "delete" ? t("deleting") : t("delete")}
               </Button>
             )}
           </div>
@@ -256,6 +253,7 @@ function RoleCreateForm({
   const [perms, setPerms] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const t = useTranslations("admin");
 
   async function submit() {
     setBusy(true);
@@ -264,27 +262,27 @@ function RoleCreateForm({
       await createRole({ name: name.trim(), description: description.trim(), permissions: perms });
       onDone(true);
     } catch (e) {
-      setErr(e instanceof AdminError ? e.message : "Could not create the role.");
+      setErr(e instanceof AdminError ? e.message : t("couldNotCreateRole"));
       setBusy(false);
     }
   }
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
-      <h3 className="font-display text-lg">New role</h3>
+      <h3 className="font-display text-lg">{t("newRole")}</h3>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="text-xs font-medium text-muted-foreground">Name</label>
+          <label className="text-xs font-medium text-muted-foreground">{t("name")}</label>
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. moderator"
+            placeholder={t("rolePlaceholder")}
             className="mt-1"
           />
         </div>
         <div>
           <label className="text-xs font-medium text-muted-foreground">
-            Description
+            {t("description")}
           </label>
           <Input
             value={description}
@@ -294,7 +292,7 @@ function RoleCreateForm({
         </div>
       </div>
 
-      <p className="mt-4 text-xs font-medium text-muted-foreground">Permissions</p>
+      <p className="mt-4 text-xs font-medium text-muted-foreground">{t("permissions")}</p>
       <PermissionChecklist
         catalog={catalog}
         selected={perms}
@@ -317,10 +315,10 @@ function RoleCreateForm({
           disabled={name.trim() === "" || busy}
           onClick={submit}
         >
-          {busy ? "Creating…" : "Create role"}
+          {busy ? t("creating") : t("createRole")}
         </Button>
         <Button size="sm" variant="outline" onClick={() => onDone(false)}>
-          Cancel
+          {t("cancel")}
         </Button>
       </div>
     </div>

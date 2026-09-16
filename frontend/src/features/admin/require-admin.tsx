@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useAuth } from "@/features/auth/auth-context";
 import { useCan } from "./use-can";
 import type { Permission } from "./permissions";
@@ -25,6 +26,7 @@ export function RequireAdmin({
   const { can, any } = useCan();
   const router = useRouter();
   const pathname = usePathname();
+  const t = useTranslations("admin");
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -35,25 +37,26 @@ export function RequireAdmin({
   if (status === "loading" || status === "unauthenticated") {
     return (
       <div className="py-24 text-sm text-muted-foreground">
-        Checking your session…
+        {t("checkingSession")}
       </div>
     );
   }
 
   if (!any) {
-    return <Denied body="This area is for administrators only." />;
+    return <Denied body={t("adminsOnly")} />;
   }
   if (permission && !can(permission)) {
-    return <Denied body="You don't have permission to view this." />;
+    return <Denied body={t("noPermission")} />;
   }
 
   return <>{children}</>;
 }
 
 function Denied({ body }: { body: string }) {
+  const t = useTranslations("admin");
   return (
     <div className="mx-auto max-w-md py-24 text-center">
-      <h1 className="font-display text-2xl">Not authorised</h1>
+      <h1 className="font-display text-2xl">{t("notAuthorised")}</h1>
       <p className="mt-2 text-sm text-muted-foreground">{body}</p>
     </div>
   );

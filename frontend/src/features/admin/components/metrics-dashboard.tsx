@@ -2,16 +2,19 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { Star } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getMetrics, type AdminMetrics } from "@/features/admin/api";
 
-const n = (v: number) => v.toLocaleString("en-US");
-
 export function MetricsDashboard() {
   const [data, setData] = useState<AdminMetrics | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const t = useTranslations("admin");
+  const locale = useLocale();
+  const n = (v: number) => v.toLocaleString(locale);
+  const m = (v: Parameters<typeof formatMoney>[0]) => formatMoney(v, locale);
 
   useEffect(() => {
     let alive = true;
@@ -42,7 +45,7 @@ export function MetricsDashboard() {
   if (state === "error" || !data) {
     return (
       <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
-        Could not load the metrics.
+        {t("couldNotLoadMetrics")}
       </p>
     );
   }
@@ -57,51 +60,51 @@ export function MetricsDashboard() {
 
   return (
     <div className="flex flex-col gap-8">
-      <Section title="Money">
-        <Tile label="GMV (confirmed + completed)" value={formatMoney(data.gmv)} accent />
-        <Tile label="Collected, net of refunds" value={formatMoney(netRevenue)} />
-        <Tile label="Refunded to students" value={formatMoney(data.refunded)} />
+      <Section title={t("money")}>
+        <Tile label={t("gmv")} value={m(data.gmv)} accent />
+        <Tile label={t("collectedNet")} value={m(netRevenue)} />
+        <Tile label={t("refundedToStudents")} value={m(data.refunded)} />
         <Tile
-          label="Owed to teachers"
-          value={formatMoney(data.payoutsOwed)}
+          label={t("owedToTeachers")}
+          value={m(data.payoutsOwed)}
           href={data.payoutsOwed.amountMinor > 0 ? "/admin/payouts" : undefined}
         />
-        <Tile label="Paid to teachers" value={formatMoney(data.payoutsPaid)} />
+        <Tile label={t("paidToTeachers")} value={m(data.payoutsPaid)} />
       </Section>
 
-      <Section title="Bookings">
-        <Tile label="Total" value={n(data.bookingsTotal)} />
-        <Tile label="Last 7 days" value={n(data.bookingsThisWeek)} />
-        <Tile label="Upcoming" value={n(data.bookingsUpcoming)} />
-        <Tile label="Completed" value={n(data.bookingsCompleted)} />
-        <Tile label="Cancelled" value={n(data.bookingsCancelled)} />
+      <Section title={t("bookings")}>
+        <Tile label={t("total")} value={n(data.bookingsTotal)} />
+        <Tile label={t("last7")} value={n(data.bookingsThisWeek)} />
+        <Tile label={t("upcoming")} value={n(data.bookingsUpcoming)} />
+        <Tile label={t("completed")} value={n(data.bookingsCompleted)} />
+        <Tile label={t("cancelled")} value={n(data.bookingsCancelled)} />
         <Tile
-          label="Completion rate"
+          label={t("completionRate")}
           value={completionRate === null ? "—" : `${completionRate}%`}
-          hint="completed ÷ (completed + cancelled)"
+          hint={t("completionHint")}
         />
       </Section>
 
-      <Section title="Community & moderation">
-        <Tile label="Users" value={n(data.usersTotal)} />
-        <Tile label="New users, last 7 days" value={n(data.usersThisWeek)} />
-        <Tile label="Active students" value={n(data.activeStudents)} hint="have booked ≥ 1 lesson" />
-        <Tile label="Teachers" value={n(data.teachersTotal)} />
+      <Section title={t("community")}>
+        <Tile label={t("users")} value={n(data.usersTotal)} />
+        <Tile label={t("newUsers7")} value={n(data.usersThisWeek)} />
+        <Tile label={t("activeStudents")} value={n(data.activeStudents)} hint={t("activeStudentsHint")} />
+        <Tile label={t("teachers")} value={n(data.teachersTotal)} />
         <Tile
-          label="Awaiting approval"
+          label={t("awaitingApproval")}
           value={n(data.teachersPending)}
           href={data.teachersPending > 0 ? "/admin/teachers?status=pending" : undefined}
           warn={data.teachersPending > 0}
         />
-        <Tile label="Verified teachers" value={n(data.teachersVerified)} />
+        <Tile label={t("verifiedTeachers")} value={n(data.teachersVerified)} />
         <Tile
-          label="Average rating"
+          label={t("averageRating")}
           value={data.averageRating > 0 ? data.averageRating.toFixed(1) : "—"}
           icon={data.averageRating > 0 ? <Star className="size-4 fill-star text-star" /> : undefined}
         />
-        <Tile label="Visible reviews" value={n(data.reviewsVisible)} href="/admin/reviews" />
+        <Tile label={t("visibleReviews")} value={n(data.reviewsVisible)} href="/admin/reviews" />
         <Tile
-          label="Open disputes"
+          label={t("openDisputes")}
           value={n(data.disputesOpen)}
           href={data.disputesOpen > 0 ? "/admin/disputes" : undefined}
           warn={data.disputesOpen > 0}
@@ -137,6 +140,7 @@ function Tile({
   accent?: boolean;
   warn?: boolean;
 }) {
+  const t = useTranslations("admin");
   const inner = (
     <div
       className={cn(
@@ -155,7 +159,7 @@ function Tile({
         {value}
       </div>
       {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
-      {href && <div className="mt-1 text-xs font-medium text-primary">View →</div>}
+      {href && <div className="mt-1 text-xs font-medium text-primary">{t("view")}</div>}
     </div>
   );
   return href ? (

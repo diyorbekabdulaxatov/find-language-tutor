@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`FindTutor` — an italki-style two-sided online language-tutoring marketplace, scoped to **Uzbekistan only**. Students book paid 1-on-1 video lessons with teachers. Prices shown in **UZS** (`120,000 so'm`), UI in **English** (no i18n yet). Most teachers are local (`Asia/Tashkent`), so timezone conversion matters mainly for the few abroad.
+`FindTutor` — an italki-style two-sided online language-tutoring marketplace, scoped to **Uzbekistan only**. Students book paid 1-on-1 video lessons with teachers. Prices shown in **UZS** (`120,000 so'm`), UI in **English, Russian and Uzbek** (see *i18n* under Frontend). Most teachers are local (`Asia/Tashkent`), so timezone conversion matters mainly for the few abroad.
 
 Monorepo, two independently deployable apps plus a hand-written contract:
 
@@ -88,6 +88,8 @@ There is no frontend unit-test setup — verification is `npm run build` + `npm 
 **Auth flow.** Access token lives **in memory only** (`auth-store.ts`, an external store — no `localStorage`). `AuthProvider` (in the root layout, under `ThemeProvider`) bootstraps the session with one silent `refreshSession()` on mount. `useAuth()` → `{user, status, login, register, logout, setUser}`. Client-only route guards: `RequireUser` (→ `/login?next=`), `RequireAdmin`. `?next=` is always validated as a local path.
 
 **Timezone.** `src/features/availability/timezone.ts` converts the teacher's local weekly hours ↔ the backend's UTC minutes-from-midnight, splitting a slot that straddles UTC midnight into two and merging them back. Booking UI (`src/features/bookings/datetime.ts`) is `Intl`-only, showing times in both the viewer's and the teacher's zone.
+
+**i18n.** `next-intl`, **cookie-based locale, no URL prefix** (`NEXT_LOCALE` → `Accept-Language` → `en`; `src/i18n/`). Every route is dynamic as a result. Catalogues live in `messages/{en,ru,uz}.json`, one namespace per feature plus shared vocabularies (`bookingStatus`, `paymentStatus`, `submissionStatus`, `resourceTypes`, `languages`). `src/i18n/global.d.ts` types the keys after `en.json`, so a missing key is a compile error and all three files must carry the same shape. Server components use `getTranslations`/`getLocale` (or `useTranslations` when sync); client components `useTranslations`/`useLocale`. Money and dates take the locale: `formatMoney(money, locale)`, `formatFull(iso, tz, locale)`, `intlLocale(locale)` (en → en-GB). Backend error messages and emails are still English.
 
 **Admin RBAC.** `src/features/admin/permissions.ts` mirrors the backend's permission keys; the backend is the authority (every `/v1/admin/*` call is checked server-side), the frontend gates only render UI (`use-can.ts`, `PermissionGate`).
 

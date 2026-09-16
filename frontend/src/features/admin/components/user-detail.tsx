@@ -2,14 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft } from "lucide-react";
 import { formatMoney } from "@/lib/format";
+import { intlLocale } from "@/lib/i18n";
 import { AdminError, getUser, type AdminUserDetail } from "@/features/admin/api";
 import { TeacherStatusBadge } from "./teacher-status-badge";
 import { UserRolesCard } from "./user-roles-card";
 
-function fmt(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function fmt(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -22,6 +24,9 @@ export function UserDetail({ id }: { id: string }) {
   const [data, setData] = useState<AdminUserDetail | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  const t = useTranslations("admin");
+  const tStatus = useTranslations("bookingStatus");
+  const locale = useLocale();
 
   const reload = useCallback(() => {
     return getUser(id)
@@ -30,12 +35,10 @@ export function UserDetail({ id }: { id: string }) {
         setState("ready");
       })
       .catch((err) => {
-        setErrMsg(
-          err instanceof AdminError ? err.message : "Could not load that user.",
-        );
+        setErrMsg(err instanceof AdminError ? err.message : t("couldNotLoadUser"));
         setState("error");
       });
-  }, [id]);
+  }, [id, t]);
 
   useEffect(() => {
     void reload();
@@ -64,18 +67,18 @@ export function UserDetail({ id }: { id: string }) {
       <div className="rounded-2xl border border-border bg-card p-6">
         <h2 className="font-display text-2xl">{user.displayName}</h2>
         <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
-          <Row label="Email">{user.email}</Row>
-          <Row label="User ID">
+          <Row label={t("email")}>{user.email}</Row>
+          <Row label={t("userId")}>
             <span className="font-mono text-xs">{user.id}</span>
           </Row>
-          <Row label="Joined">{fmt(user.createdAt)}</Row>
+          <Row label={t("joined")}>{fmt(user.createdAt, locale)}</Row>
         </dl>
       </div>
 
       <UserRolesCard userId={user.id} roles={roles} onChanged={reload} />
 
       <div className="rounded-2xl border border-border bg-card p-6">
-        <h3 className="font-display text-lg">Teacher profile</h3>
+        <h3 className="font-display text-lg">{t("teacherProfile")}</h3>
         {teacherProfile ? (
           <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
             <Link
@@ -86,59 +89,59 @@ export function UserDetail({ id }: { id: string }) {
             </Link>
             <TeacherStatusBadge status={teacherProfile.status} />
             {teacherProfile.verified && (
-              <span className="text-xs text-muted-foreground">verified</span>
+              <span className="text-xs text-muted-foreground">{t("verified")}</span>
             )}
           </div>
         ) : (
-          <p className="mt-2 text-sm text-muted-foreground">None.</p>
+          <p className="mt-2 text-sm text-muted-foreground">{t("none")}</p>
         )}
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-6">
-        <h3 className="font-display text-lg">Payments</h3>
+        <h3 className="font-display text-lg">{t("payments")}</h3>
         <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
-          <Row label="Authorized">
-            {formatMoney({
-              amountMinor: paymentsSummary.authorizedMinor,
-              currency: paymentsSummary.currency as "UZS" | "USD",
-            })}
+          <Row label={t("authorized")}>
+            {formatMoney(
+              { amountMinor: paymentsSummary.authorizedMinor, currency: paymentsSummary.currency as "UZS" | "USD" },
+              locale,
+            )}
           </Row>
-          <Row label="Captured">
-            {formatMoney({
-              amountMinor: paymentsSummary.capturedMinor,
-              currency: paymentsSummary.currency as "UZS" | "USD",
-            })}
+          <Row label={t("captured")}>
+            {formatMoney(
+              { amountMinor: paymentsSummary.capturedMinor, currency: paymentsSummary.currency as "UZS" | "USD" },
+              locale,
+            )}
           </Row>
-          <Row label="Refunded">
-            {formatMoney({
-              amountMinor: paymentsSummary.refundedMinor,
-              currency: paymentsSummary.currency as "UZS" | "USD",
-            })}
+          <Row label={t("refunded")}>
+            {formatMoney(
+              { amountMinor: paymentsSummary.refundedMinor, currency: paymentsSummary.currency as "UZS" | "USD" },
+              locale,
+            )}
           </Row>
         </dl>
       </div>
 
       <div className="rounded-2xl border border-border">
         <h3 className="px-6 pt-5 font-display text-lg">
-          Bookings{" "}
+          {t("bookings")}{" "}
           <span className="text-muted-foreground">({bookings.length})</span>
         </h3>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[32rem] text-sm">
             <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
               <tr>
-                <th className="px-6 py-2 font-medium">When</th>
-                <th className="px-4 py-2 font-medium">As</th>
-                <th className="px-4 py-2 font-medium">With</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-6 py-2 text-right font-medium">Price</th>
+                <th className="px-6 py-2 font-medium">{t("colWhen")}</th>
+                <th className="px-4 py-2 font-medium">{t("colAs")}</th>
+                <th className="px-4 py-2 font-medium">{t("colWith")}</th>
+                <th className="px-4 py-2 font-medium">{t("colStatus")}</th>
+                <th className="px-6 py-2 text-right font-medium">{t("colPrice")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {bookings.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-6 py-6 text-center text-muted-foreground">
-                    No bookings.
+                    {t("noBookings")}
                   </td>
                 </tr>
               )}
@@ -149,13 +152,17 @@ export function UserDetail({ id }: { id: string }) {
                       href={`/bookings/${b.id}`}
                       className="hover:underline"
                     >
-                      {fmt(b.startAt)}
+                      {fmt(b.startAt, locale)}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{b.roleInBooking}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {b.roleInBooking === "student" ? t("student") : t("teacher")}
+                  </td>
                   <td className="px-4 py-3">{b.otherPartyName}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{b.status}</td>
-                  <td className="px-6 py-3 text-right">{formatMoney(b.price)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {tStatus.has(b.status as never) ? tStatus(b.status as never) : b.status}
+                  </td>
+                  <td className="px-6 py-3 text-right">{formatMoney(b.price, locale)}</td>
                 </tr>
               ))}
             </tbody>
@@ -167,12 +174,13 @@ export function UserDetail({ id }: { id: string }) {
 }
 
 function Back() {
+  const t = useTranslations("admin");
   return (
     <Link
       href="/admin/users"
       className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
     >
-      <ArrowLeft className="size-4" /> All users
+      <ArrowLeft className="size-4" /> {t("allUsers")}
     </Link>
   );
 }

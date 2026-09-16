@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
+import { intlLocale } from "@/lib/i18n";
 import {
   AdminError,
   listDisputes,
@@ -14,15 +16,17 @@ import {
 import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 20;
-const FILTERS: { value: DisputeQueueStatus; label: string }[] = [
-  { value: "open", label: "Open" },
-  { value: "resolved", label: "Resolved" },
-  { value: "rejected", label: "Rejected" },
-  { value: "all", label: "All" },
+const FILTERS: { value: DisputeQueueStatus; label: FilterKey }[] = [
+  { value: "open", label: "filterOpen" },
+  { value: "resolved", label: "filterResolved" },
+  { value: "rejected", label: "filterRejected" },
+  { value: "all", label: "filterAll" },
 ];
+type FilterKey = "filterOpen" | "filterResolved" | "filterRejected" | "filterAll";
+const STATUS_LABEL = { open: "disputeOpen", resolved: "disputeResolved", rejected: "disputeRejected" } as const;
 
-function fmt(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function fmt(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -36,6 +40,8 @@ export function DisputesQueue() {
   const [total, setTotal] = useState(0);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [reloadKey, setReloadKey] = useState(0);
+  const t = useTranslations("admin");
+  const locale = useLocale();
 
   useEffect(() => {
     let alive = true;
@@ -76,20 +82,20 @@ export function DisputesQueue() {
                 : "border-border hover:bg-muted",
             )}
           >
-            {f.label}
+            {t(f.label)}
           </button>
         ))}
       </div>
 
       {state === "error" ? (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Could not load the dispute queue.
+          {t("couldNotLoadDisputes")}
         </p>
       ) : state === "loading" ? (
         <div className="h-64 animate-pulse rounded-2xl bg-muted" />
       ) : rows.length === 0 ? (
         <p className="rounded-2xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
-          Nothing here.
+          {t("nothingHere")}
         </p>
       ) : (
         <ul className="flex flex-col gap-3">
@@ -106,7 +112,7 @@ export function DisputesQueue() {
       {total > PAGE_SIZE && (
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">
-            {total.toLocaleString("en-US")} · page {page} of {lastPage}
+            {t("pageOf", { total: total.toLocaleString(locale), page, last: lastPage })}
           </span>
           <div className="flex gap-2">
             <Button
@@ -115,7 +121,7 @@ export function DisputesQueue() {
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
             >
-              Previous
+              {t("previous")}
             </Button>
             <Button
               variant="outline"
@@ -123,7 +129,7 @@ export function DisputesQueue() {
               disabled={page >= lastPage}
               onClick={() => setPage((p) => p + 1)}
             >
-              Next
+              {t("next")}
             </Button>
           </div>
         </div>
@@ -144,6 +150,8 @@ function DisputeCard({
   const [refund, setRefund] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const t = useTranslations("admin");
+  const locale = useLocale();
 
   async function submit() {
     if (!outcome) return;
@@ -157,9 +165,7 @@ function DisputeCard({
       });
       onResolved();
     } catch (e) {
-      setErr(
-        e instanceof AdminError ? e.message : "Could not resolve. Try again.",
-      );
+      setErr(e instanceof AdminError ? e.message : t("couldNotResolve"));
       setBusy(false);
     }
   }
@@ -176,11 +182,11 @@ function DisputeCard({
               {d.booking.teacher.displayName} × {d.booking.student.displayName}
             </Link>{" "}
             <span className="text-muted-foreground">
-              · {fmt(d.booking.startAt)} · {formatMoney(d.booking.price)}
+              · {fmt(d.booking.startAt, locale)} · {formatMoney(d.booking.price, locale)}
             </span>
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Raised by {d.raisedBy.displayName} on {fmt(d.createdAt)}
+            {t("raisedByOn", { name: d.raisedBy.displayName, date: fmt(d.createdAt, locale) })}
           </p>
         </div>
         <span
@@ -191,7 +197,7 @@ function DisputeCard({
               : "bg-muted text-muted-foreground",
           )}
         >
-          {d.status}
+          {t(STATUS_LABEL[d.status])}
         </span>
       </div>
 
@@ -200,7 +206,7 @@ function DisputeCard({
       {d.resolution && (
         <p className="mt-3 rounded-lg bg-muted px-3 py-2 text-sm">
           <span className="font-medium">
-            {d.resolvedBy?.displayName ?? "Moderator"}:
+            {d.resolvedBy?.displayName ?? t("moderator")}:
           </span>{" "}
           {d.resolution}
         </p>
@@ -211,20 +217,20 @@ function DisputeCard({
           {outcome === null ? (
             <div className="flex gap-2">
               <Button size="sm" onClick={() => setOutcome("resolved")}>
-                Resolve (side with them)
+                {t("resolveSide")}
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => setOutcome("rejected")}
               >
-                Reject
+                {t("reject")}
               </Button>
             </div>
           ) : (
             <div className="flex flex-col gap-2">
               <label className="text-xs font-medium text-muted-foreground">
-                Closing note ({outcome})
+                {t("closingNote", { outcome: t(outcome === "resolved" ? "outcomeResolved" : "outcomeRejected") })}
               </label>
               <textarea
                 rows={2}
@@ -240,7 +246,7 @@ function DisputeCard({
                     onChange={(e) => setRefund(e.target.checked)}
                     className="accent-primary"
                   />
-                  Refund the booking&apos;s payment
+                  {t("refundBooking")}
                 </label>
               )}
               <div className="flex gap-2">
@@ -249,7 +255,9 @@ function DisputeCard({
                   disabled={busy || resolution.trim() === ""}
                   onClick={submit}
                 >
-                  {busy ? "Saving…" : `Confirm ${outcome}`}
+                  {busy
+                    ? t("saving")
+                    : t("confirmOutcome", { outcome: t(outcome === "resolved" ? "outcomeResolved" : "outcomeRejected") })}
                 </Button>
                 <Button
                   size="sm"
@@ -259,7 +267,7 @@ function DisputeCard({
                     setResolution("");
                   }}
                 >
-                  Back
+                  {t("back")}
                 </Button>
               </div>
             </div>

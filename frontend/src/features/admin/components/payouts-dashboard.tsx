@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
+import { intlLocale } from "@/lib/i18n";
 import {
   AdminError,
   getPayoutDashboard,
@@ -17,8 +19,8 @@ import { PayoutBatchStatusBadge } from "./payout-batch-status-badge";
 
 const PAGE_SIZE = 20;
 
-function fmtDate(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function fmtDate(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -33,6 +35,8 @@ export function PayoutsDashboard() {
   const [data, setData] = useState<PayoutDashboard | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [reloadKey, setReloadKey] = useState(0);
+  const t = useTranslations("admin");
+  const locale = useLocale();
 
   useEffect(() => {
     let alive = true;
@@ -62,7 +66,7 @@ export function PayoutsDashboard() {
   if (state === "error" || !data) {
     return (
       <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-        Could not load the payout dashboard. Refresh to try again.
+        {t("couldNotLoadPayouts")}
       </p>
     );
   }
@@ -74,38 +78,34 @@ export function PayoutsDashboard() {
     <div className="flex flex-col gap-8">
       <section className="flex flex-col gap-4">
         <div className="grid gap-3 sm:grid-cols-3">
-          <Stat label="Available to pay" value={formatMoney(totals.available)} accent />
-          <Stat
-            label="Held"
-            value={formatMoney(totals.held)}
-            hint="Inside the clearing window"
-          />
-          <Stat label="Paid out to date" value={formatMoney(totals.paid)} />
+          <Stat label={t("availableToPay")} value={formatMoney(totals.available, locale)} accent />
+          <Stat label={t("held")} value={formatMoney(totals.held, locale)} hint={t("heldHint")} />
+          <Stat label={t("paidToDate")} value={formatMoney(totals.paid, locale)} />
         </div>
 
         {canRun && (
           <RunPayoutCard
             owedCount={owed.length}
-            available={formatMoney(totals.available)}
+            available={formatMoney(totals.available, locale)}
             onDone={reload}
           />
         )}
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="font-display text-xl">Owed now</h2>
+        <h2 className="font-display text-xl">{t("owedNow")}</h2>
         {owed.length === 0 ? (
           <p className="rounded-2xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
-            Nothing has cleared its holding period. Nothing to pay out.
+            {t("nothingCleared")}
           </p>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-border">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-2 font-medium">Teacher</th>
-                  <th className="px-4 py-2 font-medium">Cleared since</th>
-                  <th className="px-4 py-2 text-right font-medium">Amount</th>
+                  <th className="px-4 py-2 font-medium">{t("colTeacher")}</th>
+                  <th className="px-4 py-2 font-medium">{t("colClearedSince")}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t("colAmount")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -120,10 +120,10 @@ export function PayoutsDashboard() {
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      {fmtDate(o.oldestAvailableAt)}
+                      {fmtDate(o.oldestAvailableAt, locale)}
                     </td>
                     <td className="px-4 py-3 text-right font-medium">
-                      {formatMoney(o.available)}
+                      {formatMoney(o.available, locale)}
                     </td>
                   </tr>
                 ))}
@@ -134,22 +134,22 @@ export function PayoutsDashboard() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="font-display text-xl">Past runs</h2>
+        <h2 className="font-display text-xl">{t("pastRuns")}</h2>
         {batches.length === 0 ? (
           <p className="rounded-2xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
-            No payout runs yet.
+            {t("noRuns")}
           </p>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-border">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-2 font-medium">Run</th>
-                  <th className="px-4 py-2 font-medium">By</th>
-                  <th className="px-4 py-2 font-medium">Teachers</th>
-                  <th className="px-4 py-2 font-medium">Lessons</th>
-                  <th className="px-4 py-2 text-right font-medium">Total</th>
-                  <th className="px-4 py-2 text-right font-medium">Status</th>
+                  <th className="px-4 py-2 font-medium">{t("colRun")}</th>
+                  <th className="px-4 py-2 font-medium">{t("colBy")}</th>
+                  <th className="px-4 py-2 font-medium">{t("colTeachers")}</th>
+                  <th className="px-4 py-2 font-medium">{t("colLessons")}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t("colTotal")}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t("colStatus")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -160,7 +160,7 @@ export function PayoutsDashboard() {
                         href={`/admin/payouts/batches/${b.id}`}
                         className="font-medium text-primary hover:underline"
                       >
-                        {fmtDate(b.createdAt)}
+                        {fmtDate(b.createdAt, locale)}
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
@@ -173,7 +173,7 @@ export function PayoutsDashboard() {
                       {b.lineCount}
                     </td>
                     <td className="px-4 py-3 text-right font-medium">
-                      {formatMoney(b.total)}
+                      {formatMoney(b.total, locale)}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <PayoutBatchStatusBadge status={b.status} />
@@ -188,7 +188,7 @@ export function PayoutsDashboard() {
         {batchesTotal > PAGE_SIZE && (
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">
-              {batchesTotal.toLocaleString("en-US")} · page {page} of {lastPage}
+              {t("pageOf", { total: batchesTotal.toLocaleString(locale), page, last: lastPage })}
             </span>
             <div className="flex gap-2">
               <Button
@@ -197,7 +197,7 @@ export function PayoutsDashboard() {
                 disabled={page <= 1}
                 onClick={() => setPage((p) => p - 1)}
               >
-                Previous
+                {t("previous")}
               </Button>
               <Button
                 variant="outline"
@@ -205,7 +205,7 @@ export function PayoutsDashboard() {
                 disabled={page >= lastPage}
                 onClick={() => setPage((p) => p + 1)}
               >
-                Next
+                {t("next")}
               </Button>
             </div>
           </div>
@@ -228,6 +228,8 @@ function RunPayoutCard({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const t = useTranslations("admin");
+  const locale = useLocale();
 
   const nothingToPay = owedCount === 0;
 
@@ -237,21 +239,19 @@ function RunPayoutCard({
     try {
       const batch = await runPayout();
       setResult(
-        `Paid ${formatMoney(batch.total)} to ${batch.teacherCount} ${
-          batch.teacherCount === 1 ? "teacher" : "teachers"
-        } across ${batch.lineCount} ${
-          batch.lineCount === 1 ? "lesson" : "lessons"
-        }.`,
+        t("payoutDone", {
+          total: formatMoney(batch.total, locale),
+          teachers: batch.teacherCount,
+          lessons: batch.lineCount,
+        }),
       );
       setConfirming(false);
       onDone();
     } catch (e) {
       if (e instanceof AdminError && e.code === "nothing_to_pay") {
-        setErr("Nothing has cleared its holding period since you last checked.");
+        setErr(t("nothingClearedSince"));
       } else {
-        setErr(
-          e instanceof AdminError ? e.message : "Could not run the payout. Try again.",
-        );
+        setErr(e instanceof AdminError ? e.message : t("couldNotRunPayout"));
       }
     } finally {
       setBusy(false);
@@ -262,34 +262,33 @@ function RunPayoutCard({
     <div className="rounded-2xl border border-primary/30 bg-primary/5 p-5">
       {result ? (
         <p className="text-sm">
-          <span className="font-medium text-primary">Done.</span> {result}
+          <span className="font-medium text-primary">{t("done")}</span> {result}
         </p>
       ) : !confirming ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            {nothingToPay
-              ? "No earnings have cleared their holding period yet."
-              : `Pay every teacher what has cleared — ${available} across ${owedCount} ${
-                  owedCount === 1 ? "teacher" : "teachers"
-                }.`}
+            {nothingToPay ? t("noEarningsCleared") : t("payEveryone", { available, count: owedCount })}
           </p>
           <Button
             size="sm"
             disabled={nothingToPay}
             onClick={() => setConfirming(true)}
           >
-            Run payout
+            {t("runPayout")}
           </Button>
         </div>
       ) : (
         <div className="flex flex-col gap-3">
           <p className="text-sm">
-            Settle <span className="font-medium">{available}</span> to {owedCount}{" "}
-            {owedCount === 1 ? "teacher" : "teachers"} now? This can&apos;t be undone.
+            {t.rich("settleConfirm", {
+              available,
+              count: owedCount,
+              b: (chunks) => <span className="font-medium">{chunks}</span>,
+            })}
           </p>
           <div className="flex gap-2">
             <Button size="sm" disabled={busy} onClick={run}>
-              {busy ? "Running…" : "Yes, pay now"}
+              {busy ? t("running") : t("yesPayNow")}
             </Button>
             <Button
               size="sm"
@@ -297,7 +296,7 @@ function RunPayoutCard({
               disabled={busy}
               onClick={() => setConfirming(false)}
             >
-              Cancel
+              {t("cancel")}
             </Button>
           </div>
         </div>

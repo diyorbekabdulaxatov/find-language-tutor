@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useCan } from "./use-can";
 import type { Permission } from "./permissions";
 
@@ -16,10 +17,11 @@ export function PermissionGate({
   children: React.ReactNode;
 }) {
   const { can } = useCan();
+  const t = useTranslations("admin");
   if (!can(permission)) {
     return (
       <p className="rounded-xl bg-muted px-4 py-8 text-center text-sm text-muted-foreground">
-        You don&apos;t have permission to view this section.
+        {t("noPermissionSection")}
       </p>
     );
   }

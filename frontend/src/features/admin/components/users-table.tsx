@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
+import { intlLocale } from "@/lib/i18n";
 import { AdminError, listUsers, type AdminUserRow } from "@/features/admin/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 20;
 
-function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatDate(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -23,13 +25,15 @@ export function UsersTable() {
   const [rows, setRows] = useState<AdminUserRow[]>([]);
   const [total, setTotal] = useState(0);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const t = useTranslations("admin");
+  const locale = useLocale();
 
   useEffect(() => {
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       setDebounced(q.trim());
       setPage(1);
     }, 300);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [q]);
 
   useEffect(() => {
@@ -57,7 +61,7 @@ export function UsersTable() {
   return (
     <div className="flex flex-col gap-4">
       <Input
-        placeholder="Search by name or email…"
+        placeholder={t("searchUsers")}
         value={q}
         onChange={(e) => setQ(e.target.value)}
         className="max-w-sm"
@@ -65,17 +69,17 @@ export function UsersTable() {
 
       {state === "error" ? (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Could not load users.
+          {t("couldNotLoadUsers")}
         </p>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-border">
           <table className="w-full min-w-[36rem] text-sm">
             <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
               <tr>
-                <th className="px-4 py-2 font-medium">User</th>
-                <th className="px-4 py-2 font-medium">Teacher</th>
-                <th className="px-4 py-2 text-right font-medium">Bookings</th>
-                <th className="px-4 py-2 text-right font-medium">Joined</th>
+                <th className="px-4 py-2 font-medium">{t("colUser")}</th>
+                <th className="px-4 py-2 font-medium">{t("colTeacher")}</th>
+                <th className="px-4 py-2 text-right font-medium">{t("colBookings")}</th>
+                <th className="px-4 py-2 text-right font-medium">{t("colJoined")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -90,7 +94,7 @@ export function UsersTable() {
               {state === "ready" && rows.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
-                    No users match.
+                    {t("noUsersMatch")}
                   </td>
                 </tr>
               )}
@@ -107,13 +111,13 @@ export function UsersTable() {
                       <div className="text-xs text-muted-foreground">{u.email}</div>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      {u.isTeacher ? "Yes" : "—"}
+                      {u.isTeacher ? t("yes") : "—"}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums">
                       {u.bookingCount}
                     </td>
                     <td className="px-4 py-3 text-right text-muted-foreground">
-                      {formatDate(u.createdAt)}
+                      {formatDate(u.createdAt, locale)}
                     </td>
                   </tr>
                 ))}
@@ -125,7 +129,7 @@ export function UsersTable() {
       {total > PAGE_SIZE && (
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">
-            {total.toLocaleString("en-US")} users · page {page} of {lastPage}
+            {t("usersPageOf", { total: total.toLocaleString(locale), page, last: lastPage })}
           </span>
           <div className="flex gap-2">
             <Button
@@ -134,7 +138,7 @@ export function UsersTable() {
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
             >
-              Previous
+              {t("previous")}
             </Button>
             <Button
               variant="outline"
@@ -142,7 +146,7 @@ export function UsersTable() {
               disabled={page >= lastPage}
               onClick={() => setPage((p) => p + 1)}
             >
-              Next
+              {t("next")}
             </Button>
           </div>
         </div>

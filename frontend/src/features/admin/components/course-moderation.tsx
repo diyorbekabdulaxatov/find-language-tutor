@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
+import { intlLocale } from "@/lib/i18n";
 import {
   AdminError,
   listAdminCourses,
@@ -16,15 +18,16 @@ import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 20;
 
-const STATUS: { value: CourseModerationStatus | "all"; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "draft", label: "Draft" },
-  { value: "published", label: "Published" },
-  { value: "archived", label: "Archived" },
+const STATUS: { value: CourseModerationStatus | "all"; label: StatusKey }[] = [
+  { value: "all", label: "courseAll" },
+  { value: "draft", label: "courseDraft" },
+  { value: "published", label: "coursePublished" },
+  { value: "archived", label: "courseArchived" },
 ];
+type StatusKey = "courseAll" | "courseDraft" | "coursePublished" | "courseArchived";
 
-function fmt(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function fmt(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -42,6 +45,8 @@ export function CourseModeration() {
   const [total, setTotal] = useState(0);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [reloadKey, setReloadKey] = useState(0);
+  const t = useTranslations("admin");
+  const locale = useLocale();
 
   useEffect(() => {
     let alive = true;
@@ -94,7 +99,7 @@ export function CourseModeration() {
                 : "border-border hover:bg-muted",
             )}
           >
-            {f.label}
+            {t(f.label)}
           </button>
         ))}
 
@@ -108,25 +113,25 @@ export function CourseModeration() {
             }}
             className="accent-primary"
           />
-          Suspended only
+          {t("suspendedOnly")}
         </label>
 
         <form onSubmit={applyTeacher} className="ml-auto flex gap-2">
           <input
             value={teacher}
             onChange={(e) => setTeacher(e.target.value)}
-            placeholder="Teacher slug"
+            placeholder={t("teacherSlug")}
             className="w-44 rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
           <Button type="submit" size="sm" variant="outline">
-            Filter
+            {t("filter")}
           </Button>
         </form>
       </div>
 
       {teacherQuery && (
         <p className="text-xs text-muted-foreground">
-          Filtered to{" "}
+          {t("filteredTo")}{" "}
           <span className="font-medium text-foreground">{teacherQuery}</span> ·{" "}
           <button
             className="underline hover:text-foreground"
@@ -135,25 +140,25 @@ export function CourseModeration() {
               setTeacherQuery("");
             }}
           >
-            clear
+            {t("clear")}
           </button>
         </p>
       )}
 
       {state === "error" ? (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Could not load the course moderation queue.
+          {t("couldNotLoadCourses")}
         </p>
       ) : state === "loading" ? (
         <div className="h-64 animate-pulse rounded-2xl bg-muted" />
       ) : rows.length === 0 ? (
         <p className="rounded-2xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
-          No courses match.
+          {t("noCoursesMatch")}
         </p>
       ) : (
         <ul className="flex flex-col gap-3">
           {rows.map((c) => (
-            <CourseCard key={c.id} course={c} onChanged={reload} />
+            <CourseCard key={c.id} course={c} onChanged={reload} locale={locale} />
           ))}
         </ul>
       )}
@@ -161,7 +166,7 @@ export function CourseModeration() {
       {total > PAGE_SIZE && (
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">
-            {total.toLocaleString("en-US")} · page {page} of {lastPage}
+            {t("pageOf", { total: total.toLocaleString(locale), page, last: lastPage })}
           </span>
           <div className="flex gap-2">
             <Button
@@ -170,7 +175,7 @@ export function CourseModeration() {
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
             >
-              Previous
+              {t("previous")}
             </Button>
             <Button
               variant="outline"
@@ -178,7 +183,7 @@ export function CourseModeration() {
               disabled={page >= lastPage}
               onClick={() => setPage((p) => p + 1)}
             >
-              Next
+              {t("next")}
             </Button>
           </div>
         </div>
@@ -190,10 +195,14 @@ export function CourseModeration() {
 function CourseCard({
   course: c,
   onChanged,
+  locale,
 }: {
   course: AdminCourse;
   onChanged: () => void;
+  locale: string;
 }) {
+  const t = useTranslations("admin");
+  const tCourse = useTranslations("courses");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -204,7 +213,7 @@ function CourseCard({
       await fn();
       onChanged();
     } catch (e) {
-      setErr(e instanceof AdminError ? e.message : "Something went wrong. Try again.");
+      setErr(e instanceof AdminError ? e.message : t("somethingWrong"));
       setBusy(false);
     }
   }
@@ -228,16 +237,16 @@ function CourseCard({
                   : "bg-muted text-muted-foreground",
               )}
             >
-              {c.status}
+              {tCourse(c.status)}
             </span>
             {c.archived && (
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
-                Archived
+                {t("archived")}
               </span>
             )}
             {c.suspended && (
               <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-semibold text-destructive">
-                Suspended
+                {t("suspended")}
               </span>
             )}
           </div>
@@ -249,8 +258,8 @@ function CourseCard({
               {c.teacher.displayName}
             </Link>{" "}
             <span className="text-muted-foreground">
-              · {formatMoney(c.price)} · created {fmt(c.createdAt)}
-              {c.suspended && c.suspendedAt ? ` · suspended ${fmt(c.suspendedAt)}` : ""}
+              {t("createdOn", { price: formatMoney(c.price, locale), date: fmt(c.createdAt, locale) })}
+              {c.suspended && c.suspendedAt ? ` ${t("suspendedOn", { date: fmt(c.suspendedAt, locale) })}` : ""}
             </span>
           </p>
         </div>
@@ -259,7 +268,7 @@ function CourseCard({
       <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
         {c.suspended ? (
           <Button size="sm" disabled={busy} onClick={() => run(() => unsuspendCourse(c.id))}>
-            {busy ? "Restoring…" : "Restore to storefront"}
+            {busy ? t("restoring") : t("restoreToStorefront")}
           </Button>
         ) : (
           <Button
@@ -268,7 +277,7 @@ function CourseCard({
             disabled={busy}
             onClick={() => run(() => suspendCourse(c.id))}
           >
-            {busy ? "Suspending…" : "Suspend"}
+            {busy ? t("suspending") : t("suspend")}
           </Button>
         )}
       </div>

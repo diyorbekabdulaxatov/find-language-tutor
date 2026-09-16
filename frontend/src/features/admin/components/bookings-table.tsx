@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import { ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
+import { intlLocale } from "@/lib/i18n";
 import {
   listAdminBookings,
   type AdminBookingRow,
@@ -16,16 +18,17 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 20;
-const FILTERS: { value: "" | AdminBookingStatus; label: string }[] = [
-  { value: "", label: "All" },
-  { value: "pending_payment", label: "Pending" },
-  { value: "confirmed", label: "Confirmed" },
-  { value: "completed", label: "Completed" },
-  { value: "cancelled", label: "Cancelled" },
+const FILTERS: { value: "" | AdminBookingStatus; label: FilterKey }[] = [
+  { value: "", label: "filterAll" },
+  { value: "pending_payment", label: "filterPending" },
+  { value: "confirmed", label: "filterConfirmed" },
+  { value: "completed", label: "filterCompleted" },
+  { value: "cancelled", label: "filterCancelled" },
 ];
+type FilterKey = "filterAll" | "filterPending" | "filterConfirmed" | "filterCompleted" | "filterCancelled";
 
-function fmt(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function fmt(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     day: "numeric",
     month: "short",
     hour: "2-digit",
@@ -44,13 +47,15 @@ export function BookingsTable() {
   const [rows, setRows] = useState<AdminBookingRow[]>([]);
   const [total, setTotal] = useState(0);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const t = useTranslations("admin");
+  const locale = useLocale();
 
   useEffect(() => {
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       setDebounced(q.trim());
       setPage(1);
     }, 300);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [q]);
 
   useEffect(() => {
@@ -100,13 +105,13 @@ export function BookingsTable() {
                 : "border-border hover:bg-muted",
             )}
           >
-            {f.label}
+            {t(f.label)}
           </button>
         ))}
       </div>
 
       <Input
-        placeholder="Search by teacher or student…"
+        placeholder={t("searchBookings")}
         value={q}
         onChange={(e) => setQ(e.target.value)}
         className="max-w-sm"
@@ -114,18 +119,18 @@ export function BookingsTable() {
 
       {state === "error" ? (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Could not load bookings.
+          {t("couldNotLoadBookings")}
         </p>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-border">
           <table className="w-full min-w-[44rem] text-sm">
             <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
               <tr>
-                <th className="px-4 py-2 font-medium">Lesson</th>
-                <th className="px-4 py-2 font-medium">Teacher</th>
-                <th className="px-4 py-2 font-medium">Student</th>
-                <th className="px-4 py-2 font-medium">Status</th>
-                <th className="px-4 py-2 text-right font-medium">Price</th>
+                <th className="px-4 py-2 font-medium">{t("colLesson")}</th>
+                <th className="px-4 py-2 font-medium">{t("colTeacher")}</th>
+                <th className="px-4 py-2 font-medium">{t("colStudent")}</th>
+                <th className="px-4 py-2 font-medium">{t("colStatus")}</th>
+                <th className="px-4 py-2 text-right font-medium">{t("colPrice")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -143,7 +148,7 @@ export function BookingsTable() {
                     colSpan={5}
                     className="px-4 py-8 text-center text-muted-foreground"
                   >
-                    No bookings match.
+                    {t("noBookingsMatch")}
                   </td>
                 </tr>
               )}
@@ -155,7 +160,7 @@ export function BookingsTable() {
                         href={`/admin/bookings/${b.id}`}
                         className="inline-flex items-center gap-1.5 font-medium hover:underline"
                       >
-                        {fmt(b.startAt)}
+                        {fmt(b.startAt, locale)}
                         {b.hasOpenDispute && (
                           <ShieldAlert className="size-4 text-coral" />
                         )}
@@ -169,7 +174,7 @@ export function BookingsTable() {
                       <BookingStatusBadge status={b.status} />
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums">
-                      {formatMoney(b.price)}
+                      {formatMoney(b.price, locale)}
                     </td>
                   </tr>
                 ))}
@@ -181,7 +186,7 @@ export function BookingsTable() {
       {total > PAGE_SIZE && (
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">
-            {total.toLocaleString("en-US")} · page {page} of {lastPage}
+            {t("pageOf", { total: total.toLocaleString(locale), page, last: lastPage })}
           </span>
           <div className="flex gap-2">
             <Button
@@ -190,7 +195,7 @@ export function BookingsTable() {
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
             >
-              Previous
+              {t("previous")}
             </Button>
             <Button
               variant="outline"
@@ -198,7 +203,7 @@ export function BookingsTable() {
               disabled={page >= lastPage}
               onClick={() => setPage((p) => p + 1)}
             >
-              Next
+              {t("next")}
             </Button>
           </div>
         </div>
