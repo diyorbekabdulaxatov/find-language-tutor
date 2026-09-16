@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTranslations } from "next-intl";
 import {
   BarChart3,
   Banknote,
@@ -19,25 +20,29 @@ import { useCan } from "./use-can";
 
 const LINKS: {
   href: string;
-  label: string;
+  label: NavKey;
   icon: typeof BarChart3;
   exact?: boolean;
   perm: Permission;
 }[] = [
-  { href: "/admin", label: "Dashboard", icon: BarChart3, exact: true, perm: PERMISSIONS.metricsView },
-  { href: "/admin/teachers", label: "Teachers", icon: GraduationCap, perm: PERMISSIONS.teachersView },
-  { href: "/admin/bookings", label: "Bookings", icon: CalendarClock, perm: PERMISSIONS.bookingsView },
-  { href: "/admin/disputes", label: "Disputes", icon: ShieldAlert, perm: PERMISSIONS.disputesResolve },
-  { href: "/admin/payouts", label: "Payouts", icon: Banknote, perm: PERMISSIONS.payoutsView },
-  { href: "/admin/reviews", label: "Reviews", icon: Star, perm: PERMISSIONS.reviewsModerate },
-  { href: "/admin/courses", label: "Courses", icon: BookOpen, perm: PERMISSIONS.coursesModerate },
-  { href: "/admin/users", label: "Users", icon: Users, perm: PERMISSIONS.usersView },
-  { href: "/admin/roles", label: "Roles", icon: ShieldCheck, perm: PERMISSIONS.rolesManage },
+  { href: "/admin", label: "navDashboard", icon: BarChart3, exact: true, perm: PERMISSIONS.metricsView },
+  { href: "/admin/teachers", label: "navTeachers", icon: GraduationCap, perm: PERMISSIONS.teachersView },
+  { href: "/admin/bookings", label: "navBookings", icon: CalendarClock, perm: PERMISSIONS.bookingsView },
+  { href: "/admin/disputes", label: "navDisputes", icon: ShieldAlert, perm: PERMISSIONS.disputesResolve },
+  { href: "/admin/payouts", label: "navPayouts", icon: Banknote, perm: PERMISSIONS.payoutsView },
+  { href: "/admin/reviews", label: "navReviews", icon: Star, perm: PERMISSIONS.reviewsModerate },
+  { href: "/admin/courses", label: "navCourses", icon: BookOpen, perm: PERMISSIONS.coursesModerate },
+  { href: "/admin/users", label: "navUsers", icon: Users, perm: PERMISSIONS.usersView },
+  { href: "/admin/roles", label: "navRoles", icon: ShieldCheck, perm: PERMISSIONS.rolesManage },
 ];
+type NavKey =
+  | "navDashboard" | "navTeachers" | "navBookings" | "navDisputes" | "navPayouts"
+  | "navReviews" | "navCourses" | "navUsers" | "navRoles";
 
 export function AdminNav() {
   const pathname = usePathname();
   const { can } = useCan();
+  const t = useTranslations("admin");
   const links = LINKS.filter((l) => can(l.perm));
 
   return (
@@ -56,7 +61,7 @@ export function AdminNav() {
             )}
           >
             <Icon className="size-4" />
-            {label}
+            {t(label)}
           </Link>
         );
       })}

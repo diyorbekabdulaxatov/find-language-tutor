@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import { TeacherModeration } from "@/features/admin/components/teacher-moderation";
 
-export const metadata: Metadata = { title: "Teacher" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("admin");
+  return { title: t("metaTeacher") };
+}
 
 export default async function AdminTeacherPage({
   params,

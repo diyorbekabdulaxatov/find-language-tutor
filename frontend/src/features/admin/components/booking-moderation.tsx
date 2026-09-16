@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft } from "lucide-react";
 import { formatMoney } from "@/lib/format";
+import { intlLocale } from "@/lib/i18n";
 import {
   AdminError,
   forceCancelBooking,
@@ -15,22 +17,14 @@ import { useCan } from "@/features/admin/use-can";
 import { BookingStatusBadge } from "@/features/bookings/components/booking-status-badge";
 import { Button } from "@/components/ui/button";
 
-const PAYMENT_LABEL: Record<string, string> = {
-  requires_payment: "Not paid",
-  authorized: "Held (authorized, not captured)",
-  captured: "Released to teacher",
-  refunded: "Refunded",
-  failed: "Failed",
-};
+const DISPUTE_LABEL = {
+  open: "disputeOpen",
+  resolved: "disputeResolved",
+  rejected: "disputeRejected",
+} as const;
 
-const DISPUTE_LABEL: Record<string, string> = {
-  open: "Open",
-  resolved: "Resolved",
-  rejected: "Rejected",
-};
-
-function fmt(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function fmt(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -51,6 +45,9 @@ export function BookingModeration({ id }: { id: string }) {
   const [reason, setReason] = useState("");
   const [refund, setRefund] = useState(true);
   const [busy, setBusy] = useState(false);
+  const t = useTranslations("admin");
+  const tPay = useTranslations("paymentStatus");
+  const locale = useLocale();
 
   useEffect(() => {
     let alive = true;
@@ -62,11 +59,7 @@ export function BookingModeration({ id }: { id: string }) {
         setState("ready");
       } catch (err) {
         if (!alive) return;
-        setErrMsg(
-          err instanceof AdminError
-            ? err.message
-            : "Could not load that booking.",
-        );
+        setErrMsg(err instanceof AdminError ? err.message : t("couldNotLoadBooking"));
         setState("error");
       }
     }
@@ -74,7 +67,7 @@ export function BookingModeration({ id }: { id: string }) {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, t]);
 
   async function reload() {
     setData(await getAdminBooking(id));
@@ -90,11 +83,7 @@ export function BookingModeration({ id }: { id: string }) {
       setReason("");
       await reload();
     } catch (err) {
-      setErrMsg(
-        err instanceof AdminError
-          ? err.message
-          : "Could not force-cancel the booking.",
-      );
+      setErrMsg(err instanceof AdminError ? err.message : t("couldNotForceCancel"));
     } finally {
       setBusy(false);
     }
@@ -132,17 +121,21 @@ export function BookingModeration({ id }: { id: string }) {
         </div>
 
         <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
-          <Row label="When">{fmt(data.startAt)}</Row>
-          <Row label="Length">
-            {data.durationMinutes} min{data.isTrial && " · trial"}
+          <Row label={t("when")}>{fmt(data.startAt, locale)}</Row>
+          <Row label={t("length")}>
+            {t(data.isTrial ? "minTrial" : "min", { count: data.durationMinutes })}
           </Row>
-          <Row label="Price">{formatMoney(data.price)}</Row>
-          <Row label="Payment">
+          <Row label={t("price")}>{formatMoney(data.price, locale)}</Row>
+          <Row label={t("payment")}>
             {data.payment
-              ? (PAYMENT_LABEL[data.payment.status] ?? data.payment.status)
-              : "No payment intent"}
+              ? data.payment.status === "authorized"
+                ? t("paymentAuthorizedAdmin")
+                : data.payment.status === "failed"
+                  ? t("paymentFailed")
+                  : tPay(data.payment.status)
+              : t("noPaymentIntent")}
           </Row>
-          <Row label="Teacher">
+          <Row label={t("teacher")}>
             <Link
               href={`/admin/teachers/${data.teacher.slug}`}
               className="text-primary hover:underline"
@@ -150,7 +143,7 @@ export function BookingModeration({ id }: { id: string }) {
               {data.teacher.slug}
             </Link>
           </Row>
-          <Row label="Student">
+          <Row label={t("student")}>
             <Link
               href={`/admin/users/${data.student.id}`}
               className="text-primary hover:underline"
@@ -158,19 +151,19 @@ export function BookingModeration({ id }: { id: string }) {
               {data.student.email}
             </Link>
           </Row>
-          {data.meetingUrl && <Row label="Meeting link">{data.meetingUrl}</Row>}
+          {data.meetingUrl && <Row label={t("meetingLink")}>{data.meetingUrl}</Row>}
           {data.noShowParty && (
-            <Row label="No-show">
-              {data.noShowParty === "student" ? "Student" : "Teacher"}
+            <Row label={t("noShow")}>
+              {data.noShowParty === "student" ? t("student") : t("teacher")}
             </Row>
           )}
           {data.status === "cancelled" && (
             <>
-              <Row label="Cancelled">
-                {data.cancelledAt ? fmt(data.cancelledAt) : "—"}
-                {data.cancelledBy && ` · by ${data.cancelledBy}`}
+              <Row label={t("cancelledLabel")}>
+                {data.cancelledAt ? fmt(data.cancelledAt, locale) : "—"}
+                {data.cancelledBy && ` ${t("cancelledBy", { who: data.cancelledBy })}`}
               </Row>
-              <Row label="Reason">{data.cancellationReason || "—"}</Row>
+              <Row label={t("reason")}>{data.cancellationReason || "—"}</Row>
             </>
           )}
         </dl>
@@ -179,15 +172,13 @@ export function BookingModeration({ id }: { id: string }) {
       {/* Dispute thread */}
       <div className="rounded-2xl border border-border bg-card p-6">
         <h3 className="font-display text-lg">
-          Disputes{" "}
+          {t("disputes")}{" "}
           <span className="text-muted-foreground">
             ({data.disputes.length})
           </span>
         </h3>
         {data.disputes.length === 0 ? (
-          <p className="mt-2 text-sm text-muted-foreground">
-            No disputes on this booking.
-          </p>
+          <p className="mt-2 text-sm text-muted-foreground">{t("noDisputes")}</p>
         ) : (
           <ul className="mt-3 flex flex-col gap-3">
             {data.disputes.map((d) => (
@@ -197,18 +188,17 @@ export function BookingModeration({ id }: { id: string }) {
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium">
-                    {DISPUTE_LABEL[d.status] ?? d.status} · raised by{" "}
-                    {d.raisedBy.displayName}
+                    {t("raisedBy", { status: t(DISPUTE_LABEL[d.status]), name: d.raisedBy.displayName })}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {fmt(d.createdAt)}
+                    {fmt(d.createdAt, locale)}
                   </span>
                 </div>
                 <p className="mt-1 whitespace-pre-wrap">{d.reason}</p>
                 {d.resolution && (
                   <p className="mt-2 rounded-lg bg-muted px-2.5 py-1.5 text-xs">
                     <span className="font-medium">
-                      {d.resolvedBy?.displayName ?? "Moderator"}:
+                      {d.resolvedBy?.displayName ?? t("moderator")}:
                     </span>{" "}
                     {d.resolution}
                   </p>
@@ -219,11 +209,13 @@ export function BookingModeration({ id }: { id: string }) {
         )}
         {data.disputes.some((d) => d.status === "open") && (
           <p className="mt-3 text-xs text-muted-foreground">
-            Resolve open disputes from the{" "}
-            <Link href="/admin/disputes" className="text-primary hover:underline">
-              Disputes queue
-            </Link>
-            .
+            {t.rich("resolveFromQueue", {
+              link: (chunks) => (
+                <Link href="/admin/disputes" className="text-primary hover:underline">
+                  {chunks}
+                </Link>
+              ),
+            })}
           </p>
         )}
       </div>
@@ -236,18 +228,15 @@ export function BookingModeration({ id }: { id: string }) {
 
       {canForceCancel && cancellable && (
         <div className="rounded-2xl border border-border bg-card p-6">
-          <h3 className="font-display text-lg">Force-cancel</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Cancels the booking even though neither participant asked. Both
-            parties are emailed.
-          </p>
+          <h3 className="font-display text-lg">{t("forceCancel")}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{t("forceCancelIntro")}</p>
           {confirming ? (
             <div className="mt-3 flex flex-col gap-3">
               <textarea
                 rows={3}
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="Reason (stored on the booking, shown to both parties)"
+                placeholder={t("forceCancelReason")}
                 className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               />
               <label className="flex items-center gap-2 text-sm">
@@ -257,7 +246,7 @@ export function BookingModeration({ id }: { id: string }) {
                   onChange={(e) => setRefund(e.target.checked)}
                   className="accent-primary"
                 />
-                Refund / release the payment
+                {t("refundRelease")}
               </label>
               <div className="flex gap-2">
                 <Button
@@ -265,7 +254,7 @@ export function BookingModeration({ id }: { id: string }) {
                   disabled={busy || reason.trim() === ""}
                   onClick={doForceCancel}
                 >
-                  {busy ? "Cancelling…" : "Confirm force-cancel"}
+                  {busy ? t("cancelling") : t("confirmForceCancel")}
                 </Button>
                 <Button
                   variant="outline"
@@ -274,7 +263,7 @@ export function BookingModeration({ id }: { id: string }) {
                     setReason("");
                   }}
                 >
-                  Cancel
+                  {t("cancel")}
                 </Button>
               </div>
             </div>
@@ -284,7 +273,7 @@ export function BookingModeration({ id }: { id: string }) {
               className="mt-3"
               onClick={() => setConfirming(true)}
             >
-              Force-cancel this booking
+              {t("forceCancelThis")}
             </Button>
           )}
         </div>
@@ -294,12 +283,13 @@ export function BookingModeration({ id }: { id: string }) {
 }
 
 function Back() {
+  const t = useTranslations("admin");
   return (
     <Link
       href="/admin/bookings"
       className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
     >
-      <ArrowLeft className="size-4" /> All bookings
+      <ArrowLeft className="size-4" /> {t("allBookings")}
     </Link>
   );
 }

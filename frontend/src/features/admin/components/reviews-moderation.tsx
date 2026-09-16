@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
+import { intlLocale } from "@/lib/i18n";
 import {
   AdminError,
   hideReview,
@@ -17,14 +19,14 @@ import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 20;
 
-const VISIBILITY: { value: ReviewVisibility; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "visible", label: "Visible" },
-  { value: "hidden", label: "Hidden" },
+const VISIBILITY: { value: ReviewVisibility; label: "visAll" | "visVisible" | "visHidden" }[] = [
+  { value: "all", label: "visAll" },
+  { value: "visible", label: "visVisible" },
+  { value: "hidden", label: "visHidden" },
 ];
 
-function fmt(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function fmt(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -42,6 +44,8 @@ export function ReviewsModeration() {
   const [total, setTotal] = useState(0);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [reloadKey, setReloadKey] = useState(0);
+  const t = useTranslations("admin");
+  const locale = useLocale();
 
   useEffect(() => {
     let alive = true;
@@ -94,7 +98,7 @@ export function ReviewsModeration() {
                 : "border-border hover:bg-muted",
             )}
           >
-            {f.label}
+            {t(f.label)}
           </button>
         ))}
 
@@ -108,25 +112,25 @@ export function ReviewsModeration() {
             }}
             className="accent-primary"
           />
-          3★ and below
+          {t("lowRated")}
         </label>
 
         <form onSubmit={applyTeacher} className="ml-auto flex gap-2">
           <input
             value={teacher}
             onChange={(e) => setTeacher(e.target.value)}
-            placeholder="Teacher slug"
+            placeholder={t("teacherSlug")}
             className="w-44 rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
           <Button type="submit" size="sm" variant="outline">
-            Filter
+            {t("filter")}
           </Button>
         </form>
       </div>
 
       {teacherQuery && (
         <p className="text-xs text-muted-foreground">
-          Filtered to{" "}
+          {t("filteredTo")}{" "}
           <span className="font-medium text-foreground">{teacherQuery}</span> ·{" "}
           <button
             className="underline hover:text-foreground"
@@ -135,25 +139,25 @@ export function ReviewsModeration() {
               setTeacherQuery("");
             }}
           >
-            clear
+            {t("clear")}
           </button>
         </p>
       )}
 
       {state === "error" ? (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          Could not load the review queue.
+          {t("couldNotLoadReviews")}
         </p>
       ) : state === "loading" ? (
         <div className="h-64 animate-pulse rounded-2xl bg-muted" />
       ) : rows.length === 0 ? (
         <p className="rounded-2xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
-          No reviews match.
+          {t("noReviewsMatch")}
         </p>
       ) : (
         <ul className="flex flex-col gap-3">
           {rows.map((r) => (
-            <ReviewCard key={r.id} review={r} onChanged={reload} />
+            <ReviewCard key={r.id} review={r} onChanged={reload} locale={locale} />
           ))}
         </ul>
       )}
@@ -161,7 +165,7 @@ export function ReviewsModeration() {
       {total > PAGE_SIZE && (
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">
-            {total.toLocaleString("en-US")} · page {page} of {lastPage}
+            {t("pageOf", { total: total.toLocaleString(locale), page, last: lastPage })}
           </span>
           <div className="flex gap-2">
             <Button
@@ -170,7 +174,7 @@ export function ReviewsModeration() {
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
             >
-              Previous
+              {t("previous")}
             </Button>
             <Button
               variant="outline"
@@ -178,7 +182,7 @@ export function ReviewsModeration() {
               disabled={page >= lastPage}
               onClick={() => setPage((p) => p + 1)}
             >
-              Next
+              {t("next")}
             </Button>
           </div>
         </div>
@@ -190,10 +194,13 @@ export function ReviewsModeration() {
 function ReviewCard({
   review: r,
   onChanged,
+  locale,
 }: {
   review: AdminReview;
   onChanged: () => void;
+  locale: string;
 }) {
+  const t = useTranslations("admin");
   const [busy, setBusy] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -205,7 +212,7 @@ function ReviewCard({
       await fn();
       onChanged();
     } catch (e) {
-      setErr(e instanceof AdminError ? e.message : "Something went wrong. Try again.");
+      setErr(e instanceof AdminError ? e.message : t("somethingWrong"));
       setBusy(false);
     }
   }
@@ -223,12 +230,12 @@ function ReviewCard({
             <Stars value={r.rating} />
             {r.hidden && (
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
-                Hidden
+                {t("hidden")}
               </span>
             )}
             {r.sample && (
               <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-muted-foreground">
-                Sample
+                {t("sample")}
               </span>
             )}
           </div>
@@ -240,18 +247,18 @@ function ReviewCard({
               {r.teacher.displayName}
             </Link>{" "}
             <span className="text-muted-foreground">
-              · by {r.studentName} · {fmt(r.createdAt)}
+              {t("byOn", { name: r.studentName, date: fmt(r.createdAt, locale) })}
             </span>
           </p>
         </div>
       </div>
 
-      <p className="mt-3 whitespace-pre-wrap text-sm">{r.comment || <span className="text-muted-foreground">(no comment)</span>}</p>
+      <p className="mt-3 whitespace-pre-wrap text-sm">{r.comment || <span className="text-muted-foreground">{t("noComment")}</span>}</p>
 
       <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
         {r.hidden ? (
           <Button size="sm" disabled={busy} onClick={() => run(() => unhideReview(r.id))}>
-            Restore
+            {t("restore")}
           </Button>
         ) : (
           <Button
@@ -260,7 +267,7 @@ function ReviewCard({
             disabled={busy}
             onClick={() => run(() => hideReview(r.id))}
           >
-            Hide
+            {t("hide")}
           </Button>
         )}
 
@@ -272,7 +279,7 @@ function ReviewCard({
               disabled={busy}
               onClick={() => run(() => removeReview(r.id))}
             >
-              {busy ? "Removing…" : "Confirm remove"}
+              {busy ? t("removing") : t("confirmRemove")}
             </Button>
             <Button
               size="sm"
@@ -280,7 +287,7 @@ function ReviewCard({
               disabled={busy}
               onClick={() => setConfirmingRemove(false)}
             >
-              Cancel
+              {t("cancel")}
             </Button>
           </>
         ) : (
@@ -291,7 +298,7 @@ function ReviewCard({
             disabled={busy}
             onClick={() => setConfirmingRemove(true)}
           >
-            Remove permanently
+            {t("removePermanently")}
           </Button>
         )}
       </div>

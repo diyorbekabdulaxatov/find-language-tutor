@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { X } from "lucide-react";
 import {
   AdminError,
@@ -43,6 +44,7 @@ export function UserRolesCard({
   const [toAdd, setToAdd] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const t = useTranslations("admin");
 
   useEffect(() => {
     if (!manage) return;
@@ -71,9 +73,7 @@ export function UserRolesCard({
       await fn();
       onChanged();
     } catch (e) {
-      setErr(
-        e instanceof AdminError ? e.message : "That change failed. Try again.",
-      );
+      setErr(e instanceof AdminError ? e.message : t("changeFailed"));
     } finally {
       setBusy(null);
     }
@@ -81,11 +81,11 @@ export function UserRolesCard({
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6">
-      <h3 className="font-display text-lg">Roles</h3>
+      <h3 className="font-display text-lg">{t("roles")}</h3>
 
       {roles.length === 0 ? (
         <p className="mt-2 text-sm text-muted-foreground">
-          No roles — an ordinary user.
+          {t("noRoles")}
         </p>
       ) : (
         <ul className="mt-3 flex flex-wrap gap-2">
@@ -98,7 +98,7 @@ export function UserRolesCard({
               {manage && (
                 <button
                   type="button"
-                  aria-label={`Remove ${r.name}`}
+                  aria-label={t("removeRole", { name: r.name })}
                   disabled={busy !== null}
                   onClick={() =>
                     run(`rm:${r.id}`, () => unassignRole(userId, r.id))
@@ -117,7 +117,7 @@ export function UserRolesCard({
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Select value={toAdd} onValueChange={setToAdd}>
             <SelectTrigger className="w-56">
-              <SelectValue placeholder="Add a role…" />
+              <SelectValue placeholder={t("addRole")} />
             </SelectTrigger>
             <SelectContent>
               {addable.map((r) => (
@@ -137,7 +137,7 @@ export function UserRolesCard({
               })
             }
           >
-            {busy === "add" ? "Adding…" : "Add"}
+            {busy === "add" ? t("adding") : t("add")}
           </Button>
         </div>
       )}

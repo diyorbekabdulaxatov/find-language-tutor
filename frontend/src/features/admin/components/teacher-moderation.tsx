@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, BadgeCheck, ExternalLink } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 import {
@@ -25,6 +26,8 @@ export function TeacherModeration({ slug }: { slug: string }) {
   const [busy, setBusy] = useState<Busy>(null);
   const [noteMode, setNoteMode] = useState<"reject" | "suspend" | null>(null);
   const [note, setNote] = useState("");
+  const t = useTranslations("admin");
+  const locale = useLocale();
 
   async function reload() {
     setData(await getTeacher(slug));
@@ -40,15 +43,13 @@ export function TeacherModeration({ slug }: { slug: string }) {
       })
       .catch((err) => {
         if (!alive) return;
-        setErrMsg(
-          err instanceof AdminError ? err.message : "Could not load that teacher.",
-        );
+        setErrMsg(err instanceof AdminError ? err.message : t("couldNotLoadTeacher"));
         setState("error");
       });
     return () => {
       alive = false;
     };
-  }, [slug]);
+  }, [slug, t]);
 
   async function run(action: Busy, fn: () => Promise<unknown>) {
     setBusy(action);
@@ -59,9 +60,7 @@ export function TeacherModeration({ slug }: { slug: string }) {
       setNoteMode(null);
       setNote("");
     } catch (err) {
-      setErrMsg(
-        err instanceof AdminError ? err.message : "That action failed. Try again.",
-      );
+      setErrMsg(err instanceof AdminError ? err.message : t("actionFailed"));
     } finally {
       setBusy(null);
     }
@@ -106,7 +105,7 @@ export function TeacherModeration({ slug }: { slug: string }) {
                 target="_blank"
                 className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
               >
-                View live <ExternalLink className="size-3.5" />
+                {t("viewLive")} <ExternalLink className="size-3.5" />
               </Link>
             )}
           </div>
@@ -115,7 +114,7 @@ export function TeacherModeration({ slug }: { slug: string }) {
         <p className="mt-1 text-sm text-muted-foreground">{data.headline}</p>
 
         <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
-          <Row label="Owner">
+          <Row label={t("owner")}>
             <Link
               href={`/admin/users/${data.owner.id}`}
               className="text-primary hover:underline"
@@ -124,29 +123,29 @@ export function TeacherModeration({ slug }: { slug: string }) {
             </Link>{" "}
             <span className="text-muted-foreground">({data.owner.email})</span>
           </Row>
-          <Row label="Location">
+          <Row label={t("location")}>
             {data.city}, {data.countryName} · {data.timezone}
           </Row>
-          <Row label="Price / hour">{formatMoney(data.pricePerHour)}</Row>
-          <Row label="Slug">
+          <Row label={t("pricePerHour")}>{formatMoney(data.pricePerHour, locale)}</Row>
+          <Row label={t("slug")}>
             <span className="font-mono text-xs">{data.slug}</span>
           </Row>
         </dl>
 
         {data.moderationNote && (
           <p className="mt-4 rounded-lg bg-muted px-3 py-2 text-sm">
-            <span className="font-medium">Note to teacher:</span>{" "}
+            <span className="font-medium">{t("noteToTeacher")}</span>{" "}
             {data.moderationNote}
           </p>
         )}
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-6">
-        <h3 className="font-display text-lg">About</h3>
+        <h3 className="font-display text-lg">{t("about")}</h3>
         <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
           {data.about || "—"}
         </p>
-        <h3 className="mt-4 font-display text-lg">How I teach</h3>
+        <h3 className="mt-4 font-display text-lg">{t("howITeach")}</h3>
         <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
           {data.teachingStyle || "—"}
         </p>
@@ -161,7 +160,7 @@ export function TeacherModeration({ slug }: { slug: string }) {
       {noteMode ? (
         <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-6">
           <label htmlFor="note" className="text-sm font-medium">
-            Reason ({noteMode}) — shown to the teacher
+            {t("reasonShown", { action: t(noteMode === "reject" ? "actionReject" : "actionSuspend") })}
           </label>
           <textarea
             id="note"
@@ -183,7 +182,9 @@ export function TeacherModeration({ slug }: { slug: string }) {
                 )
               }
             >
-              {busy ? "Working…" : `Confirm ${noteMode}`}
+              {busy
+                ? t("working")
+                : t("confirmAction", { action: t(noteMode === "reject" ? "actionReject" : "actionSuspend") })}
             </Button>
             <Button
               variant="outline"
@@ -192,7 +193,7 @@ export function TeacherModeration({ slug }: { slug: string }) {
                 setNote("");
               }}
             >
-              Cancel
+              {t("cancel")}
             </Button>
           </div>
         </div>
@@ -203,7 +204,7 @@ export function TeacherModeration({ slug }: { slug: string }) {
               disabled={busy !== null}
               onClick={() => run("approve", () => approveTeacher(slug))}
             >
-              {busy === "approve" ? "Approving…" : "Approve"}
+              {busy === "approve" ? t("approving") : t("approve")}
             </Button>
           )}
           {canReject && (
@@ -212,7 +213,7 @@ export function TeacherModeration({ slug }: { slug: string }) {
               disabled={busy !== null}
               onClick={() => setNoteMode("reject")}
             >
-              Reject
+              {t("reject")}
             </Button>
           )}
           {canSuspend && (
@@ -221,7 +222,7 @@ export function TeacherModeration({ slug }: { slug: string }) {
               disabled={busy !== null}
               onClick={() => setNoteMode("suspend")}
             >
-              Suspend
+              {t("suspend")}
             </Button>
           )}
           <Button
@@ -231,11 +232,7 @@ export function TeacherModeration({ slug }: { slug: string }) {
               run("verify", () => setTeacherVerified(slug, !data.verified))
             }
           >
-            {busy === "verify"
-              ? "Working…"
-              : data.verified
-                ? "Remove verified badge"
-                : "Mark verified"}
+            {busy === "verify" ? t("working") : data.verified ? t("removeVerified") : t("markVerified")}
           </Button>
         </div>
       )}
@@ -244,12 +241,13 @@ export function TeacherModeration({ slug }: { slug: string }) {
 }
 
 function Back() {
+  const t = useTranslations("admin");
   return (
     <Link
       href="/admin/teachers"
       className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
     >
-      <ArrowLeft className="size-4" /> All teachers
+      <ArrowLeft className="size-4" /> {t("allTeachers")}
     </Link>
   );
 }

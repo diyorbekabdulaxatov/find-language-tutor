@@ -1,26 +1,24 @@
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import type { TeacherStatus } from "@/features/admin/api";
 
-const STYLES: Record<TeacherStatus, { label: string; className: string }> = {
-  pending: { label: "Pending", className: "bg-star/15 text-star" },
-  approved: { label: "Approved", className: "bg-primary/15 text-primary" },
-  rejected: { label: "Rejected", className: "bg-destructive/10 text-destructive" },
-  suspended: {
-    label: "Suspended",
-    className: "bg-destructive/10 text-destructive",
-  },
+const STYLES: Record<TeacherStatus, string> = {
+  pending: "bg-star/15 text-star",
+  approved: "bg-primary/15 text-primary",
+  rejected: "bg-destructive/10 text-destructive",
+  suspended: "bg-destructive/10 text-destructive",
 };
 
 export function TeacherStatusBadge({ status }: { status: TeacherStatus }) {
-  const s = STYLES[status];
+  const t = useTranslations("admin.teacherStatus");
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
-        s.className,
+        STYLES[status],
       )}
     >
-      {s.label}
+      {t(status)}
     </span>
   );
 }

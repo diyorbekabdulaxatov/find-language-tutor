@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft } from "lucide-react";
 import { formatMoney } from "@/lib/format";
+import { intlLocale } from "@/lib/i18n";
 import {
   AdminError,
   getPayoutBatch,
@@ -11,8 +13,8 @@ import {
 } from "@/features/admin/api";
 import { PayoutBatchStatusBadge } from "./payout-batch-status-badge";
 
-function fmt(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function fmt(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -25,6 +27,8 @@ export function PayoutBatchDetail({ id }: { id: string }) {
   const [data, setData] = useState<Detail | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  const t = useTranslations("admin");
+  const locale = useLocale();
 
   useEffect(() => {
     let alive = true;
@@ -36,9 +40,7 @@ export function PayoutBatchDetail({ id }: { id: string }) {
         setState("ready");
       } catch (err) {
         if (!alive) return;
-        setErrMsg(
-          err instanceof AdminError ? err.message : "Could not load that batch.",
-        );
+        setErrMsg(err instanceof AdminError ? err.message : t("couldNotLoadBatch"));
         setState("error");
       }
     }
@@ -46,7 +48,7 @@ export function PayoutBatchDetail({ id }: { id: string }) {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, t]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -55,7 +57,7 @@ export function PayoutBatchDetail({ id }: { id: string }) {
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
-        Payouts
+        {t("payouts")}
       </Link>
 
       {state === "loading" ? (
@@ -70,29 +72,27 @@ export function PayoutBatchDetail({ id }: { id: string }) {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="font-display text-2xl">
-                  {formatMoney(data.total)}
+                  {formatMoney(data.total, locale)}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {data.teacherCount}{" "}
-                  {data.teacherCount === 1 ? "teacher" : "teachers"} ·{" "}
-                  {data.lineCount} {data.lineCount === 1 ? "lesson" : "lessons"}
+                  {t("teachersLessons", { teachers: data.teacherCount, lessons: data.lineCount })}
                 </p>
               </div>
               <PayoutBatchStatusBadge status={data.status} />
             </div>
             <dl className="mt-4 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
               <div className="flex justify-between sm:block">
-                <dt className="text-muted-foreground">Run by</dt>
+                <dt className="text-muted-foreground">{t("runBy")}</dt>
                 <dd>{data.createdBy.displayName}</dd>
               </div>
               <div className="flex justify-between sm:block">
-                <dt className="text-muted-foreground">Started</dt>
-                <dd>{fmt(data.createdAt)}</dd>
+                <dt className="text-muted-foreground">{t("started")}</dt>
+                <dd>{fmt(data.createdAt, locale)}</dd>
               </div>
               {data.completedAt && (
                 <div className="flex justify-between sm:block">
-                  <dt className="text-muted-foreground">Completed</dt>
-                  <dd>{fmt(data.completedAt)}</dd>
+                  <dt className="text-muted-foreground">{t("completedAt")}</dt>
+                  <dd>{fmt(data.completedAt, locale)}</dd>
                 </div>
               )}
             </dl>
@@ -102,9 +102,9 @@ export function PayoutBatchDetail({ id }: { id: string }) {
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-2 font-medium">Teacher</th>
-                  <th className="px-4 py-2 font-medium">Lessons</th>
-                  <th className="px-4 py-2 text-right font-medium">Amount</th>
+                  <th className="px-4 py-2 font-medium">{t("colTeacher")}</th>
+                  <th className="px-4 py-2 font-medium">{t("colLessons")}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t("colAmount")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -122,7 +122,7 @@ export function PayoutBatchDetail({ id }: { id: string }) {
                       {l.lessonCount}
                     </td>
                     <td className="px-4 py-3 text-right font-medium">
-                      {formatMoney(l.amount)}
+                      {formatMoney(l.amount, locale)}
                     </td>
                   </tr>
                 ))}
