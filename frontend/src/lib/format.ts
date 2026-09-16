@@ -1,22 +1,25 @@
 import type { LanguageLevel, Money } from "@/types/teacher";
 
+/** The so'm suffix per UI locale — the ISO code "UZS" reads as a code, not money. */
+const SOM_SUFFIX: Record<string, string> = { en: "so'm", uz: "so'm", ru: "сум" };
+
 /**
  * Render a Money value for display:
- *   { 12000000, "UZS" } -> "120,000 so'm"
+ *   { 12000000, "UZS" } -> "120,000 so'm"   (en)  /  "120 000 сум" (ru)
  *   { 1200, "USD" }     -> "$12"
- * UZS is shown with a plain "so'm" suffix (the ISO symbol "UZS" reads as a code,
- * not money) and never with fractional units.
+ * UZS never shows fractional units. `locale` is the UI locale (from
+ * `useLocale()` / `getLocale()`); it drives digit grouping and the suffix.
  */
-export function formatMoney(money: Money): string {
+export function formatMoney(money: Money, locale = "en"): string {
   const { amountMinor, currency } = money;
 
   if (currency === "UZS") {
     const soms = Math.round(amountMinor / 100);
-    return `${new Intl.NumberFormat("en-US").format(soms)} so'm`;
+    return `${new Intl.NumberFormat(locale).format(soms)} ${SOM_SUFFIX[locale] ?? "so'm"}`;
   }
 
   const hasCents = amountMinor % 100 !== 0;
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat(locale, {
     style: "currency",
     currency,
     minimumFractionDigits: hasCents ? 2 : 0,
@@ -38,15 +41,7 @@ export function formatLevel(level: LanguageLevel): string {
   return LEVEL_LABEL[level];
 }
 
-/** "2h" / "under an hour" / "1 day" — for response-time copy. */
-export function formatResponseTime(hours: number): string {
-  if (hours < 1) return "under an hour";
-  if (hours < 24) return `${Math.round(hours)}h`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? "1 day" : `${days} days`;
-}
-
 /** Compact counts for stats: 1200 -> "1.2k". */
-export function formatCompact(n: number): string {
-  return new Intl.NumberFormat("en-US", { notation: "compact" }).format(n);
+export function formatCompact(n: number, locale = "en"): string {
+  return new Intl.NumberFormat(locale, { notation: "compact" }).format(n);
 }

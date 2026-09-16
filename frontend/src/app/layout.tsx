@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { NextIntlClientProvider } from "next-intl";
+import { getLocale, getTranslations } from "next-intl/server";
 import { Bricolage_Grotesque, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -26,21 +28,21 @@ const sans = Plus_Jakarta_Sans({
   variable: "--font-sans",
 });
 
-export const metadata: Metadata = {
-  title: {
-    default: "FindTutor — book 1-on-1 language lessons",
-    template: "%s · FindTutor",
-  },
-  description:
-    "Find a language teacher you click with and book paid 1-on-1 video lessons that fit your schedule.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("meta");
+  return {
+    title: { default: t("title"), template: "%s · FindTutor" },
+    description: t("description"),
+  };
+}
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const locale = await getLocale();
   return (
     // suppressHydrationWarning: next-themes sets the `class`/`style` on <html>
     // before React hydrates, so the server and client markup differ by design.
     <html
-      lang="en"
+      lang={locale}
       suppressHydrationWarning
       className={`${display.variable} ${sans.variable} h-full antialiased`}
     >
@@ -51,12 +53,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           enableSystem
           disableTransitionOnChange
         >
-          <AuthProvider>
-            <SiteHeader />
-            <EmailVerificationBanner />
-            <main className="flex-1">{children}</main>
-            <SiteFooter />
-          </AuthProvider>
+          <NextIntlClientProvider>
+            <AuthProvider>
+              <SiteHeader />
+              <EmailVerificationBanner />
+              <main className="flex-1">{children}</main>
+              <SiteFooter />
+            </AuthProvider>
+          </NextIntlClientProvider>
         </ThemeProvider>
       </body>
     </html>

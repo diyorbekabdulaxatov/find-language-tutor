@@ -1,16 +1,18 @@
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import { Suspense } from "react";
 import { AuthForm } from "@/features/auth/components/auth-form";
 import { AuthCard } from "@/features/auth/components/auth-card";
 
-export const metadata: Metadata = {
-  title: "Sign up",
-  description: "Create a FindTutor account to book lessons or teach.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("auth");
+  return { title: t("signupMeta"), description: t("signupMetaDescription") };
+}
 
-export default function SignupPage() {
+export default async function SignupPage() {
+  const t = await getTranslations("auth");
   return (
-    <AuthCard title="Create your account">
+    <AuthCard title={t("signupTitle")}>
       <Suspense fallback={<FormSkeleton />}>
         <AuthForm mode="signup" />
       </Suspense>

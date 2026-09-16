@@ -1,3 +1,4 @@
+import { useTranslations } from "next-intl";
 import { BadgeCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -9,6 +10,7 @@ export function VerifiedBadge({
   className?: string;
   withLabel?: boolean;
 }) {
+  const t = useTranslations("profile");
   return (
     <span
       className={cn(
@@ -16,11 +18,11 @@ export function VerifiedBadge({
         withLabel && "text-xs font-medium",
         className,
       )}
-      title="Verified by FindTutor"
+      title={t("verifiedTitle")}
     >
       <BadgeCheck className={cn(withLabel ? "size-3.5" : "size-4")} aria-hidden />
-      {withLabel && "Verified"}
-      {!withLabel && <span className="sr-only">Verified</span>}
+      {withLabel && t("verified")}
+      {!withLabel && <span className="sr-only">{t("verified")}</span>}
     </span>
   );
 }

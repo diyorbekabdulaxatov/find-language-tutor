@@ -2,17 +2,18 @@
 
 import { useSyncExternalStore } from "react";
 import { useTheme } from "next-themes";
+import { useTranslations } from "next-intl";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const ORDER = ["system", "light", "dark"] as const;
 type Choice = (typeof ORDER)[number];
 
-const NEXT_LABEL: Record<Choice, string> = {
-  system: "Switch to light theme",
-  light: "Switch to dark theme",
-  dark: "Match system theme",
-};
+const NEXT_LABEL = {
+  system: "themeToLight",
+  light: "themeToDark",
+  dark: "themeToSystem",
+} as const;
 
 /**
  * `useSyncExternalStore` gives a lint-clean "am I hydrated yet" flag: it returns
@@ -33,6 +34,7 @@ function useMounted() {
 export function ThemeToggle() {
   const mounted = useMounted();
   const { theme, setTheme } = useTheme();
+  const t = useTranslations("common");
 
   const current: Choice =
     mounted && ORDER.includes(theme as Choice) ? (theme as Choice) : "system";
@@ -42,8 +44,8 @@ export function ThemeToggle() {
     <Button
       variant="ghost"
       size="icon-sm"
-      aria-label={mounted ? NEXT_LABEL[current] : "Toggle theme"}
-      title={mounted ? NEXT_LABEL[current] : undefined}
+      aria-label={mounted ? t(NEXT_LABEL[current]) : t("toggleTheme")}
+      title={mounted ? t(NEXT_LABEL[current]) : undefined}
       onClick={() => setTheme(ORDER[(ORDER.indexOf(current) + 1) % ORDER.length])}
     >
       {mounted ? <Icon /> : <span className="size-4" />}

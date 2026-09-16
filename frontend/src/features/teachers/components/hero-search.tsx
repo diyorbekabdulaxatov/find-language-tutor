@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { Search } from "lucide-react";
 import {
   Select,
@@ -12,17 +13,11 @@ import {
 } from "@/components/ui/select";
 
 /** Languages we currently have teachers for. Mirrors the catalog. */
-const LANGUAGES = [
-  { code: "any", label: "Any language" },
-  { code: "en", label: "English" },
-  { code: "ru", label: "Russian" },
-  { code: "uz", label: "Uzbek" },
-  { code: "de", label: "German" },
-  { code: "ko", label: "Korean" },
-  { code: "tr", label: "Turkish" },
-];
+const LANGUAGES = ["en", "ru", "uz", "de", "ko", "tr"] as const;
 
 export function HeroSearch() {
+  const t = useTranslations("heroSearch");
+  const tLang = useTranslations("languages");
   const router = useRouter();
   const [q, setQ] = useState("");
   const [lang, setLang] = useState("any");
@@ -45,9 +40,9 @@ export function HeroSearch() {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="What do you want to learn? e.g. IELTS, business English"
+          placeholder={t("placeholder")}
           className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          aria-label="What do you want to learn?"
+          aria-label={t("ariaLabel")}
         />
       </div>
 
@@ -57,9 +52,10 @@ export function HeroSearch() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {LANGUAGES.map((l) => (
-              <SelectItem key={l.code} value={l.code}>
-                {l.label}
+            <SelectItem value="any">{t("anyLanguage")}</SelectItem>
+            {LANGUAGES.map((code) => (
+              <SelectItem key={code} value={code}>
+                {tLang(code)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -69,7 +65,7 @@ export function HeroSearch() {
           type="submit"
           className="h-11 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
         >
-          Search
+          {t("search")}
         </button>
       </div>
     </form>

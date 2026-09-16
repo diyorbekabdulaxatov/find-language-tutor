@@ -1,3 +1,4 @@
+import { useLocale, useTranslations } from "next-intl";
 import { Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCompact } from "@/lib/format";
@@ -17,6 +18,9 @@ export function Rating({
   variant?: "inline" | "pill";
   className?: string;
 }) {
+  const t = useTranslations("profile");
+  const locale = useLocale();
+
   if (variant === "pill") {
     return (
       <span
@@ -29,7 +33,7 @@ export function Rating({
         <span className="tabular-nums">{value.toFixed(1)}</span>
         {reviewCount != null && (
           <span className="font-medium text-star/80">
-            ({formatCompact(reviewCount)})
+            ({formatCompact(reviewCount, locale)})
           </span>
         )}
       </span>
@@ -42,7 +46,7 @@ export function Rating({
       <span className="font-semibold tabular-nums">{value.toFixed(1)}</span>
       {reviewCount != null && (
         <span className="text-muted-foreground">
-          ({formatCompact(reviewCount)} review{reviewCount === 1 ? "" : "s"})
+          {t("reviewsCount", { count: reviewCount })}
         </span>
       )}
     </span>

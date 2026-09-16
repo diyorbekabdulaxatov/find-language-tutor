@@ -9,6 +9,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import {
   BookOpen,
   CalendarDays,
@@ -45,6 +46,7 @@ function initials(name: string): string {
 export function AccountMenu() {
   const { status, user, logout } = useAuth();
   const router = useRouter();
+  const t = useTranslations("nav");
 
   if (status === "loading") {
     return <div className="size-8 rounded-full bg-muted" aria-hidden />;
@@ -57,13 +59,13 @@ export function AccountMenu() {
           href="/login"
           className="hidden rounded-lg px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary sm:inline-flex"
         >
-          Log in
+          {t("login")}
         </Link>
         <Link
           href="/signup"
           className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
         >
-          Get started
+          {t("getStarted")}
         </Link>
       </>
     );
@@ -77,7 +79,7 @@ export function AccountMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label="Account menu"
+        aria-label={t("accountMenu")}
         className="rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         <Avatar>
@@ -95,43 +97,43 @@ export function AccountMenu() {
         <DropdownMenuItem asChild>
           <Link href="/bookings">
             <CalendarDays />
-            My bookings
+            {t("myBookings")}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/learn">
             <Sparkles />
-            My learning
+            {t("myLearning")}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/dashboard">
             <LayoutDashboard />
-            Teacher dashboard
+            {t("teacherDashboard")}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/resources">
             <BookOpen />
-            Teaching resources
+            {t("teachingResources")}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/grading">
             <PenLine />
-            Homework to grade
+            {t("homeworkToGrade")}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/courses">
             <GraduationCap />
-            My courses
+            {t("myCourses")}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/account">
             <UserIcon />
-            Account settings
+            {t("accountSettings")}
           </Link>
         </DropdownMenuItem>
         {user.permissions.length > 0 && (
@@ -140,7 +142,7 @@ export function AccountMenu() {
             <DropdownMenuItem asChild>
               <Link href="/admin">
                 <Shield />
-                Admin
+                {t("admin")}
               </Link>
             </DropdownMenuItem>
           </>
@@ -148,7 +150,7 @@ export function AccountMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={handleLogout}>
           <LogOut />
-          Sign out
+          {t("signOut")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

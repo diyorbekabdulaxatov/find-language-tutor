@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useAuth } from "@/features/auth/auth-context";
 import { AuthError } from "@/features/auth/api";
 import { Button } from "@/components/ui/button";
@@ -17,23 +18,10 @@ import { Label } from "@/components/ui/label";
 
 type Mode = "login" | "signup";
 
-const COPY: Record<
-  Mode,
-  { cta: string; altText: string; altHref: string; altLink: string }
-> = {
-  login: {
-    cta: "Log in",
-    altText: "New to FindTutor?",
-    altHref: "/signup",
-    altLink: "Create an account",
-  },
-  signup: {
-    cta: "Sign up",
-    altText: "Already have an account?",
-    altHref: "/login",
-    altLink: "Log in",
-  },
-};
+const COPY = {
+  login: { cta: "logIn", altText: "newHere", altHref: "/signup", altLink: "createAccount" },
+  signup: { cta: "signUp", altText: "haveAccount", altHref: "/login", altLink: "logIn" },
+} as const;
 
 /** Only allow same-site, absolute-path redirects. */
 function safeNext(next: string | null): string {
@@ -46,6 +34,8 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const router = useRouter();
   const search = useSearchParams();
   const copy = COPY[mode];
+  const t = useTranslations("auth");
+  const tCommon = useTranslations("common");
 
   // Already signed in (e.g. hit /login from a bookmark) — move along.
   useEffect(() => {
@@ -72,11 +62,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
       }
       router.replace(safeNext(search.get("next")));
     } catch (err) {
-      setError(
-        err instanceof AuthError
-          ? err.message
-          : "Something went wrong. Please try again.",
-      );
+      setError(err instanceof AuthError ? err.message : tCommon("somethingWrong"));
       setSubmitting(false);
     }
   }
@@ -85,7 +71,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
     <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
       {mode === "signup" && (
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="displayName">Name</Label>
+          <Label htmlFor="displayName">{t("name")}</Label>
           <Input
             id="displayName"
             name="name"
@@ -98,7 +84,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
       )}
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email">{t("email")}</Label>
         <Input
           id="email"
           name="email"
@@ -111,7 +97,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="password">Password</Label>
+        <Label htmlFor="password">{t("password")}</Label>
         <Input
           id="password"
           name="password"
@@ -123,13 +109,13 @@ export function AuthForm({ mode }: { mode: Mode }) {
           onChange={(e) => setPassword(e.target.value)}
         />
         {mode === "signup" ? (
-          <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+          <p className="text-xs text-muted-foreground">{t("atLeast8")}</p>
         ) : (
           <Link
             href="/forgot-password"
             className="self-end text-xs font-medium text-primary hover:underline"
           >
-            Forgot your password?
+            {t("forgotPassword")}
           </Link>
         )}
       </div>
@@ -144,16 +130,16 @@ export function AuthForm({ mode }: { mode: Mode }) {
       )}
 
       <Button type="submit" size="lg" disabled={submitting} className="mt-1 w-full">
-        {submitting ? "One moment…" : copy.cta}
+        {submitting ? t("oneMoment") : t(copy.cta)}
       </Button>
 
       <p className="text-center text-sm text-muted-foreground">
-        {copy.altText}{" "}
+        {t(copy.altText)}{" "}
         <Link
           href={copy.altHref}
           className="font-medium text-primary hover:underline"
         >
-          {copy.altLink}
+          {t(copy.altLink)}
         </Link>
       </p>
     </form>

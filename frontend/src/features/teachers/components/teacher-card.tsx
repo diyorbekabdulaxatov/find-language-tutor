@@ -1,10 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import { Play } from "lucide-react";
 import type { TeacherSummary } from "@/types/teacher";
 import { cn } from "@/lib/utils";
 import { flagEmoji } from "@/lib/country";
 import { formatMoney } from "@/lib/format";
+import { languageName } from "@/lib/i18n";
 import { photoUrl } from "./teacher-avatar";
 import { Rating } from "./rating";
 import { VerifiedBadge } from "./verified-badge";
@@ -20,6 +22,9 @@ export function TeacherCard({
   teacher: TeacherSummary;
   className?: string;
 }) {
+  const t = useTranslations("teacherCard");
+  const tLang = useTranslations("languages");
+  const locale = useLocale();
   const href = `/teachers/${teacher.slug}`;
   const alsoCount = teacher.alsoSpeaks.length;
 
@@ -44,11 +49,11 @@ export function TeacherCard({
           {teacher.acceptingStudents ? (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-card/90 px-2 py-1 text-xs font-medium text-foreground shadow-soft backdrop-blur">
               <span className="size-1.5 rounded-full bg-mint" />
-              Taking students
+              {t("takingStudents")}
             </span>
           ) : (
             <span className="rounded-full bg-card/90 px-2 py-1 text-xs font-medium text-muted-foreground shadow-soft backdrop-blur">
-              Waitlist
+              {t("waitlist")}
             </span>
           )}
           <span className="grid size-9 place-items-center rounded-full bg-card/90 text-foreground shadow-soft backdrop-blur transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
@@ -70,12 +75,15 @@ export function TeacherCard({
 
         <div className="flex flex-wrap items-center gap-2">
           <Rating value={teacher.rating} reviewCount={teacher.reviewCount} variant="pill" />
-          <KindTag kind={teacher.kind} />
+          <KindTag kind={teacher.kind} label={t(teacher.kind === "professional" ? "professional" : "community")} />
         </div>
 
         <p className="text-sm text-muted-foreground">
-          Teaches <span className="font-medium text-foreground">{teacher.teaches.map((l) => l.name).join(", ")}</span>
-          {alsoCount > 0 && ` · +${alsoCount} more`}
+          {t("teaches")}{" "}
+          <span className="font-medium text-foreground">
+            {teacher.teaches.map((l) => languageName(tLang, l)).join(", ")}
+          </span>
+          {alsoCount > 0 && ` ${t("more", { count: alsoCount })}`}
         </p>
 
         <p className="line-clamp-2 text-sm leading-snug text-foreground/90">
@@ -100,14 +108,15 @@ export function TeacherCard({
 
         <div className="mt-auto flex items-end justify-between gap-2 border-t border-border pt-3">
           <p className="text-sm text-muted-foreground">
-            from{" "}
-            <span className="font-display text-base text-foreground">
-              {formatMoney(teacher.pricePerHour)}
-            </span>{" "}
-            / hr
+            {t.rich("priceFrom", {
+              price: formatMoney(teacher.pricePerHour, locale),
+              strong: (chunks) => (
+                <span className="font-display text-base text-foreground">{chunks}</span>
+              ),
+            })}
           </p>
           <span className="rounded-lg bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-colors group-hover:bg-primary/90">
-            View profile
+            {t("viewProfile")}
           </span>
         </div>
       </div>
@@ -115,17 +124,17 @@ export function TeacherCard({
   );
 }
 
-function KindTag({ kind }: { kind: TeacherSummary["kind"] }) {
+function KindTag({ kind, label }: { kind: TeacherSummary["kind"]; label: string }) {
   if (kind === "professional") {
     return (
       <span className="rounded-full bg-primary/12 px-2 py-0.5 text-xs font-semibold text-primary">
-        Professional
+        {label}
       </span>
     );
   }
   return (
     <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold text-secondary-foreground">
-      Community
+      {label}
     </span>
   );
 }
