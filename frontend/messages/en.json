@@ -409,7 +409,7 @@
     "pendingTitle": "Your profile is awaiting review",
     "pendingBody": "It isn't visible to students yet. We usually review new profiles within a day.",
     "rejectedTitle": "Your profile wasn't approved",
-    "rejectedBody": "Please update your profile and it will be reviewed again.",
+    "rejectedBody": "Update your profile — saving sends it back for review.",
     "suspendedTitle": "Your profile is suspended",
     "suspendedBody": "Contact support to resolve this. Existing bookings are unaffected.",
     "earningsCouldNotLoad": "Could not load your earnings. Refresh to try again.",
@@ -485,7 +485,11 @@
     "period": "Period",
     "periodPlaceholder": "2020 – present",
     "removeExperience": "Remove experience",
-    "addExperience": "Add experience"
+    "addExperience": "Add experience",
+    "verifyFirstTitle": "Confirm your email to submit a profile",
+    "verifyFirstBody": "We sent a link to {email}. Open it, then come back — you can fill in the form meanwhile.",
+    "verifySent": "Verification email sent — check your inbox, then reload this page.",
+    "verifyResend": "Resend link"
   },
   "availability": {
     "couldNotLoad": "Could not load your availability.",

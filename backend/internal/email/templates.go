@@ -203,3 +203,75 @@ func LessonReminderContent(loc string, li LessonInfo, kind ReminderKind) (subjec
 	html, text = wrap(subject, lines)
 	return subject, html, text
 }
+
+// --- teacher moderation ---
+
+// TeacherApprovedContent is sent to a teacher when a moderator approves their
+// profile: they are now on the storefront and can publish.
+func TeacherApprovedContent(loc, name, dashboardURL string) (subject, html, text string) {
+	subject = i18n.T(loc, "Your FindTutor teacher profile is approved")
+	lines := []string{
+		greetingLine(loc, name),
+		"",
+		i18n.T(loc, "Good news — your teacher profile has been approved. Students can now find you in the catalog, book lessons and buy your courses."),
+		"",
+		i18n.T(loc, "Next steps: set your weekly availability and publish your first course from the dashboard:"),
+		dashboardURL,
+	}
+	html, text = wrap(subject, lines)
+	return subject, html, text
+}
+
+// TeacherRejectedContent is sent when a moderator rejects a pending profile.
+// note is the moderator's reason (required by the admin API); the teacher
+// answers it by editing the profile, which puts it back in the queue.
+func TeacherRejectedContent(loc, name, note, dashboardURL string) (subject, html, text string) {
+	subject = i18n.T(loc, "Your FindTutor teacher profile needs changes")
+	lines := []string{
+		greetingLine(loc, name),
+		"",
+		i18n.T(loc, "A moderator reviewed your teacher profile and could not approve it yet."),
+		i18n.Tf(loc, "Reason: %s", strings.TrimSpace(note)),
+		"",
+		i18n.T(loc, "Update your profile to address the note — saving it sends it back for review automatically:"),
+		dashboardURL,
+	}
+	html, text = wrap(subject, lines)
+	return subject, html, text
+}
+
+// TeacherSuspendedContent is sent when a moderator suspends an approved
+// teacher: the profile and every course are hidden until re-approved.
+func TeacherSuspendedContent(loc, name, note string) (subject, html, text string) {
+	subject = i18n.T(loc, "Your FindTutor teacher profile has been suspended")
+	lines := []string{
+		greetingLine(loc, name),
+		"",
+		i18n.T(loc, "A moderator has suspended your teacher profile. It is hidden from students, and your courses are no longer for sale. Existing bookings are not affected."),
+		i18n.Tf(loc, "Reason: %s", strings.TrimSpace(note)),
+		"",
+		i18n.T(loc, "If you believe this is a mistake, reply to this email and our team will take another look."),
+	}
+	html, text = wrap(subject, lines)
+	return subject, html, text
+}
+
+// TeacherSubmittedContent alerts the moderation inbox that a profile is
+// waiting for review. resubmitted marks a rejected profile the teacher has
+// edited, so the moderator knows to compare against their note.
+func TeacherSubmittedContent(loc, teacherName, adminURL string, resubmitted bool) (subject, html, text string) {
+	if resubmitted {
+		subject = i18n.Tf(loc, "Teacher profile resubmitted: %s", teacherName)
+	} else {
+		subject = i18n.Tf(loc, "New teacher profile to review: %s", teacherName)
+	}
+	lines := []string{
+		i18n.Tf(loc, "%s is waiting for moderation.", teacherName),
+	}
+	if resubmitted {
+		lines = append(lines, i18n.T(loc, "This profile was rejected earlier and has been edited since."))
+	}
+	lines = append(lines, "", i18n.T(loc, "Review it here:"), adminURL)
+	html, text = wrap(subject, lines)
+	return subject, html, text
+}

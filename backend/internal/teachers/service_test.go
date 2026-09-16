@@ -139,6 +139,44 @@ func (f *fakeRepo) Update(_ context.Context, teacherID uuid.UUID, upd ProfileUpd
 	return nil
 }
 
+func (f *fakeRepo) Resubmit(_ context.Context, teacherID uuid.UUID) error {
+	for _, t := range f.bySlug {
+		if t.ID == teacherID && t.Status == StatusRejected {
+			t.Status = StatusPending
+		}
+	}
+	return nil
+}
+
+// fakeAccounts answers the email-verification gate.
+type fakeAccounts struct {
+	verified bool
+	err      error
+}
+
+func (f fakeAccounts) EmailVerified(context.Context, uuid.UUID) (bool, error) {
+	return f.verified, f.err
+}
+
+type submittedCall struct {
+	slug, name  string
+	resubmitted bool
+}
+
+type fakeNotifier struct{ calls []submittedCall }
+
+func (f *fakeNotifier) TeacherSubmitted(_ context.Context, slug, name string, resubmitted bool) {
+	f.calls = append(f.calls, submittedCall{slug, name, resubmitted})
+}
+
+// newVerifiedService is NewService with a verified-email account reader, so
+// write-path tests get past the gate.
+func newVerifiedService(repo Repository) *Service {
+	svc := NewService(repo)
+	svc.SetAccountReader(fakeAccounts{verified: true})
+	return svc
+}
+
 func entriesToLanguages(entries []LanguageEntry) (teaches, alsoSpeaks []Language) {
 	for _, e := range entries {
 		l := Language{Code: e.Code, Name: e.Name, Level: e.Level}
@@ -182,7 +220,7 @@ func TestService_List_NormalizesParamsAndAttachesFacets(t *testing.T) {
 		total:  2,
 		facets: []LanguageFacet{{Code: "en", Name: "English", Count: 5}},
 	}
-	svc := NewService(repo)
+	svc := newVerifiedService(repo)
 
 	res, err := svc.List(context.Background(), ListParams{Sort: "bogus", Page: 0, PageSize: 0})
 	if err != nil {
@@ -206,7 +244,7 @@ func TestService_List_NormalizesParamsAndAttachesFacets(t *testing.T) {
 
 func TestService_List_ClampsPageSize(t *testing.T) {
 	repo := &fakeRepo{}
-	svc := NewService(repo)
+	svc := newVerifiedService(repo)
 
 	if _, err := svc.List(context.Background(), ListParams{PageSize: 10_000}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -242,7 +280,7 @@ func TestService_GetBySlug_Found(t *testing.T) {
 
 func TestService_Create_OK(t *testing.T) {
 	repo := &fakeRepo{}
-	svc := NewService(repo)
+	svc := newVerifiedService(repo)
 	owner := uuid.New()
 
 	got, err := svc.Create(context.Background(), owner, validCreateInput())
@@ -262,7 +300,7 @@ func TestService_Create_OK(t *testing.T) {
 
 func TestService_Create_DeduplicatesSlug(t *testing.T) {
 	repo := &fakeRepo{existingSlugs: map[string]bool{"nodira-karimova": true, "nodira-karimova-2": true}}
-	svc := NewService(repo)
+	svc := newVerifiedService(repo)
 
 	if _, err := svc.Create(context.Background(), uuid.New(), validCreateInput()); err != nil {
 		t.Fatalf("create: %v", err)
@@ -278,11 +316,87 @@ func TestService_Create_RejectsSecondProfile(t *testing.T) {
 		bySlug:      map[string]*Teacher{"existing": {ID: uuid.New(), Slug: "existing"}},
 		ownerBySlug: map[string]uuid.UUID{"existing": owner},
 	}
-	svc := NewService(repo)
+	svc := newVerifiedService(repo)
 
 	_, err := svc.Create(context.Background(), owner, validCreateInput())
 	if !errors.Is(err, ErrProfileExists) {
 		t.Fatalf("err = %v, want ErrProfileExists", err)
+	}
+}
+
+func TestService_Create_RequiresVerifiedEmail(t *testing.T) {
+	cases := map[string]AccountReader{
+		"unverified": fakeAccounts{verified: false},
+		"no reader":  nil, // fails closed
+	}
+	for name, accounts := range cases {
+		t.Run(name, func(t *testing.T) {
+			repo := &fakeRepo{}
+			svc := NewService(repo)
+			if accounts != nil {
+				svc.SetAccountReader(accounts)
+			}
+			_, err := svc.Create(context.Background(), uuid.New(), validCreateInput())
+			if !errors.Is(err, ErrEmailNotVerified) {
+				t.Fatalf("err = %v, want ErrEmailNotVerified", err)
+			}
+			if repo.createdSlug != "" {
+				t.Error("profile was created despite the gate")
+			}
+		})
+	}
+}
+
+func TestService_Create_NotifiesModerators(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := newVerifiedService(repo)
+	n := &fakeNotifier{}
+	svc.SetNotifier(n)
+
+	if _, err := svc.Create(context.Background(), uuid.New(), validCreateInput()); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if len(n.calls) != 1 || n.calls[0] != (submittedCall{"nodira-karimova", "Nodira Karimova", false}) {
+		t.Errorf("notifier calls = %+v", n.calls)
+	}
+}
+
+func TestService_Update_RejectedGoesBackToPending(t *testing.T) {
+	owner := uuid.New()
+	repo := &fakeRepo{
+		bySlug: map[string]*Teacher{"nodira-karimova": {
+			ID: uuid.New(), Slug: "nodira-karimova", DisplayName: "Nodira Karimova",
+			Headline: "old", Kind: KindProfessional, Timezone: "Asia/Tashkent",
+			CountryCode: "UZ", CountryName: "Uzbekistan", City: "Tashkent",
+			About: "about", TeachingStyle: "structured",
+			PricePerHour: Money{9_000_000, CurrencyUZS},
+			Teaches:      []Language{{Code: "en", Name: "English", Level: LevelC2}},
+			Status:       StatusRejected,
+		}},
+		ownerBySlug: map[string]uuid.UUID{"nodira-karimova": owner},
+	}
+	svc := newVerifiedService(repo)
+	n := &fakeNotifier{}
+	svc.SetNotifier(n)
+
+	newHeadline := "answered the note"
+	got, err := svc.Update(context.Background(), "nodira-karimova", owner, ProfilePatch{Headline: &newHeadline})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got.Status != StatusPending {
+		t.Errorf("status = %q, want pending", got.Status)
+	}
+	if len(n.calls) != 1 || !n.calls[0].resubmitted {
+		t.Errorf("notifier calls = %+v, want one resubmission", n.calls)
+	}
+
+	// A second edit while pending must not notify again.
+	if _, err := svc.Update(context.Background(), "nodira-karimova", owner, ProfilePatch{Headline: &newHeadline}); err != nil {
+		t.Fatalf("second update: %v", err)
+	}
+	if len(n.calls) != 1 {
+		t.Errorf("pending edit notified again: %+v", n.calls)
 	}
 }
 
@@ -302,7 +416,7 @@ func TestService_Create_Validation(t *testing.T) {
 	for name, mutate := range bad {
 		t.Run(name, func(t *testing.T) {
 			repo := &fakeRepo{}
-			svc := NewService(repo)
+			svc := newVerifiedService(repo)
 			in := validCreateInput()
 			mutate(&in)
 
@@ -332,7 +446,7 @@ func TestService_Update_OK_PartialAndChildReplace(t *testing.T) {
 		}},
 		ownerBySlug: map[string]uuid.UUID{"nodira-karimova": owner},
 	}
-	svc := NewService(repo)
+	svc := newVerifiedService(repo)
 
 	newHeadline := "new headline"
 	got, err := svc.Update(context.Background(), "nodira-karimova", owner, ProfilePatch{
@@ -362,7 +476,7 @@ func TestService_Update_RejectsNonOwner(t *testing.T) {
 		bySlug:      map[string]*Teacher{"s": {ID: uuid.New(), Slug: "s"}},
 		ownerBySlug: map[string]uuid.UUID{"s": uuid.New()},
 	}
-	svc := NewService(repo)
+	svc := newVerifiedService(repo)
 
 	_, err := svc.Update(context.Background(), "s", uuid.New(), ProfilePatch{})
 	if !errors.Is(err, ErrNotOwner) {
@@ -378,7 +492,7 @@ func TestService_Update_RejectsUnclaimedProfile(t *testing.T) {
 		bySlug:      map[string]*Teacher{"s": {ID: uuid.New(), Slug: "s"}},
 		ownerBySlug: map[string]uuid.UUID{}, // no owner => uuid.Nil
 	}
-	svc := NewService(repo)
+	svc := newVerifiedService(repo)
 
 	_, err := svc.Update(context.Background(), "s", uuid.New(), ProfilePatch{})
 	if !errors.Is(err, ErrNotOwner) {
@@ -405,7 +519,7 @@ func TestService_Update_RejectsInvalidMerge(t *testing.T) {
 		}},
 		ownerBySlug: map[string]uuid.UUID{"s": owner},
 	}
-	svc := NewService(repo)
+	svc := newVerifiedService(repo)
 
 	empty := ""
 	_, err := svc.Update(context.Background(), "s", owner, ProfilePatch{DisplayName: &empty})
@@ -424,7 +538,7 @@ func TestService_GetOwnProfile(t *testing.T) {
 		bySlug:      map[string]*Teacher{"mine": {ID: uuid.New(), Slug: "mine"}},
 		ownerBySlug: map[string]uuid.UUID{"mine": owner},
 	}
-	svc := NewService(repo)
+	svc := newVerifiedService(repo)
 
 	got, err := svc.GetOwnProfile(context.Background(), owner)
 	if err != nil || got.Slug != "mine" {

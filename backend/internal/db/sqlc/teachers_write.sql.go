@@ -199,6 +199,18 @@ func (q *Queries) DeleteTeacherLanguages(ctx context.Context, teacherID uuid.UUI
 	return err
 }
 
+const resubmitTeacher = `-- name: ResubmitTeacher :exec
+UPDATE teachers SET status = 'pending', updated_at = now()
+WHERE id = $1 AND status = 'rejected'
+`
+
+// A rejected profile that was just edited goes back into the moderation
+// queue. The note stays so the moderator sees what they asked for last time.
+func (q *Queries) ResubmitTeacher(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, resubmitTeacher, id)
+	return err
+}
+
 const seedSnapshotRatingBaselines = `-- name: SeedSnapshotRatingBaselines :exec
 UPDATE teachers SET rating_base = rating, review_count_base = review_count
 `

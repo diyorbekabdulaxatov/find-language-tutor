@@ -57,6 +57,12 @@ type Config struct {
 	// ShutdownTimeout bounds graceful shutdown.
 	ShutdownTimeout time.Duration
 
+	// ModerationNotifyEmails is where "a teacher profile is waiting for
+	// review" alerts go (MODERATION_NOTIFY_EMAILS, comma-separated). Empty
+	// disables the alert; teacher-facing approve/reject/suspend emails are
+	// unaffected.
+	ModerationNotifyEmails []string
+
 	// MetricsToken, when set, is the bearer token GET /metrics requires
 	// (METRICS_TOKEN). Empty leaves the endpoint open — only acceptable when
 	// the port isn't reachable from the internet.
@@ -129,6 +135,8 @@ func Load() (*Config, error) {
 		CookieSecure:    getenvBool("AUTH_COOKIE_SECURE", env == "production"),
 		ShutdownTimeout: getenvDuration("SHUTDOWN_TIMEOUT", 10*time.Second),
 		MetricsToken:    os.Getenv("METRICS_TOKEN"),
+
+		ModerationNotifyEmails: splitAndTrim(os.Getenv("MODERATION_NOTIFY_EMAILS")),
 
 		PaymentsProvider:           getenv("PAYMENTS_PROVIDER", "fake"),
 		PaymentsWebhookSecret:      os.Getenv("PAYMENTS_WEBHOOK_SECRET"),

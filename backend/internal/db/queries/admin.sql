@@ -158,7 +158,8 @@ SELECT
     t.id, t.status, t.verified, t.moderation_note,
     u.id           AS owner_id,
     u.email        AS owner_email,
-    u.display_name AS owner_display_name
+    u.display_name AS owner_display_name,
+    u.locale       AS owner_locale
 FROM teachers t
 LEFT JOIN users u ON u.id = t.user_id
 WHERE t.slug = $1;

@@ -221,6 +221,13 @@ func rowToTeacher(row sqlc.Teacher) Teacher {
 	return t
 }
 
+func (r *repositoryPostgres) Resubmit(ctx context.Context, id uuid.UUID) error {
+	if err := r.q.ResubmitTeacher(ctx, id); err != nil {
+		return fmt.Errorf("resubmit teacher: %w", err)
+	}
+	return nil
+}
+
 func (r *repositoryPostgres) RefBySlug(ctx context.Context, slug string) (Ref, error) {
 	row, err := r.q.TeacherRefBySlug(ctx, slug)
 	if err != nil {

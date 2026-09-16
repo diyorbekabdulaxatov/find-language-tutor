@@ -31,6 +31,7 @@ type FakeProvider struct {
 	sink func(context.Context, Event) error
 
 	mu           sync.Mutex
+	run          string // per-process prefix so refs never repeat across restarts
 	seq          int
 	tokenByRef   map[string]string    // providerRef -> MethodToken it was created with
 	paymentByRef map[string]uuid.UUID // providerRef -> payment id
@@ -42,15 +43,21 @@ type FakeProvider struct {
 func NewFakeProvider(sink func(context.Context, Event) error) *FakeProvider {
 	return &FakeProvider{
 		sink:         sink,
+		run:          uuid.NewString()[:8],
 		tokenByRef:   map[string]string{},
 		paymentByRef: map[string]uuid.UUID{},
 		captureTried: map[string]bool{},
 	}
 }
 
+// nextRef mints a provider reference. The webhook event id is derived from
+// it and is the idempotency key in payment_events, so a bare counter would
+// collide with rows from a previous run after every restart — and the
+// "already processed" path would then silently drop the authorization. The
+// per-process prefix keeps refs unique across restarts of the same database.
 func (f *FakeProvider) nextRef() string {
 	f.seq++
-	return fmt.Sprintf("fake_ref_%06d", f.seq)
+	return fmt.Sprintf("fake_%s_%06d", f.run, f.seq)
 }
 
 // Authorize places a (fake) hold. "pm_decline" emits payment.failed and returns

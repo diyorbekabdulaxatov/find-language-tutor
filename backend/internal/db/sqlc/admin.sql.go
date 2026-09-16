@@ -208,7 +208,8 @@ SELECT
     t.id, t.status, t.verified, t.moderation_note,
     u.id           AS owner_id,
     u.email        AS owner_email,
-    u.display_name AS owner_display_name
+    u.display_name AS owner_display_name,
+    u.locale       AS owner_locale
 FROM teachers t
 LEFT JOIN users u ON u.id = t.user_id
 WHERE t.slug = $1
@@ -222,6 +223,7 @@ type AdminGetTeacherModerationRow struct {
 	OwnerID          uuid.NullUUID
 	OwnerEmail       pgtype.Text
 	OwnerDisplayName pgtype.Text
+	OwnerLocale      pgtype.Text
 }
 
 func (q *Queries) AdminGetTeacherModeration(ctx context.Context, slug string) (AdminGetTeacherModerationRow, error) {
@@ -235,6 +237,7 @@ func (q *Queries) AdminGetTeacherModeration(ctx context.Context, slug string) (A
 		&i.OwnerID,
 		&i.OwnerEmail,
 		&i.OwnerDisplayName,
+		&i.OwnerLocale,
 	)
 	return i, err
 }

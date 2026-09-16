@@ -241,6 +241,7 @@ func (r *repositoryPostgres) GetModeration(ctx context.Context, slug string) (Mo
 			ID:          row.OwnerID.UUID,
 			Email:       row.OwnerEmail.String,
 			DisplayName: row.OwnerDisplayName.String,
+			Locale:      row.OwnerLocale.String,
 		}
 	}
 	return m, nil

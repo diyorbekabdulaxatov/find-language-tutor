@@ -13,7 +13,7 @@ import (
 
 func TestService_Create_SetsPendingAndUnverified(t *testing.T) {
 	repo := &fakeRepo{}
-	svc := NewService(repo)
+	svc := newVerifiedService(repo)
 
 	got, err := svc.Create(context.Background(), uuid.New(), validProfileInput())
 	if err != nil {

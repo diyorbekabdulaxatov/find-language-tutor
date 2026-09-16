@@ -19,6 +19,10 @@ var ErrProfileExists = errors.New("account already has a teacher profile")
 // teacher profile being edited (including when the profile is unclaimed).
 var ErrNotOwner = errors.New("not the owner of this teacher profile")
 
+// ErrEmailNotVerified — the account must confirm its address before it can
+// put a teacher profile in front of students.
+var ErrEmailNotVerified = errors.New("email address not verified")
+
 // maxSlugDedupeAttempts bounds the numeric-suffix search for a free slug.
 const maxSlugDedupeAttempts = 1000
 
@@ -40,6 +44,8 @@ type Repository interface {
 
 	// RefBySlug resolves a slug to its id and owning account, or ErrNotFound.
 	RefBySlug(ctx context.Context, slug string) (Ref, error)
+	// Resubmit moves a rejected profile back to pending (no-op otherwise).
+	Resubmit(ctx context.Context, id uuid.UUID) error
 
 	// RefByOwner returns the profile owned by the given account, or ErrNotFound.
 	RefByOwner(ctx context.Context, ownerID uuid.UUID) (Ref, error)
@@ -59,11 +65,35 @@ type Repository interface {
 // Service holds the teacher-profiles business logic. Handlers call it; it never
 // sees an *gin.Context.
 type Service struct {
-	repo Repository
+	repo     Repository
+	accounts AccountReader // nil fails closed (see SetAccountReader)
+	notifier Notifier      // nil is a no-op
 }
 
 func NewService(repo Repository) *Service {
 	return &Service{repo: repo}
+}
+
+// SetAccountReader wires the auth module's verification lookup in.
+func (s *Service) SetAccountReader(a AccountReader) { s.accounts = a }
+
+// SetNotifier wires the moderation-queue notifier in.
+func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
+
+// requireVerified is the gate in front of anything that makes a teacher
+// visible to students. Fails closed when no AccountReader is wired.
+func (s *Service) requireVerified(ctx context.Context, userID uuid.UUID) error {
+	if s.accounts == nil {
+		return ErrEmailNotVerified
+	}
+	ok, err := s.accounts.EmailVerified(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrEmailNotVerified
+	}
+	return nil
 }
 
 // List runs a teacher search and attaches the filter facets.
@@ -131,6 +161,9 @@ func (s *Service) Create(ctx context.Context, ownerID uuid.UUID, in ProfileInput
 	} else if !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
+	if err := s.requireVerified(ctx, ownerID); err != nil {
+		return nil, err
+	}
 
 	if err := validateProfile(in); err != nil {
 		return nil, err
@@ -143,6 +176,9 @@ func (s *Service) Create(ctx context.Context, ownerID uuid.UUID, in ProfileInput
 
 	if _, err := s.repo.Create(ctx, ownerID, slug, in); err != nil {
 		return nil, err
+	}
+	if s.notifier != nil {
+		s.notifier.TeacherSubmitted(ctx, slug, in.DisplayName, false)
 	}
 	return s.repo.GetBySlug(ctx, slug)
 }
@@ -177,6 +213,16 @@ func (s *Service) Update(ctx context.Context, slug string, actingUserID uuid.UUI
 		ReplaceExperience: patch.Experience != nil,
 	}); err != nil {
 		return nil, err
+	}
+	// Editing a rejected profile is how a teacher answers the moderator's
+	// note, so it goes back into the queue — no separate "resubmit" step.
+	if current.Status == StatusRejected {
+		if err := s.repo.Resubmit(ctx, ref.ID); err != nil {
+			return nil, err
+		}
+		if s.notifier != nil {
+			s.notifier.TeacherSubmitted(ctx, slug, merged.DisplayName, true)
+		}
 	}
 	return s.repo.GetBySlug(ctx, slug)
 }

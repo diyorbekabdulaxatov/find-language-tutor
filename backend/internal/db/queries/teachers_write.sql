@@ -4,6 +4,12 @@
 -- Slug -> id + owning user, for the ownership check on PATCH /v1/teachers/{slug}.
 SELECT id, slug, user_id FROM teachers WHERE slug = $1;
 
+-- name: ResubmitTeacher :exec
+-- A rejected profile that was just edited goes back into the moderation
+-- queue. The note stays so the moderator sees what they asked for last time.
+UPDATE teachers SET status = 'pending', updated_at = now()
+WHERE id = $1 AND status = 'rejected';
+
 -- name: TeacherRefByOwner :one
 -- The teacher profile owned by a user (one per user), or no rows.
 SELECT id, slug, user_id FROM teachers WHERE user_id = $1;

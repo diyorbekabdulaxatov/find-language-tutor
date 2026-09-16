@@ -173,6 +173,7 @@ type Owner struct {
 	ID          uuid.UUID
 	Email       string
 	DisplayName string
+	Locale      string // users.locale; picks the language of moderation emails
 }
 
 // TeacherRow is one row of GET /v1/admin/teachers.

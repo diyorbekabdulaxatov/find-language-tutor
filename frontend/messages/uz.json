@@ -409,7 +409,7 @@
     "pendingTitle": "Profilingiz ko'rib chiqilmoqda",
     "pendingBody": "O'quvchilar uni hali ko'rmaydi. Yangi profillarni odatda bir kun ichida tekshiramiz.",
     "rejectedTitle": "Profilingiz tasdiqlanmadi",
-    "rejectedBody": "Profilni yangilang, u qayta ko'rib chiqiladi.",
+    "rejectedBody": "Profilni yangilang — saqlaganingizda u qayta tekshiruvga yuboriladi.",
     "suspendedTitle": "Profilingiz to'xtatilgan",
     "suspendedBody": "Hal qilish uchun qo'llab-quvvatlash xizmatiga murojaat qiling. Mavjud darslarga ta'sir qilmaydi.",
     "earningsCouldNotLoad": "Daromadni yuklab bo'lmadi. Sahifani yangilang.",
@@ -485,7 +485,11 @@
     "period": "Davr",
     "periodPlaceholder": "2020 – hozir",
     "removeExperience": "Tajribani o'chirish",
-    "addExperience": "Tajriba qo'shish"
+    "addExperience": "Tajriba qo'shish",
+    "verifyFirstTitle": "Profil yuborish uchun pochtangizni tasdiqlang",
+    "verifyFirstBody": "{email} manziliga havola yubordik. Uni oching va qaytib keling — bu orada formani to'ldirishingiz mumkin.",
+    "verifySent": "Xat yuborildi — pochtangizni tekshiring, so'ng sahifani yangilang.",
+    "verifyResend": "Havolani qayta yuborish"
   },
   "availability": {
     "couldNotLoad": "Ish vaqtini yuklab bo'lmadi.",

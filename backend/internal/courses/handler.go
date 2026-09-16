@@ -378,6 +378,9 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 	case errors.Is(err, ErrTeacherNotApproved):
 		web.WriteError(c, http.StatusForbidden, "teacher_not_approved",
 			"Your teacher profile must be approved before a course can be published.")
+	case errors.Is(err, ErrEmailNotVerified):
+		web.WriteError(c, http.StatusForbidden, "email_not_verified",
+			"Confirm your email address before publishing a course.")
 	case errors.Is(err, ErrNotFound):
 		web.NotFound(c, "No course with that id.")
 	case errors.Is(err, ErrForbidden):

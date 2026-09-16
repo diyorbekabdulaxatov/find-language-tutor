@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/mail"
 	"strings"
@@ -266,6 +267,21 @@ func (s *Service) VerifyEmail(ctx context.Context, rawToken string) error {
 		return ErrInvalidToken
 	}
 	return s.repo.ConfirmEmail(ctx, userID, hash)
+}
+
+// EmailVerified reports whether the account has confirmed its address. It is
+// the auth side of the teachers.AccountReader / courses.AccountReader ports;
+// an unknown account reads as unverified rather than as an error so the
+// gates it feeds stay closed.
+func (s *Service) EmailVerified(ctx context.Context, userID uuid.UUID) (bool, error) {
+	user, err := s.repo.UserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return user.EmailVerified, nil
 }
 
 // ResendEmailVerification re-issues the verification link for the caller's own

@@ -133,6 +133,9 @@ var (
 	// ErrTeacherNotApproved — the owning teacher profile is not (or no longer)
 	// approved, so the course can't go on the storefront.
 	ErrTeacherNotApproved = errors.New("courses: teacher profile is not approved")
+	// ErrEmailNotVerified — the owning account has not confirmed its email;
+	// publishing is refused (403 email_not_verified).
+	ErrEmailNotVerified = errors.New("courses: email not verified")
 	// ErrInUse — the course has been published at least once; delete is
 	// blocked forever after that. Archive it instead.
 	ErrInUse           = errors.New("courses: course has been published and cannot be deleted")
