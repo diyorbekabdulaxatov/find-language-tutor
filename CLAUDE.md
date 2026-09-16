@@ -35,14 +35,15 @@ make seed           # load the demo teacher catalog
 make db-reset       # wipe volumes, migrate, seed — clean slate
 make run            # HTTP API on :8080
 make worker         # background worker (reminders/emails) — separate terminal
-make test           # go test ./...
+make test           # go test ./... (unit suite — no database)
+make test-integration  # DB-enforced invariants against a real Postgres (testcontainers; Docker, or TEST_DATABASE_URL naming a *test* db)
 make vet
 make sqlc           # regenerate internal/db/sqlc from internal/db/queries (needs sqlc on PATH)
 
 go test ./internal/bookings/ -run TestSlotGeneration -v   # single package / test
 ```
 
-`sqlc` is a standalone binary (`go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`), deliberately **not** a `go tool` dependency. The test suite needs **no database** (fakes + httptest throughout). Copy `.env.example` to `.env` for local dev; `AUTH_JWT_SECRET` falls back to an insecure dev value when unset (required in production).
+`sqlc` is a standalone binary (`go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`), deliberately **not** a `go tool` dependency. The unit suite needs **no database** (fakes + httptest throughout). The things only Postgres enforces — the `EXCLUDE` double-booking constraints, webhook idempotency via `23505`, the jsonb round-trip, the payout-ledger `CHECK`, and that every migration rolls back — live in `internal/dbtest` behind the `integration` build tag (`make test-integration`); `dbtest.Pool(t)` hands a test a freshly migrated database and **drops the schema first**, which is why `TEST_DATABASE_URL` must name a database containing "test". Copy `.env.example` to `.env` for local dev; `AUTH_JWT_SECRET` falls back to an insecure dev value when unset (required in production).
 
 ### Architecture
 
@@ -51,6 +52,8 @@ go test ./internal/bookings/ -run TestSlotGeneration -v   # single package / tes
 **Layering rule.** Business logic is in the service layer. Handlers only bind → call the service → render JSON. `*gin.Context` **never crosses the handler boundary** — services take `context.Context` and plain args.
 
 **Cross-module dependencies go through ports defined in the *consuming* module**, with adapters wired in `cmd/api`. `bookings` never imports `payments`, `lessons`, or `reviews`; instead it declares `bookings.PaymentGateway`, `bookings.ReminderScheduler`, `bookings.Notifier`, `bookings.ReviewReader`, and `cmd/api` injects the implementations (`payments.NewGateway(...)`, `lessons.NewScheduler(...)`, `reviews.NewBookingGateway(...)`) via `bookingService.Set*(...)`. A nil port is a guarded no-op, so `cmd/api` without Redis and the unit tests still work. The reverse direction (a payment authorization moving a booking to `confirmed`) happens inside the payments webhook transaction as a guarded `UPDATE` on the bookings row.
+
+**Observability.** Structured request logs (`slog`, one line per request with `request_id`) and a Prometheus endpoint at `GET /metrics`: `http_requests_total{method,route,status}` and `http_request_duration_seconds{method,route}` labelled by the *registered route pattern* (never the raw path, so cardinality stays bounded), `http_requests_in_flight`, and `pgxpool_*` pool gauges. `METRICS_TOKEN` makes it require a bearer token; leave it empty only when the port is private. No error-tracking vendor is wired (needs an account).
 
 **Data.** `sqlc` + `pgx/v5` (pgxpool). Hand-written SQL in `internal/db/queries/` is the input; `internal/db/sqlc/` is generated — never edit it. Migrations are `golang-migrate` SQL files in `migrations/`, run as a *library* through `cmd/migrate` (not the CLI). Every migration must be reversible (down-tested).
 
@@ -72,9 +75,11 @@ npm run dev        # http://localhost:3000 (needs the backend on :8080)
 npm run build      # production build + typecheck
 npm run lint       # eslint (no separate tsc step; build does the full typecheck)
 npm run gen:api    # regenerate src/lib/api/schema.ts from ../openapi.yaml
+npm test           # vitest — pure logic (timezone math, formatting, locale negotiation, the auth fetch wrapper) + message-catalogue parity/ICU checks
+npm run test:e2e   # playwright golden path (signup → book → pay → confirmed) + locale switch; needs the seeded backend on :8080
 ```
 
-There is no frontend unit-test setup — verification is `npm run build` + `npm run lint` + clicking through against the live backend.
+Unit tests live next to the code as `*.test.ts` and run in node (no React rendering; `vitest.config.ts` maps `@/`). `e2e/` holds Playwright specs against the real stack (`playwright.config.ts` starts `next dev` if :3000 is down and reuses it otherwise; the backend must already be running with the seed). Each e2e run registers a fresh account, so it's repeatable without a DB reset. Anything else UI-shaped is verified by `npm run build` + `npm run lint` + clicking through.
 
 ### Architecture
 

@@ -29,16 +29,25 @@ internal/
   db/queries/ hand-written SQL (input to sqlc)
   web/        shared HTTP primitives (error envelope, response helpers)
   httpapi/    router assembly, middleware, health check
-  teachers/   first domain module — teacher.go, service.go, repository_postgres.go,
-              handler.go, dto.go
-  availability/  teacher weekly recurring slots (UTC) — same module layout
+  teachers/   teacher profiles — teacher.go, service.go, repository_postgres.go,
+              handler.go, dto.go (every domain module follows this layout)
+  availability/  teacher weekly recurring slots (UTC)
   bookings/   concrete scheduled lessons — slots, booking lifecycle, meeting links, no-show
-  payments/   payment intents + fake provider + payout ledger
-  reviews/    phase-6: lesson reviews + incremental teacher-rating aggregate (bookings.ReviewReader port)
-  disputes/   phase-D: lesson disputes — participant routes on /v1/bookings, the
-              operator queue on /v1/admin (bookings.DisputeReader port)
-  email/      transactional email (Resend / logging backend) + booking templates
-  lessons/    phase-5 wiring: asynq reminder scheduler + email notifier (bookings ports)
+  payments/   payment intents + fake provider + course purchases + payout ledger writes
+  payouts/    clearing window, payout runs, admin dashboard
+  reviews/    lesson reviews + teacher-rating aggregate; admin moderation
+  disputes/   lesson disputes — participant routes on /v1/bookings, operator queue on /v1/admin
+  rbac/       roles, permissions, the admin guard
+  admin/      dashboard metrics, user directory, teacher/booking moderation
+  files/      uploads behind a Blob port (disk in dev), content sniffing
+  resources/  learning-resource library, lesson attachments, submissions + grading
+  courses/    video-course authoring, catalog, purchase, player progress, moderation
+  email/      transactional email (Resend / logging backend) + localized templates
+  lessons/    asynq reminder scheduler + email notifier (bookings ports)
+  authmail/ resourcesmail/  adapters from email to the auth / resources Mailer ports
+  i18n/       message catalogs (ru/uz keyed by the English source) + the guard tests
+  ratelimit/  fixed-window limiter (Redis, in-memory fallback)
+  dbtest/     integration tests against a real Postgres (build tag `integration`)
 migrations/   golang-migrate SQL files
 ```
 
@@ -66,57 +75,24 @@ make worker         # in another terminal
 
 ## Endpoints
 
-See `../openapi.yaml`. Currently implemented:
+`../openapi.yaml` is the contract and lists every route with its status codes
+and error codes; the summary below is only a map. Every `/v1/admin/*` route
+also checks an RBAC permission server-side.
 
-| Method | Path | Notes |
-| ------ | ---- | ----- |
-| GET | `/healthz` | status + per-dependency checks (200 / 503) |
-| POST | `/v1/auth/register` | create account + sign in; 409 on duplicate email |
-| POST | `/v1/auth/login` | sign in; 401 on bad credentials |
-| POST | `/v1/auth/refresh` | rotate the refresh cookie, new access token |
-| POST | `/v1/auth/logout` | revoke session, clear cookie; 204 |
-| GET | `/v1/auth/me` | the signed-in user + `permissions` (RBAC keys, resolved per request, `[]` for a normal user); needs `Authorization: Bearer` |
-| PATCH | `/v1/auth/me` | edit own account (`display_name` only; email is read-only) |
-| GET | `/v1/teachers` | `?language&kind&max_price_minor&q&sort&page&page_size` — **only `approved` teachers** |
-| POST | `/v1/teachers` | claim/create the caller's profile; Bearer token; 409 if they already own one. **New profiles are `status = pending`** — fillable + can set availability, but not public until an admin approves |
-| GET | `/v1/teachers/me` | the caller's own profile **regardless of status**; includes `status` / `verified` / `moderation_note`; Bearer token; 404 if not created yet |
-| GET | `/v1/teachers/{slug}` | full profile; **404 unless `approved`**; carries `verified` (badge) |
-| PATCH | `/v1/teachers/{slug}` | edit own profile (partial); Bearer token, must own it; 403/404 otherwise. Now also accepts `meeting_url` (default video room; http(s) or empty) |
-| GET | `/v1/teachers/{slug}/availability` | weekly recurring slots (UTC), 404 if missing |
-| PUT | `/v1/teachers/{slug}/availability` | replace the full weekly set; Bearer token, must own the profile |
-| GET | `/v1/teachers/{slug}/slots` | `?from&to&duration` — concrete bookable start times (UTC); public; **404 for a non-`approved` slug**; 400 if the window > 21 days |
-| GET | `/v1/teachers/{slug}/reviews` | `?page&page_size` (default 1 / 10, cap 50) — the teacher's reviews, newest first; public; **404 unless `approved`** |
-| POST | `/v1/bookings` | book a lesson; Bearer token; **404 for a non-`approved` teacher**; 201 `pending_payment` + opens a `requires_payment` intent; 409 `slot_unavailable` / `slot_taken` |
-| GET | `/v1/bookings` | `?role=student\|teacher&status=` — the caller's bookings, newest first; Bearer token |
-| GET | `/v1/bookings/{id}` | full booking (with embedded `payment`); Bearer token; 404 if missing, 403 if not a participant |
-| POST | `/v1/bookings/{id}/pay` | `{method_token}`; student only; authorize → `pending_payment → confirmed`; 402 `payment_failed`, 409 `already_paid` |
-| POST | `/v1/bookings/{id}/complete` | teacher-owner only; `confirmed → completed` + capture + payout-ledger row; 409 `too_early`, 502 `capture_failed` |
-| POST | `/v1/bookings/{id}/cancel` | `{reason?}`; `pending_payment\|confirmed → cancelled`; participant only; refunds/voids the intent; cancels reminders + emails the other party; 409 if already done |
-| PUT | `/v1/bookings/{id}/meeting-link` | `{url}`; teacher-owner only; sets the per-booking link override (empty clears it); 403/404 |
-| POST | `/v1/bookings/{id}/no-show` | `{party}`; teacher-owner only; from `confirmed` once started (409 `too_early`); `student` → `completed` + capture, `teacher` → `cancelled` + refund |
-| POST | `/v1/bookings/{id}/review` | `{rating: 1-5, comment?}`; student only; booking must be `completed` (409 `booking_not_completed`); one per booking (409 `already_reviewed`); nudges the teacher `rating` / `review_count` in the same transaction; 201 |
-| POST | `/v1/payments/webhook` | provider event; unauthenticated (signed); idempotent by `event_id`; 200 on a well-formed duplicate |
-| GET | `/v1/payments/me` | the caller's teacher earnings summary; Bearer token; 404 if they own no profile |
-| GET | `/v1/admin/metrics` | dashboard counters; perm `metrics.view` |
-| GET | `/v1/admin/users` | `?q&page&page_size` — user directory; perm `users.view` |
-| GET | `/v1/admin/users/{id}` | user + roles + teacher profile + 50 newest bookings + payments summary; perm `users.view` |
-| POST/DELETE | `/v1/admin/users/{id}/roles[/{role_id}]` | assign / unassign a role (idempotent); perm `users.manage_roles` |
-| GET | `/v1/admin/permissions` | the permission catalog; perm `roles.manage` |
-| GET/POST | `/v1/admin/roles` | list / create roles; perm `roles.manage`; 400 `unknown_permission`, 409 `role_exists` |
-| PATCH/DELETE | `/v1/admin/roles/{id}` | edit (description always; permissions unless `is_system` → 403 `role_locked`) / delete (403 `role_locked`, 409 `role_in_use`); perm `roles.manage` |
-| GET | `/v1/admin/teachers` | `?status&q&page&page_size` — moderation queue (all statuses); perm `teachers.view` |
-| GET | `/v1/admin/teachers/{slug}` | full profile + `status` / `verified` / `moderation_note` / `owner`; perm `teachers.view` |
-| POST | `/v1/admin/teachers/{slug}/approve` | → `approved`, clears note; from pending/rejected/suspended; 409 `invalid_transition`; perm `teachers.moderate` |
-| POST | `/v1/admin/teachers/{slug}/reject` | `{note}` (required) → `rejected`; from pending only; perm `teachers.moderate` |
-| POST | `/v1/admin/teachers/{slug}/suspend` | `{note}` (required) → `suspended`; from approved only; leaves bookings intact; perm `teachers.moderate` |
-| POST | `/v1/admin/teachers/{slug}/verify` | `{verified: bool}`; independent of status; perm `teachers.verify` |
-| GET | `/v1/admin/bookings` | `?status&q&page&page_size` — every booking on the platform, newest lesson first; perm `bookings.view` |
-| GET | `/v1/admin/bookings/{id}` | full booking + payment + meeting link + cancellation who/why/when + the dispute thread; perm `bookings.view`; 404 `booking_not_found` |
-| POST | `/v1/admin/bookings/{id}/force-cancel` | `{reason, refund?}` — operator override of the participant-only cancel; records `cancelled_by = admin`; 409 `invalid_state`; perm `bookings.force_cancel` |
-| POST | `/v1/bookings/{id}/disputes` | `{reason}`; participant only; booking must be `confirmed`/`completed` (409 `dispute_not_allowed`); one open dispute per booking (409 `dispute_exists`); 201 |
-| GET | `/v1/bookings/{id}/disputes` | the booking's whole dispute thread, newest first; participant only |
-| GET | `/v1/admin/disputes` | `?status=open\|resolved\|rejected\|all&page&page_size` (default `open`) — the operator queue with booking + parties; perm `disputes.resolve` |
-| POST | `/v1/admin/disputes/{id}/resolve` | `{outcome: resolved\|rejected, resolution, refund?}`; 404 `dispute_not_found`, 409 `already_resolved`; perm `disputes.resolve` |
+| Area | Routes |
+| --- | --- |
+| Health / ops | `GET /healthz`, `GET /metrics` (Prometheus; `METRICS_TOKEN` optional bearer) |
+| Auth | `/v1/auth/register|login|refresh|logout|me`, forgot/reset password, verify/resend email (rate-limited) |
+| Teachers | catalog + profile, own profile create/edit, weekly availability, bookable slots, reviews |
+| Bookings | create, list, detail, pay, complete, cancel, meeting link, no-show, review, disputes |
+| Payments | `POST /v1/payments/webhook` (signed, idempotent), `GET /v1/payments/me` (earnings) |
+| Files / resources | `POST /v1/uploads`, `GET /v1/files/{id}`, resource library CRUD + publish/archive, lesson attachments, submissions + grading |
+| Courses | authoring (sections/items/reorder), public catalog, purchase, `/learn`, item progress, enrollments |
+| Admin | metrics, users + roles, permission catalog, teacher / booking / review / course moderation, disputes queue, payouts + runs |
+
+Every human-readable `error.message` is rendered in the request's
+`Accept-Language` (`en` / `ru` / `uz`), and email in the account's stored
+`locale`.
 
 ```bash
 curl 'localhost:8080/v1/teachers?language=uz&sort=price_asc'
