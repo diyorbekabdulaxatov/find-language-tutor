@@ -42,8 +42,8 @@ export function ThemeToggle() {
 
   return (
     <Button
-      variant="ghost"
-      size="icon-sm"
+      variant="outline"
+      size="icon"
       aria-label={mounted ? t(NEXT_LABEL[current]) : t("toggleTheme")}
       title={mounted ? t(NEXT_LABEL[current]) : undefined}
       onClick={() => setTheme(ORDER[(ORDER.indexOf(current) + 1) % ORDER.length])}

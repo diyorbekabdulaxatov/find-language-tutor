@@ -16,7 +16,7 @@ import { setLocale } from "@/i18n/actions";
 import { useAuth } from "@/features/auth/auth-context";
 import { updateProfile } from "@/features/auth/api";
 
-export function LocaleSwitcher() {
+export function LocaleSwitcher({ withLabel = false }: { withLabel?: boolean }) {
   const locale = useLocale();
   const t = useTranslations("common");
   const router = useRouter();
@@ -45,13 +45,14 @@ export function LocaleSwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="ghost"
-          size="icon-sm"
+          variant="outline"
+          size={withLabel ? "default" : "icon"}
           aria-label={t("changeLanguage")}
           title={t("changeLanguage")}
           disabled={pending}
         >
           <Languages />
+          {withLabel && LOCALE_LABELS[locale as Locale]}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-40">

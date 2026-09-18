@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getTranslations } from "next-intl/server";
-import { Bricolage_Grotesque, Plus_Jakarta_Sans } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/features/auth/auth-context";
@@ -10,21 +10,15 @@ import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
 
 /**
- * next/font self-hosts these — no runtime request to Google. Each call returns
- * an object with a `.variable` class that sets a CSS custom property; we hang
- * both on <html> and let globals.css map them to Tailwind's font tokens.
+ * next/font self-hosts this — no runtime request to Google. It returns an
+ * object with a `.variable` class that sets a CSS custom property; we hang it
+ * on <html> and let globals.css map it to Tailwind's font tokens.
  *
- * Bricolage Grotesque: chunky, characterful display face for headings.
- * Plus Jakarta Sans: clean, friendly workhorse for UI and body. Both variable,
- * so `weight` is omitted and the font-weight utilities cover the whole range.
+ * One family for everything, like Udemy: Inter at 400 for body and 700 for
+ * headings (`font-display` is an alias for the same face, bold).
  */
-const display = Bricolage_Grotesque({
-  subsets: ["latin"],
-  variable: "--font-display",
-});
-
-const sans = Plus_Jakarta_Sans({
-  subsets: ["latin"],
+const sans = Inter({
+  subsets: ["latin", "cyrillic"],
   variable: "--font-sans",
 });
 
@@ -44,7 +38,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang={locale}
       suppressHydrationWarning
-      className={`${display.variable} ${sans.variable} h-full antialiased`}
+      className={`${sans.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">
         <ThemeProvider

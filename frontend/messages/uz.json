@@ -29,7 +29,13 @@
     "myCourses": "Mening kurslarim",
     "accountSettings": "Hisob sozlamalari",
     "admin": "Admin",
-    "signOut": "Chiqish"
+    "signOut": "Chiqish",
+    "explore": "Ko'rish",
+    "exploreLanguages": "Tillar",
+    "searchPlaceholder": "O'qituvchi yoki mavzu qidiring",
+    "teachOn": "FindTutor'da dars bering",
+    "signUp": "Ro'yxatdan o'tish",
+    "menu": "Menyu"
   },
   "footer": {
     "tagline": "O'zingiz tanlagan o'qituvchilar bilan, istalgan vaqt mintaqasida sizga qulay jadval bo'yicha yakka til darslari.",
@@ -43,12 +49,13 @@
     "company": "Kompaniya",
     "about": "Biz haqimizda",
     "contact": "Aloqa",
-    "copyright": "© {year} FindTutor. Portfolio loyihasi."
+    "copyright": "© {year} FindTutor. Portfolio loyihasi.",
+    "findCourse": "Kurs topish"
   },
   "home": {
     "greetings": "Salom · Hello · Привет · 안녕하세요 · Merhaba",
-    "heroTitle": "Sizni gapirtiradigan til o'qituvchisini toping",
-    "heroBody": "O'zbekiston va undan tashqaridagi o'qituvchilar bilan ingliz, rus va boshqa tillar bo'yicha yakka video darslar. Har bir dars uchun so'mda to'lang.",
+    "heroTitle": "Tilni haqiqiy o'qituvchi bilan o'rganing",
+    "heroBody": "O'zbekiston bo'ylab o'qituvchilar bilan ingliz, rus va boshqa tillar bo'yicha yakkama-yakka video darslar. Har bir dars uchun so'mda to'lang.",
     "trustVerified": "Tasdiqlangan o'qituvchilar",
     "trustRating": "O'rtacha baho 4,8",
     "trustReplies": "Ko'pchilik bir necha soatda javob beradi",
@@ -64,9 +71,18 @@
     "step2Body": "O'qituvchi taqvimidan vaqt tanlang. Vaqt sizning mintaqangizda ko'rsatiladi — hisoblash shart emas.",
     "step3Title": "Video orqali uchrashing",
     "step3Body": "Sizga video havola va eslatma keladi. Dars tasdiqlangandan keyin so'mda to'laysiz, oldin emas.",
-    "teachTitle": "FindTutor'da dars bering",
-    "teachBody": "Narx va soatlarni o'zingiz belgilang. Jadval, to'lovlar va kartangizga so'mda pul o'tkazishni biz hal qilamiz.",
-    "applyToTeach": "Ariza berish"
+    "teachTitle": "O'qituvchi bo'ling",
+    "teachBody": "O'zbekiston bo'ylab o'qituvchilar darslarini FindTutor'da o'tkazadi. Narx va jadvalni o'zingiz belgilaysiz; yozilish, to'lov va kartangizga so'mda to'lovlarni biz hal qilamiz.",
+    "applyToTeach": "Bugun dars berishni boshlang",
+    "heroCtaTeachers": "O'qituvchi topish",
+    "heroCtaCourses": "Kurslarni ko'rish",
+    "languagesBody": "Tilni tanlang — kim dars berishini, narxini va o'quvchilar fikrini ko'ring.",
+    "tabTitle": "{language} tilini yakkama-yakka o'rganing",
+    "tabBody": "{count, plural, one {# o'qituvchi} other {# o'qituvchi}} {language} tilidan dars beradi — imtihonga tayyorgarlikdan kundalik suhbatgacha. Tanishuv videolarini ko'ring va qulay vaqtni tanlang.",
+    "exploreLanguage": "{language} o'qituvchilarini ko'rish",
+    "featuredCourses": "Tanlangan kurslar",
+    "viewAllCourses": "Barcha kurslar",
+    "topLanguages": "Mashhur tillar"
   },
   "heroSearch": {
     "placeholder": "Nimani o'rganmoqchisiz? Masalan, IELTS, biznes ingliz tili",
@@ -96,7 +112,8 @@
     "priceFrom": "<strong>{price}</strong> / soatdan",
     "viewProfile": "Profil",
     "professional": "Professional",
-    "community": "Ona tili egasi"
+    "community": "Ona tili egasi",
+    "perHour": "/ soat"
   },
   "teachersPage": {
     "metaTitle": "O'qituvchi topish",
