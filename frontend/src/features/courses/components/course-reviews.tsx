@@ -50,6 +50,7 @@ export function CourseReviews({
   const [myReview, setMyReview] = useState(initialMyReview);
   const [editing, setEditing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [listPage, setListPage] = useState(1);
   const t = useTranslations("courses");
   const locale = useLocale();
 
@@ -57,9 +58,13 @@ export function CourseReviews({
     let alive = true;
     async function load() {
       try {
-        const res = await listCourseReviews(courseId);
+        const res = await listCourseReviews(courseId, listPage);
         if (!alive) return;
-        setPage(res);
+        // Page 1 replaces (initial load and the post-save refetch); later
+        // pages append, the same "show more" shape as the lesson-review list.
+        setPage((prev) =>
+          listPage > 1 && prev ? { ...res, reviews: [...prev.reviews, ...res.reviews] } : res,
+        );
         setState("ready");
       } catch {
         if (!alive) return;
@@ -70,7 +75,7 @@ export function CourseReviews({
     return () => {
       alive = false;
     };
-  }, [courseId, reloadKey]);
+  }, [courseId, reloadKey, listPage]);
 
   // A fresh write / revision is spliced into the list so the author sees
   // their own words immediately, then the page is refetched so the histogram
@@ -89,6 +94,7 @@ export function CourseReviews({
         total: isNew ? prev.total + 1 : prev.total,
       };
     });
+    setListPage(1);
     setReloadKey((k) => k + 1);
   }
 
@@ -181,26 +187,35 @@ export function CourseReviews({
           <p className="text-sm text-muted-foreground">{t("noReviewsYet")}</p>
         )}
         {state === "ready" && page && page.reviews.length > 0 && (
-          <ul className="flex flex-col gap-5">
+          <ul className="divide-y divide-border">
             {page.reviews.map((r) => (
-              <li key={r.id}>
-                <div className="flex items-center gap-2">
-                  <Stars value={r.rating} />
+              <li key={r.id} className="py-4 first:pt-0 last:pb-0">
+                <div className="flex items-center justify-between gap-3">
                   <span className="text-sm font-medium text-foreground">
                     {r.studentDisplayName}
                   </span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="shrink-0 text-xs text-muted-foreground">
                     {formatDate(r.createdAt, locale)}
                   </span>
                 </div>
+                <Stars value={r.rating} className="mt-1" />
                 {r.comment && (
-                  <p className="mt-1.5 max-w-[68ch] text-sm leading-relaxed text-foreground/90">
+                  <p className="mt-2 max-w-[68ch] text-sm leading-relaxed text-foreground/90">
                     {r.comment}
                   </p>
                 )}
               </li>
             ))}
           </ul>
+        )}
+        {state === "ready" && page && page.reviews.length < page.total && (
+          <button
+            type="button"
+            onClick={() => setListPage((p) => p + 1)}
+            className="mt-4 text-sm font-medium text-primary hover:underline"
+          >
+            {t("showMoreReviews")}
+          </button>
         )}
       </div>
     </section>
