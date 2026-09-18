@@ -1,9 +1,12 @@
 package courses
 
 import (
+	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -23,6 +26,7 @@ func RegisterCatalogRoutes(rg *gin.RouterGroup, h *Handler, optionalAuth gin.Han
 	rg.GET("/catalog", h.Catalog)
 	rg.GET("/catalog/:id", optionalAuth, h.CatalogDetail)
 	rg.GET("/:id/cover", h.Cover)
+	rg.GET("/:id/items/:itemId/preview", h.Preview)
 }
 
 // RegisterLearnerRoutes mounts the purchase / player / progress routes onto
@@ -106,6 +110,54 @@ func (h *Handler) Cover(c *gin.Context) {
 	}
 	defer body.Close()
 	c.DataFromReader(http.StatusOK, -1, contentType, body, nil)
+}
+
+// Preview handles GET /v1/courses/:id/items/:itemId/preview — a free sample
+// lecture, no auth, so an anonymous shopper's <video> can load it straight
+// from the landing page. Disk-backed files go through http.ServeContent so
+// the player can seek (Range requests); R2 redirects to a signed URL. Same
+// shape as the public teacher-media route.
+//
+// Every failure is a flat 404: the service already collapses "not a preview",
+// "not on the storefront" and "no such item" into ErrItemNotFound so this
+// route tells a prober nothing.
+func (h *Handler) Preview(c *gin.Context) {
+	courseID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		web.NotFound(c, "No preview lesson with that id.")
+		return
+	}
+	itemID, err := uuid.Parse(c.Param("itemId"))
+	if err != nil {
+		web.NotFound(c, "No preview lesson with that id.")
+		return
+	}
+
+	redirectURL, body, contentType, err := h.svc.PreviewVideo(c.Request.Context(), courseID, itemID)
+	switch {
+	case errors.Is(err, ErrItemNotFound), errors.Is(err, ErrNotFound):
+		web.NotFound(c, "No preview lesson with that id.")
+		return
+	case err != nil:
+		h.logger.Error("course preview", slog.String("course_id", courseID.String()),
+			slog.String("item_id", itemID.String()), slog.Any("error", err))
+		web.Internal(c)
+		return
+	}
+	if redirectURL != "" {
+		c.Redirect(http.StatusFound, redirectURL)
+		return
+	}
+	defer body.Close()
+
+	c.Header("Cache-Control", "public, max-age=300")
+	c.Header("Content-Type", contentType)
+	if rs, ok := body.(io.ReadSeeker); ok {
+		http.ServeContent(c.Writer, c.Request, "", time.Time{}, rs)
+		return
+	}
+	c.Status(http.StatusOK)
+	_, _ = io.Copy(c.Writer, body)
 }
 
 // Purchase handles POST /v1/courses/:id/purchase. Body

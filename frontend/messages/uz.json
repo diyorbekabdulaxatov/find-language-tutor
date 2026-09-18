@@ -815,7 +815,13 @@
     "upTo500": "500 MB gacha.",
     "noPublishedResources": "Sizda chop etilgan material yo'q. <link>Yarating</link>.",
     "chooseResource": "Material tanlang…",
-    "loading": "Yuklanmoqda…"
+    "loading": "Yuklanmoqda…",
+    "freePreviewBadge": "Bepul namuna",
+    "freePreviewLabel": "Bepul namuna — bu darsni sotib olishdan oldin ham ko'rish mumkin",
+    "watchFreePreview": "Bepul namunani ko'rish",
+    "previewLesson": "Namuna",
+    "courseLengthHm": "{hours} soat {minutes} daqiqa",
+    "courseLengthM": "{minutes} daqiqa"
   },
   "admin": {
     "meta": "Admin",

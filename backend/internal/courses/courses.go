@@ -91,7 +91,19 @@ type Item struct {
 	VideoAssetID *uuid.UUID
 	ResourceID   *uuid.UUID
 	Position     int
-	CreatedAt    time.Time
+	// IsPreview (phase D1) marks a free sample lecture: anyone may stream it
+	// from the course landing page without enrolling. Only a video item may
+	// carry it — a resource item's payload has its own answer-stripping path
+	// that has no business running for an anonymous viewer — and both this
+	// service and a DB CHECK enforce that.
+	IsPreview bool
+	// DurationSeconds (phase D1) is the video's length, reported by the
+	// client from the browser's own <video> metadata. Display metadata only:
+	// it never gates access, pricing or payouts, so it is validated for
+	// plausibility rather than trusted. 0 means "unknown" and every surface
+	// omits the figure rather than rendering "0m".
+	DurationSeconds int
+	CreatedAt       time.Time
 }
 
 // SectionDetail is one section with its items loaded, in position order.
@@ -153,4 +165,10 @@ func invalid(format string, a ...any) error { return ValidationError{i18n.Messag
 const (
 	defaultPageSize = 20
 	maxPageSize     = 100
+
+	// MaxItemDurationSeconds is the plausibility ceiling on a reported video
+	// length (24h). A real lecture is minutes long; this only exists so a
+	// broken or hostile client can't store an absurd number that would
+	// render as "8760 hours" on the course card.
+	MaxItemDurationSeconds = 24 * 60 * 60
 )

@@ -29,6 +29,10 @@ type catalogEntryDTO struct {
 	Teacher      courseTeacherSummaryDTO `json:"teacher"`
 	SectionCount int                     `json:"section_count"`
 	ItemCount    int                     `json:"item_count"`
+	// Phase D1 card metadata. TotalDurationSeconds is 0 when no item reported
+	// a duration; the card omits the figure rather than rendering "0m".
+	TotalDurationSeconds int64 `json:"total_duration_seconds"`
+	HasPreview           bool  `json:"has_preview"`
 }
 
 func toCatalogEntryDTO(e CatalogEntry) catalogEntryDTO {
@@ -37,6 +41,7 @@ func toCatalogEntryDTO(e CatalogEntry) catalogEntryDTO {
 		Price:        moneyDTO{AmountMinor: e.Course.PriceAmountMinor, Currency: e.Course.PriceCurrency},
 		Teacher:      toCourseTeacherSummaryDTO(e.Teacher),
 		SectionCount: e.SectionCount, ItemCount: e.ItemCount,
+		TotalDurationSeconds: e.TotalDurationSeconds, HasPreview: e.HasPreview,
 	}
 	if e.Course.CoverAssetID != nil {
 		v := e.Course.CoverAssetID.String()
@@ -63,6 +68,10 @@ type catalogItemOutlineDTO struct {
 	Kind     string `json:"kind"`
 	Title    string `json:"title"`
 	Position int    `json:"position"`
+	// Phase D1: is_preview renders the play button on the landing page's
+	// curriculum, duration_seconds the "04:12" next to each lecture.
+	IsPreview       bool `json:"is_preview"`
+	DurationSeconds int  `json:"duration_seconds"`
 }
 
 type catalogSectionOutlineDTO struct {
@@ -75,7 +84,10 @@ type catalogSectionOutlineDTO struct {
 func toCatalogSectionOutlineDTO(sec SectionOutline) catalogSectionOutlineDTO {
 	items := make([]catalogItemOutlineDTO, len(sec.Items))
 	for i, it := range sec.Items {
-		items[i] = catalogItemOutlineDTO{ID: it.ID.String(), Kind: string(it.Kind), Title: it.Title, Position: it.Position}
+		items[i] = catalogItemOutlineDTO{
+			ID: it.ID.String(), Kind: string(it.Kind), Title: it.Title, Position: it.Position,
+			IsPreview: it.IsPreview, DurationSeconds: it.DurationSeconds,
+		}
 	}
 	return catalogSectionOutlineDTO{ID: sec.ID.String(), Title: sec.Title, Position: sec.Position, Items: items}
 }
@@ -91,6 +103,9 @@ type catalogDetailDTO struct {
 	Sections     []catalogSectionOutlineDTO `json:"sections"`
 	IsEnrolled   bool                       `json:"is_enrolled"`
 	IsOwner      bool                       `json:"is_owner"`
+	// Phase D1 headline: "N lectures · H hours".
+	ItemCount            int   `json:"item_count"`
+	TotalDurationSeconds int64 `json:"total_duration_seconds"`
 }
 
 func toCatalogDetailDTO(d CatalogDetail) catalogDetailDTO {
@@ -104,6 +119,7 @@ func toCatalogDetailDTO(d CatalogDetail) catalogDetailDTO {
 		Teacher:    toCourseTeacherSummaryDTO(d.Teacher),
 		Sections:   sections,
 		IsEnrolled: d.IsEnrolled, IsOwner: d.IsOwner,
+		ItemCount: d.ItemCount, TotalDurationSeconds: d.TotalDurationSeconds,
 	}
 	if d.Course.CoverAssetID != nil {
 		v := d.Course.CoverAssetID.String()

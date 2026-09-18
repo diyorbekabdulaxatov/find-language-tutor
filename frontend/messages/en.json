@@ -815,7 +815,13 @@
     "upTo500": "Up to 500MB.",
     "noPublishedResources": "You have no published resources yet. <link>Create one</link>.",
     "chooseResource": "Choose a resource…",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "freePreviewBadge": "Free preview",
+    "freePreviewLabel": "Free preview — anyone can watch this lesson before buying",
+    "watchFreePreview": "Watch a free preview",
+    "previewLesson": "Preview",
+    "courseLengthHm": "{hours}h {minutes}m",
+    "courseLengthM": "{minutes}m"
   },
   "admin": {
     "meta": "Admin",

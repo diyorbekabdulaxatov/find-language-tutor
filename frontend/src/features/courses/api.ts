@@ -82,6 +82,8 @@ function toItem(i: WireItem): CourseItem {
     videoAssetId: i.video_asset_id,
     resourceId: i.resource_id,
     position: i.position,
+    isPreview: i.is_preview,
+    durationSeconds: i.duration_seconds,
     createdAt: i.created_at,
   };
 }
@@ -244,7 +246,14 @@ export async function reorderSections(
 export async function addItem(
   courseId: string,
   sectionId: string,
-  input: { kind: CourseItemKind; title?: string; videoAssetId?: string; resourceId?: string },
+  input: {
+    kind: CourseItemKind;
+    title?: string;
+    videoAssetId?: string;
+    resourceId?: string;
+    isPreview?: boolean;
+    durationSeconds?: number;
+  },
 ): Promise<CourseDetail> {
   const { data, error, response } = await browserApi.POST(
     "/v1/courses/{id}/sections/{sectionId}/items",
@@ -255,6 +264,8 @@ export async function addItem(
         title: input.title || undefined,
         video_asset_id: input.videoAssetId,
         resource_id: input.resourceId,
+        is_preview: input.isPreview,
+        duration_seconds: input.durationSeconds,
       },
     },
   );
@@ -262,20 +273,27 @@ export async function addItem(
   return toCourseDetail(data);
 }
 
-export async function renameItem(
+/** Edits an item's title and, for a video item, its preview flag / duration.
+ *  `isPreview` and `durationSeconds` are merge-on-write on the backend: leave
+ *  one undefined to keep the stored value. */
+export async function updateItem(
   courseId: string,
   sectionId: string,
   itemId: string,
-  title: string,
+  input: { title: string; isPreview?: boolean; durationSeconds?: number },
 ): Promise<CourseDetail> {
   const { data, error, response } = await browserApi.PATCH(
     "/v1/courses/{id}/sections/{sectionId}/items/{itemId}",
     {
       params: { path: { id: courseId, sectionId, itemId } },
-      body: { title },
+      body: {
+        title: input.title,
+        is_preview: input.isPreview,
+        duration_seconds: input.durationSeconds,
+      },
     },
   );
-  if (error || !data) throw toErr(error, response.status, "Could not rename that item.");
+  if (error || !data) throw toErr(error, response.status, "Could not update that item.");
   return toCourseDetail(data);
 }
 
@@ -316,6 +334,13 @@ export function courseCoverUrl(courseId: string): string {
   return `${baseUrl}/v1/courses/${courseId}/cover`;
 }
 
+/** Public, unauthenticated stream of a free preview lecture. 404s unless the
+ *  item is flagged `is_preview` and its course is on the storefront, so it is
+ *  safe to build the URL for any outline item and let the server decide. */
+export function coursePreviewUrl(courseId: string, itemId: string): string {
+  return `${baseUrl}/v1/courses/${courseId}/items/${itemId}/preview`;
+}
+
 type WireTeacherSummary = components["schemas"]["CourseTeacherSummary"];
 type WireCatalogEntry = components["schemas"]["CourseCatalogEntry"];
 type WireCatalogItemOutline = components["schemas"]["CourseCatalogItemOutline"];
@@ -342,11 +367,20 @@ function toCatalogEntry(c: WireCatalogEntry): CourseCatalogEntry {
     teacher: toTeacherSummary(c.teacher),
     sectionCount: c.section_count,
     itemCount: c.item_count,
+    totalDurationSeconds: c.total_duration_seconds,
+    hasPreview: c.has_preview,
   };
 }
 
 function toCatalogItemOutline(i: WireCatalogItemOutline): CourseCatalogItemOutline {
-  return { id: i.id, kind: i.kind, title: i.title, position: i.position };
+  return {
+    id: i.id,
+    kind: i.kind,
+    title: i.title,
+    position: i.position,
+    isPreview: i.is_preview,
+    durationSeconds: i.duration_seconds,
+  };
 }
 
 function toCatalogSectionOutline(s: WireCatalogSectionOutline): CourseCatalogSectionOutline {
@@ -370,6 +404,8 @@ function toCatalogDetail(c: WireCatalogDetail): CourseCatalogDetail {
     sections: c.sections.map(toCatalogSectionOutline),
     isEnrolled: c.is_enrolled,
     isOwner: c.is_owner,
+    itemCount: c.item_count,
+    totalDurationSeconds: c.total_duration_seconds,
   };
 }
 

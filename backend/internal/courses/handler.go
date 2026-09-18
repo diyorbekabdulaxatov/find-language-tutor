@@ -47,7 +47,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler, requireAuth gin.HandlerFunc
 	g.PUT("/:id/sections/reorder", h.ReorderSections)
 
 	g.POST("/:id/sections/:sectionId/items", h.AddItem)
-	g.PATCH("/:id/sections/:sectionId/items/:itemId", h.RenameItem)
+	g.PATCH("/:id/sections/:sectionId/items/:itemId", h.UpdateItem)
 	g.DELETE("/:id/sections/:sectionId/items/:itemId", h.DeleteItem)
 	g.PUT("/:id/sections/:sectionId/items/reorder", h.ReorderItems)
 }
@@ -263,25 +263,25 @@ func (h *Handler) AddItem(c *gin.Context) {
 		web.BadRequest(c, "`resource_id` must be a UUID.")
 		return
 	}
-	d, err := h.svc.AddItem(c.Request.Context(), uid, id, sectionID, ItemKind(req.Kind), req.Title, videoAssetID, resourceID)
+	d, err := h.svc.AddItem(c.Request.Context(), uid, id, sectionID, ItemKind(req.Kind), req.Title, videoAssetID, resourceID, req.IsPreview, req.DurationSeconds)
 	if h.rendered(c, err, "add course item", slog.String("section_id", sectionID.String())) {
 		return
 	}
 	c.JSON(http.StatusCreated, toCourseDetailDTO(d))
 }
 
-func (h *Handler) RenameItem(c *gin.Context) {
+func (h *Handler) UpdateItem(c *gin.Context) {
 	uid, id, sectionID, itemID, ok := h.callerAndItemID(c)
 	if !ok {
 		return
 	}
 	var req updateItemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		web.BadRequest(c, `Request body must be {"title"}.`)
+		web.BadRequest(c, `Request body must be {"title", "is_preview"?, "duration_seconds"?}.`)
 		return
 	}
-	d, err := h.svc.RenameItem(c.Request.Context(), uid, id, sectionID, itemID, req.Title)
-	if h.rendered(c, err, "rename course item", slog.String("item_id", itemID.String())) {
+	d, err := h.svc.UpdateItem(c.Request.Context(), uid, id, sectionID, itemID, req.Title, req.IsPreview, req.DurationSeconds)
+	if h.rendered(c, err, "update course item", slog.String("item_id", itemID.String())) {
 		return
 	}
 	c.JSON(http.StatusOK, toCourseDetailDTO(d))

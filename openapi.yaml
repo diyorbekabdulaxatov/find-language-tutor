@@ -2077,9 +2077,14 @@ paths:
   /v1/courses/{id}/sections/{sectionId}/items/{itemId}:
     patch:
       tags: [courses]
-      summary: Edit an item's display-title override
-      description: An empty title clears the override, falling back to the video filename / resource title in the UI.
-      operationId: renameCourseItem
+      summary: Edit an item's title, preview flag and duration
+      description: >
+        An empty title clears the override, falling back to the video filename
+        / resource title in the UI. `is_preview` and `duration_seconds` are
+        merge-on-write: omit either to leave the stored value alone, which is
+        what a plain rename does. Both are video-only — setting a preview or a
+        non-zero duration on a `resource` item is a 400.
+      operationId: updateCourseItem
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -2194,6 +2199,34 @@ paths:
       responses:
         "200": { description: The cover image bytes. }
         "302": { description: Redirect to a presigned URL for the image (R2-backed storage). }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/items/{itemId}/preview:
+    get:
+      tags: [courses]
+      summary: Stream a free preview lecture
+      description: >
+        Public, no auth — the "try before you buy" route, so an anonymous
+        shopper's <video> can load it straight from the landing page.
+        Disk-backed files are served with Range support (http.ServeContent) so
+        the player can seek; an R2-backed file 302s to a signed URL.
+
+
+        404 unless the item is flagged `is_preview`, belongs to `{id}`, and
+        that course is on the storefront (published, not archived, not
+        suspended, approved teacher). Every failure is the same flat 404, so a
+        prober learns nothing about drafts or non-preview lectures.
+      operationId: previewCourseItem
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: itemId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The video bytes (or 206 for a Range request).
+          content:
+            video/*: { schema: { type: string, format: binary } }
+        "302": { description: Redirect to a signed URL (R2-backed store). }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /v1/courses/{id}/purchase:
@@ -4303,7 +4336,7 @@ components:
 
     CourseItem:
       type: object
-      required: [id, kind, title, video_asset_id, resource_id, position, created_at]
+      required: [id, kind, title, video_asset_id, resource_id, position, is_preview, duration_seconds, created_at]
       properties:
         id: { type: string, format: uuid }
         kind: { $ref: "#/components/schemas/CourseItemKind" }
@@ -4313,6 +4346,22 @@ components:
         video_asset_id: { type: string, format: uuid, nullable: true }
         resource_id: { type: string, format: uuid, nullable: true }
         position: { type: integer }
+        is_preview:
+          type: boolean
+          description: >
+            Free sample lecture: anyone may stream it from the course landing
+            page without enrolling, via GET
+            /v1/courses/{id}/items/{itemId}/preview. Only a `video` item may
+            set this — asking for it on a `resource` item is a 400.
+        duration_seconds:
+          type: integer
+          minimum: 0
+          description: >
+            Video length, reported by the client from the browser's own
+            <video> metadata. Display metadata only — it never gates access,
+            pricing or payouts. 0 means unknown (a container the browser could
+            not read, or an item created before this field existed) and every
+            surface omits the figure rather than rendering "0m".
         created_at: { type: string, format: date-time }
 
     CourseSection:
@@ -4377,12 +4426,33 @@ components:
         title: { type: string, description: Optional display-title override. }
         video_asset_id: { type: string, format: uuid, description: Required when kind is `video`. }
         resource_id: { type: string, format: uuid, description: Required when kind is `resource`. }
+        is_preview:
+          type: boolean
+          description: Mark this lecture a free preview. Defaults to false. 400 when kind is `resource`.
+        duration_seconds:
+          type: integer
+          minimum: 0
+          description: >
+            Video length from the browser's <video> metadata. 400 when kind is
+            `resource`, or when the value is negative or above 86400. Omit (or
+            send 0) when unknown.
 
     UpdateItemRequest:
       type: object
       required: [title]
       properties:
         title: { type: string, description: "\"\" clears the override." }
+        is_preview:
+          type: boolean
+          nullable: true
+          description: >
+            Omit to leave the stored value alone; send false to un-mark a
+            preview. 400 when the item is a `resource`.
+        duration_seconds:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Omit to leave the stored value alone. 400 when the item is a `resource`.
 
     ReorderItemsRequest:
       type: object
@@ -4407,7 +4477,7 @@ components:
     CourseCatalogEntry:
       type: object
       description: One public catalog row — course summary + teacher summary + curriculum size, no curriculum detail.
-      required: [id, title, subtitle, cover_asset_id, price, teacher, section_count, item_count]
+      required: [id, title, subtitle, cover_asset_id, price, teacher, section_count, item_count, total_duration_seconds, has_preview]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -4417,6 +4487,12 @@ components:
         teacher: { $ref: "#/components/schemas/CourseTeacherSummary" }
         section_count: { type: integer }
         item_count: { type: integer }
+        total_duration_seconds:
+          type: integer
+          description: Summed length of every video item. 0 = unknown; the card omits the figure.
+        has_preview:
+          type: boolean
+          description: True when at least one lecture is free to watch. Which item plays is the landing page's business.
 
     CourseCatalogList:
       type: object
@@ -4428,12 +4504,14 @@ components:
     CourseCatalogItemOutline:
       type: object
       description: A curriculum item's pre-purchase outline — no video_asset_id, no resource content.
-      required: [id, kind, title, position]
+      required: [id, kind, title, position, is_preview, duration_seconds]
       properties:
         id: { type: string, format: uuid }
         kind: { $ref: "#/components/schemas/CourseItemKind" }
         title: { type: string }
         position: { type: integer }
+        is_preview: { type: boolean, description: Renders the play button on the landing page's curriculum. }
+        duration_seconds: { type: integer, minimum: 0, description: 0 = unknown; the row omits the figure. }
 
     CourseCatalogSectionOutline:
       type: object
@@ -4447,7 +4525,7 @@ components:
     CourseCatalogDetail:
       type: object
       description: A course's public landing page — course + teacher summary, curriculum outline only, and the viewer's relationship to it.
-      required: [id, title, subtitle, description, cover_asset_id, price, teacher, sections, is_enrolled, is_owner]
+      required: [id, title, subtitle, description, cover_asset_id, price, teacher, sections, is_enrolled, is_owner, item_count, total_duration_seconds]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -4459,6 +4537,8 @@ components:
         sections: { type: array, items: { $ref: "#/components/schemas/CourseCatalogSectionOutline" } }
         is_enrolled: { type: boolean, description: False when unauthenticated. }
         is_owner: { type: boolean, description: False when unauthenticated. }
+        item_count: { type: integer, description: "Headline: N lectures." }
+        total_duration_seconds: { type: integer, description: "Headline: total hours. 0 = unknown." }
 
     PurchaseCourseRequest:
       type: object

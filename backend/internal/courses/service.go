@@ -42,7 +42,10 @@ type Repository interface {
 	// ListItemsByCourse returns every item across courseID's sections, in
 	// curriculum order, for assembling a CourseDetail in one extra query.
 	ListItemsByCourse(ctx context.Context, courseID uuid.UUID) ([]Item, error)
-	RenameItem(ctx context.Context, id uuid.UUID, title string) (Item, error)
+	// UpdateItem edits an item's title and, for a video item, its phase-D1
+	// preview flag / duration. A nil optional field leaves the stored value
+	// alone, so the plain rename path passes both as nil.
+	UpdateItem(ctx context.Context, id uuid.UUID, p UpdateItemParams) (Item, error)
 	DeleteItem(ctx context.Context, id uuid.UUID) error
 	// ReorderItems rewrites positions 0..n-1 from orderedIDs in one statement.
 	// The caller (Service) has already validated orderedIDs is exactly
@@ -59,6 +62,11 @@ type Repository interface {
 	// CatalogList returns a page of published, non-archived courses from
 	// approved teachers, newest-first unless q.Sort says otherwise.
 	CatalogList(ctx context.Context, q CatalogQuery) ([]CatalogEntry, int, error)
+	// PreviewItem (phase D1) resolves a curriculum item together with the
+	// storefront state of the course it actually belongs to, for the public
+	// preview-stream decision. ErrItemNotFound when the item doesn't exist or
+	// isn't part of courseID.
+	PreviewItem(ctx context.Context, courseID, itemID uuid.UUID) (PreviewRef, error)
 
 	// --- enrollment (phase C2) ---
 
@@ -133,11 +141,22 @@ type UpdateParams struct {
 
 // AddItemParams is the repository's item-insert payload.
 type AddItemParams struct {
-	SectionID    uuid.UUID
-	Kind         ItemKind
-	Title        string
-	VideoAssetID *uuid.UUID
-	ResourceID   *uuid.UUID
+	SectionID       uuid.UUID
+	Kind            ItemKind
+	Title           string
+	VideoAssetID    *uuid.UUID
+	ResourceID      *uuid.UUID
+	IsPreview       bool
+	DurationSeconds int
+}
+
+// UpdateItemParams is the repository's item-edit payload. Title is a full
+// replace ("" clears the override); the two pointers are merge-on-write, so
+// nil means "leave as stored".
+type UpdateItemParams struct {
+	Title           string
+	IsPreview       *bool
+	DurationSeconds *int
 }
 
 // Service holds the authoring rules. Handlers call it; it never sees a *gin.Context.
@@ -446,7 +465,7 @@ func (s *Service) ReorderSections(ctx context.Context, ownerID, courseID uuid.UU
 // FileReader — must be the caller's own file and a video content type) or a
 // resource (validated via ResourceReader — must be the caller's own resource
 // and published, not archived).
-func (s *Service) AddItem(ctx context.Context, ownerID, courseID, sectionID uuid.UUID, kind ItemKind, title string, videoAssetID, resourceID *uuid.UUID) (CourseDetail, error) {
+func (s *Service) AddItem(ctx context.Context, ownerID, courseID, sectionID uuid.UUID, kind ItemKind, title string, videoAssetID, resourceID *uuid.UUID, isPreview bool, durationSeconds int) (CourseDetail, error) {
 	c, tid, _, err := s.ownedSection(ctx, ownerID, courseID, sectionID)
 	if err != nil {
 		return CourseDetail{}, err
@@ -467,6 +486,9 @@ func (s *Service) AddItem(ctx context.Context, ownerID, courseID, sectionID uuid
 		if err := s.checkFileOwned(ctx, *videoAssetID, ownerID, "video/", "That file isn't a video you've uploaded."); err != nil {
 			return CourseDetail{}, err
 		}
+		if err := validDuration(durationSeconds); err != nil {
+			return CourseDetail{}, err
+		}
 	case ItemKindResource:
 		if resourceID == nil {
 			return CourseDetail{}, invalid("A resource item needs `resource_id`.")
@@ -484,27 +506,70 @@ func (s *Service) AddItem(ctx context.Context, ownerID, courseID, sectionID uuid
 		if !ok {
 			return CourseDetail{}, invalid("That resource isn't one of your published resources.")
 		}
+		// Phase D1: preview is a video-only affordance. Refusing here (rather
+		// than silently dropping the flag) means a client that asks for
+		// something the DB CHECK would reject gets told why.
+		if isPreview {
+			return CourseDetail{}, invalid("Only a video lesson can be a free preview.")
+		}
+		if durationSeconds != 0 {
+			return CourseDetail{}, invalid("Only a video lesson has a duration.")
+		}
 	}
 
 	if _, err := s.repo.AddItem(ctx, AddItemParams{
 		SectionID: sectionID, Kind: kind, Title: title, VideoAssetID: videoAssetID, ResourceID: resourceID,
+		IsPreview: isPreview, DurationSeconds: durationSeconds,
 	}); err != nil {
 		return CourseDetail{}, err
 	}
 	return s.detail(ctx, c)
 }
 
-// RenameItem edits an item's display-title override ("" clears it, falling
-// back to the video filename / resource title in the UI).
-func (s *Service) RenameItem(ctx context.Context, ownerID, courseID, sectionID, itemID uuid.UUID, title string) (CourseDetail, error) {
-	c, _, _, err := s.ownedItem(ctx, ownerID, courseID, sectionID, itemID)
+// UpdateItem edits an item's display-title override ("" clears it, falling
+// back to the video filename / resource title in the UI) and, for a video
+// item, its phase-D1 preview flag and duration. A nil isPreview /
+// durationSeconds leaves the stored value alone, so a plain rename passes
+// both as nil.
+func (s *Service) UpdateItem(ctx context.Context, ownerID, courseID, sectionID, itemID uuid.UUID, title string, isPreview *bool, durationSeconds *int) (CourseDetail, error) {
+	c, _, it, err := s.ownedItem(ctx, ownerID, courseID, sectionID, itemID)
 	if err != nil {
 		return CourseDetail{}, err
 	}
-	if _, err := s.repo.RenameItem(ctx, itemID, strings.TrimSpace(title)); err != nil {
+	// Same video-only rule as AddItem, applied to whichever field is being
+	// set. Clearing a flag that is already false is not an error — only
+	// asking a resource item to *become* a preview is.
+	if it.Kind != ItemKindVideo {
+		if isPreview != nil && *isPreview {
+			return CourseDetail{}, invalid("Only a video lesson can be a free preview.")
+		}
+		if durationSeconds != nil && *durationSeconds != 0 {
+			return CourseDetail{}, invalid("Only a video lesson has a duration.")
+		}
+	}
+	if durationSeconds != nil {
+		if err := validDuration(*durationSeconds); err != nil {
+			return CourseDetail{}, err
+		}
+	}
+	if _, err := s.repo.UpdateItem(ctx, itemID, UpdateItemParams{
+		Title: strings.TrimSpace(title), IsPreview: isPreview, DurationSeconds: durationSeconds,
+	}); err != nil {
 		return CourseDetail{}, err
 	}
 	return s.detail(ctx, c)
+}
+
+// validDuration bounds a client-reported video length. 0 is legal and means
+// "unknown" (a container the browser couldn't read a duration from).
+func validDuration(d int) error {
+	if d < 0 {
+		return invalid("`duration_seconds` can't be negative.")
+	}
+	if d > MaxItemDurationSeconds {
+		return invalid("`duration_seconds` can't be more than %d.", MaxItemDurationSeconds)
+	}
+	return nil
 }
 
 // DeleteItem removes an item from its section.

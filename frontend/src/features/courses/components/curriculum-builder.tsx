@@ -32,13 +32,15 @@ import {
   addSection,
   deleteItem,
   deleteSection,
-  renameItem,
+  updateItem,
   renameSection,
   reorderItems,
   reorderSections,
 } from "@/features/courses/api";
 import type { CourseDetail, CourseItem, CourseSection } from "@/features/courses/types";
 import { useFileObjectUrl } from "../use-file-object-url";
+import { readVideoDuration } from "../video-duration";
+import { formatLectureLength } from "@/lib/format";
 
 function byPosition<T extends { position: number }>(items: T[]): T[] {
   return [...items].sort((a, b) => a.position - b.position);
@@ -407,6 +409,7 @@ function ItemRow({
   const linkedResource = item.kind === "resource" ? resources?.find((r) => r.id === item.resourceId) : undefined;
   const displayTitle =
     item.title || linkedResource?.title || (item.kind === "video" ? t("untitledVideo") : t("untitledResource"));
+  const lectureLength = formatLectureLength(item.durationSeconds);
 
   async function run(fn: () => Promise<CourseDetail>) {
     setBusy(true);
@@ -424,7 +427,16 @@ function ItemRow({
     const trimmed = title.trim();
     setEditing(false);
     if (trimmed === item.title) return;
-    void run(() => renameItem(course.id, section.id, item.id, trimmed));
+    void run(() => updateItem(course.id, section.id, item.id, { title: trimmed }));
+  }
+
+  /** The free-preview flag is sent on its own, with the title left as stored
+   *  — `updateItem` is merge-on-write for everything but the title, which is
+   *  a full replace, so the current title has to ride along unchanged. */
+  async function toggleFreePreview(next: boolean) {
+    void run(() =>
+      updateItem(course.id, section.id, item.id, { title: item.title, isPreview: next }),
+    );
   }
 
   async function handleDelete() {
@@ -489,6 +501,12 @@ function ItemRow({
           </button>
         )}
 
+        {lectureLength && (
+          <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+            {lectureLength}
+          </span>
+        )}
+
         {item.kind === "video" && (
           <button
             type="button"
@@ -517,6 +535,19 @@ function ItemRow({
           <Trash2 className="size-3.5" />
         </button>
       </div>
+
+      {item.kind === "video" && (
+        <label className="mt-1.5 flex cursor-pointer items-center gap-2 pl-8 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={item.isPreview}
+            disabled={busy}
+            onChange={(e) => void toggleFreePreview(e.target.checked)}
+            className="accent-primary"
+          />
+          <span>{t("freePreviewLabel")}</span>
+        </label>
+      )}
 
       {previewing && item.kind === "video" && item.videoAssetId && (
         <VideoPreview fileAssetId={item.videoAssetId} />
@@ -561,11 +592,16 @@ function AddItemForm({
     setError(null);
     setUploading(true);
     try {
+      // Read the length from the local file before uploading: the browser has
+      // to decode it anyway, and a failure resolves to 0 ("unknown") rather
+      // than blocking the upload.
+      const durationSeconds = await readVideoDuration(file);
       const up = await uploadFile(file);
       const updated = await addItem(course.id, section.id, {
         kind: "video",
         title: up.filename,
         videoAssetId: up.id,
+        durationSeconds,
       });
       onCourseChange(updated);
       setMode("closed");

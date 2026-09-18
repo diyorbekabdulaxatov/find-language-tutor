@@ -220,7 +220,8 @@ func (r *fakeRepo) AddItem(_ context.Context, p AddItemParams) (Item, error) {
 	}
 	it := Item{
 		ID: uuid.New(), SectionID: p.SectionID, Kind: p.Kind, Title: p.Title,
-		VideoAssetID: p.VideoAssetID, ResourceID: p.ResourceID, Position: pos, CreatedAt: time.Now(),
+		VideoAssetID: p.VideoAssetID, ResourceID: p.ResourceID, Position: pos,
+		IsPreview: p.IsPreview, DurationSeconds: p.DurationSeconds, CreatedAt: time.Now(),
 	}
 	r.items[it.ID] = it
 	return it, nil
@@ -268,14 +269,44 @@ func (r *fakeRepo) ListItemsByCourse(_ context.Context, courseID uuid.UUID) ([]I
 	return out, nil
 }
 
-func (r *fakeRepo) RenameItem(_ context.Context, id uuid.UUID, title string) (Item, error) {
+func (r *fakeRepo) UpdateItem(_ context.Context, id uuid.UUID, p UpdateItemParams) (Item, error) {
 	it, ok := r.items[id]
 	if !ok {
 		return Item{}, ErrItemNotFound
 	}
-	it.Title = title
+	it.Title = p.Title
+	// Merge-on-write, matching the COALESCE in UpdateCourseItem.
+	if p.IsPreview != nil {
+		it.IsPreview = *p.IsPreview
+	}
+	if p.DurationSeconds != nil {
+		it.DurationSeconds = *p.DurationSeconds
+	}
 	r.items[id] = it
 	return it, nil
+}
+
+// PreviewItem mirrors the SQL: the item must belong to courseID, and
+// on_storefront folds in every gate the real query joins for.
+func (r *fakeRepo) PreviewItem(_ context.Context, courseID, itemID uuid.UUID) (PreviewRef, error) {
+	it, ok := r.items[itemID]
+	if !ok {
+		return PreviewRef{}, ErrItemNotFound
+	}
+	sec, ok := r.sections[it.SectionID]
+	if !ok || sec.CourseID != courseID {
+		return PreviewRef{}, ErrItemNotFound
+	}
+	c, ok := r.courses[courseID]
+	if !ok {
+		return PreviewRef{}, ErrItemNotFound
+	}
+	return PreviewRef{
+		ItemID: it.ID, CourseID: courseID, Title: it.Title, VideoAssetID: it.VideoAssetID,
+		IsPreview: it.IsPreview, DurationSeconds: it.DurationSeconds,
+		OnStorefront: c.Status == StatusPublished && c.ArchivedAt == nil &&
+			c.SuspendedAt == nil && !r.unapprovedTeachers[c.TeacherID],
+	}, nil
 }
 
 func (r *fakeRepo) DeleteItem(_ context.Context, id uuid.UUID) error {
@@ -580,7 +611,7 @@ func TestService_SetPublished_ValidatesCurriculum(t *testing.T) {
 	// Add a resource item so the section is non-empty.
 	resourceID := uuid.New()
 	e.res.allow(resourceID, teacherID)
-	d, err = e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "", nil, &resourceID)
+	d, err = e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "", nil, &resourceID, false, 0)
 	if err != nil {
 		t.Fatalf("add item: %v", err)
 	}
@@ -624,7 +655,7 @@ func TestService_Delete_BlockedOncePublished(t *testing.T) {
 	}
 	resourceID := uuid.New()
 	e.res.allow(resourceID, teacherID)
-	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, d.Sections[0].Section.ID, ItemKindResource, "", nil, &resourceID); err != nil {
+	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, d.Sections[0].Section.ID, ItemKindResource, "", nil, &resourceID, false, 0); err != nil {
 		t.Fatalf("add item: %v", err)
 	}
 	if _, err := e.svc.SetPublished(ctx, owner, d.Course.ID, true); err != nil {
@@ -758,7 +789,7 @@ func TestService_AddItem_ResourceKind(t *testing.T) {
 	sectionID := d.Sections[0].Section.ID
 
 	// Missing resource_id.
-	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "", nil, nil); err == nil {
+	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "", nil, nil, false, 0); err == nil {
 		t.Error("resource item without resource_id should fail")
 	} else {
 		asValidationError(t, err)
@@ -766,7 +797,7 @@ func TestService_AddItem_ResourceKind(t *testing.T) {
 
 	// Both video_asset_id and resource_id set.
 	videoID, resourceID := uuid.New(), uuid.New()
-	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "", &videoID, &resourceID); err == nil {
+	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "", &videoID, &resourceID, false, 0); err == nil {
 		t.Error("resource item with a video id too should fail")
 	} else {
 		asValidationError(t, err)
@@ -774,7 +805,7 @@ func TestService_AddItem_ResourceKind(t *testing.T) {
 
 	// Another teacher's resource.
 	e.res.allow(resourceID, otherTeacherID)
-	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "", nil, &resourceID); err == nil {
+	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "", nil, &resourceID, false, 0); err == nil {
 		t.Error("another teacher's resource should be rejected")
 	} else {
 		asValidationError(t, err)
@@ -782,7 +813,7 @@ func TestService_AddItem_ResourceKind(t *testing.T) {
 
 	// Unpublished / not-owned resource (never allowed for this teacher).
 	unpublished := uuid.New()
-	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "", nil, &unpublished); err == nil {
+	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "", nil, &unpublished, false, 0); err == nil {
 		t.Error("unpublished resource should be rejected")
 	} else {
 		asValidationError(t, err)
@@ -790,7 +821,7 @@ func TestService_AddItem_ResourceKind(t *testing.T) {
 
 	// Owned + published: succeeds.
 	e.res.allow(resourceID, teacherID)
-	d, err = e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "My reading", nil, &resourceID)
+	d, err = e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "My reading", nil, &resourceID, false, 0)
 	if err != nil {
 		t.Fatalf("valid resource item: %v", err)
 	}
@@ -808,7 +839,7 @@ func TestService_AddItem_ResourceKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add section: %v", err)
 	}
-	if _, err := e2.svc.AddItem(ctx, owner2, d2.Course.ID, d2.Sections[0].Section.ID, ItemKindResource, "", nil, &resourceID); err == nil {
+	if _, err := e2.svc.AddItem(ctx, owner2, d2.Course.ID, d2.Sections[0].Section.ID, ItemKindResource, "", nil, &resourceID, false, 0); err == nil {
 		t.Error("nil ResourceReader should fail closed")
 	} else {
 		asValidationError(t, err)
@@ -827,7 +858,7 @@ func TestService_AddItem_VideoKind(t *testing.T) {
 	sectionID := d.Sections[0].Section.ID
 
 	// Missing video_asset_id.
-	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindVideo, "", nil, nil); err == nil {
+	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindVideo, "", nil, nil, false, 0); err == nil {
 		t.Error("video item without video_asset_id should fail")
 	} else {
 		asValidationError(t, err)
@@ -835,14 +866,14 @@ func TestService_AddItem_VideoKind(t *testing.T) {
 
 	// Both set.
 	videoID, resourceID := uuid.New(), uuid.New()
-	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindVideo, "", &videoID, &resourceID); err == nil {
+	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindVideo, "", &videoID, &resourceID, false, 0); err == nil {
 		t.Error("video item with a resource id too should fail")
 	} else {
 		asValidationError(t, err)
 	}
 
 	// Not owned by caller.
-	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindVideo, "", &videoID, nil); err == nil {
+	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindVideo, "", &videoID, nil, false, 0); err == nil {
 		t.Error("non-owned file should be rejected")
 	} else {
 		asValidationError(t, err)
@@ -850,7 +881,7 @@ func TestService_AddItem_VideoKind(t *testing.T) {
 
 	// Owned, but not a video content type.
 	e.file.put(videoID, owner, "application/pdf")
-	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindVideo, "", &videoID, nil); err == nil {
+	if _, err := e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindVideo, "", &videoID, nil, false, 0); err == nil {
 		t.Error("non-video content type should be rejected")
 	} else {
 		asValidationError(t, err)
@@ -858,7 +889,7 @@ func TestService_AddItem_VideoKind(t *testing.T) {
 
 	// Owned and a video: succeeds.
 	e.file.put(videoID, owner, "video/mp4")
-	d, err = e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindVideo, "Lesson 1", &videoID, nil)
+	d, err = e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindVideo, "Lesson 1", &videoID, nil, false, 0)
 	if err != nil {
 		t.Fatalf("valid video item: %v", err)
 	}
@@ -870,7 +901,7 @@ func TestService_AddItem_VideoKind(t *testing.T) {
 	// AddItem addressed at a second course the same teacher owns, using the
 	// first course's section id: the section doesn't belong to that course.
 	otherD := mustCreate(t, e, owner, "Other course")
-	if _, err := e.svc.AddItem(ctx, owner, otherD.Course.ID, sectionID, ItemKindVideo, "", &videoID, nil); !errors.Is(err, ErrSectionNotFound) {
+	if _, err := e.svc.AddItem(ctx, owner, otherD.Course.ID, sectionID, ItemKindVideo, "", &videoID, nil, false, 0); !errors.Is(err, ErrSectionNotFound) {
 		t.Errorf("section from a different course: %v, want ErrSectionNotFound", err)
 	}
 }
@@ -888,16 +919,16 @@ func TestService_RenameItem_DeleteItem_Ownership(t *testing.T) {
 	sectionID := d.Sections[0].Section.ID
 	resourceID := uuid.New()
 	e.res.allow(resourceID, teacherID)
-	d, err = e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "", nil, &resourceID)
+	d, err = e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "", nil, &resourceID, false, 0)
 	if err != nil {
 		t.Fatalf("add item: %v", err)
 	}
 	itemID := d.Sections[0].Items[0].ID
 
-	if _, err := e.svc.RenameItem(ctx, ownerB, d.Course.ID, sectionID, itemID, "New"); !errors.Is(err, ErrForbidden) {
+	if _, err := e.svc.UpdateItem(ctx, ownerB, d.Course.ID, sectionID, itemID, "New", nil, nil); !errors.Is(err, ErrForbidden) {
 		t.Errorf("other teacher rename item: %v, want ErrForbidden", err)
 	}
-	d, err = e.svc.RenameItem(ctx, owner, d.Course.ID, sectionID, itemID, "Renamed")
+	d, err = e.svc.UpdateItem(ctx, owner, d.Course.ID, sectionID, itemID, "Renamed", nil, nil)
 	if err != nil {
 		t.Fatalf("rename item: %v", err)
 	}
@@ -911,7 +942,7 @@ func TestService_RenameItem_DeleteItem_Ownership(t *testing.T) {
 		t.Fatalf("add second section: %v", err)
 	}
 	secondSectionID := d.Sections[1].Section.ID
-	if _, err := e.svc.RenameItem(ctx, owner, d.Course.ID, secondSectionID, itemID, "X"); !errors.Is(err, ErrItemNotFound) {
+	if _, err := e.svc.UpdateItem(ctx, owner, d.Course.ID, secondSectionID, itemID, "X", nil, nil); !errors.Is(err, ErrItemNotFound) {
 		t.Errorf("item from a different section: %v, want ErrItemNotFound", err)
 	}
 
@@ -940,7 +971,7 @@ func TestService_ReorderItems_ValidatesIDSet(t *testing.T) {
 		resourceID := uuid.New()
 		e.res.allow(resourceID, teacherID)
 		var err error
-		d, err = e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "", nil, &resourceID)
+		d, err = e.svc.AddItem(ctx, owner, d.Course.ID, sectionID, ItemKindResource, "", nil, &resourceID, false, 0)
 		if err != nil {
 			t.Fatalf("add item: %v", err)
 		}

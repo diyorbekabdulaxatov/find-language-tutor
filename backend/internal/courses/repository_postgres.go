@@ -272,6 +272,7 @@ func (r *repositoryPostgres) AddItem(ctx context.Context, p AddItemParams) (Item
 	row, err := r.q.AddCourseItem(ctx, sqlc.AddCourseItemParams{
 		SectionID: p.SectionID, Kind: string(p.Kind), Title: p.Title,
 		VideoAssetID: toNullUUID(p.VideoAssetID), ResourceID: toNullUUID(p.ResourceID),
+		IsPreview: p.IsPreview, DurationSeconds: int32(p.DurationSeconds),
 	})
 	if err != nil {
 		return Item{}, fmt.Errorf("add course item: %w", err)
@@ -314,13 +315,20 @@ func (r *repositoryPostgres) ListItemsByCourse(ctx context.Context, courseID uui
 	return out, nil
 }
 
-func (r *repositoryPostgres) RenameItem(ctx context.Context, id uuid.UUID, title string) (Item, error) {
-	row, err := r.q.RenameCourseItem(ctx, sqlc.RenameCourseItemParams{ID: id, Title: title})
+func (r *repositoryPostgres) UpdateItem(ctx context.Context, id uuid.UUID, p UpdateItemParams) (Item, error) {
+	params := sqlc.UpdateCourseItemParams{ID: id, Title: p.Title}
+	if p.IsPreview != nil {
+		params.IsPreview = pgtype.Bool{Bool: *p.IsPreview, Valid: true}
+	}
+	if p.DurationSeconds != nil {
+		params.DurationSeconds = pgtype.Int4{Int32: int32(*p.DurationSeconds), Valid: true}
+	}
+	row, err := r.q.UpdateCourseItem(ctx, params)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Item{}, ErrItemNotFound
 		}
-		return Item{}, fmt.Errorf("rename course item: %w", err)
+		return Item{}, fmt.Errorf("update course item: %w", err)
 	}
 	return toItem(row), nil
 }
@@ -396,7 +404,8 @@ func toSection(row sqlc.CourseSection) Section {
 func toItem(row sqlc.CourseItem) Item {
 	it := Item{
 		ID: row.ID, SectionID: row.SectionID, Kind: ItemKind(row.Kind), Title: row.Title,
-		Position: int(row.Position), CreatedAt: row.CreatedAt.Time.UTC(),
+		Position: int(row.Position), IsPreview: row.IsPreview, DurationSeconds: int(row.DurationSeconds),
+		CreatedAt: row.CreatedAt.Time.UTC(),
 	}
 	if row.VideoAssetID.Valid {
 		v := row.VideoAssetID.UUID

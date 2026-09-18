@@ -353,7 +353,7 @@ func (e *testEnv) publishWithOneVideoItem(t *testing.T, ownerID uuid.UUID, price
 	secID := d.Sections[0].Section.ID
 	videoID := uuid.New()
 	e.file.put(videoID, ownerID, "video/mp4")
-	d, err = e.svc.AddItem(ctx, ownerID, d.Course.ID, secID, ItemKindVideo, "", &videoID, nil)
+	d, err = e.svc.AddItem(ctx, ownerID, d.Course.ID, secID, ItemKindVideo, "", &videoID, nil, false, 0)
 	if err != nil {
 		t.Fatalf("add item: %v", err)
 	}
@@ -630,7 +630,7 @@ func TestService_RecordProgress_RejectsResourceItem(t *testing.T) {
 	secID := d.Sections[0].Section.ID
 	resID := uuid.New()
 	e.res.allow(resID, teacherID)
-	d, err = e.svc.AddItem(ctx, owner, d.Course.ID, secID, ItemKindResource, "", nil, &resID)
+	d, err = e.svc.AddItem(ctx, owner, d.Course.ID, secID, ItemKindResource, "", nil, &resID, false, 0)
 	if err != nil {
 		t.Fatalf("add item: %v", err)
 	}
@@ -721,7 +721,7 @@ func TestService_ItemCompleted(t *testing.T) {
 	secID := d.Sections[0].Section.ID
 	resID := uuid.New()
 	e.res.allow(resID, teacherID)
-	d, err = e.svc.AddItem(ctx, owner, d.Course.ID, secID, ItemKindResource, "", nil, &resID)
+	d, err = e.svc.AddItem(ctx, owner, d.Course.ID, secID, ItemKindResource, "", nil, &resID, false, 0)
 	if err != nil {
 		t.Fatalf("add item: %v", err)
 	}
