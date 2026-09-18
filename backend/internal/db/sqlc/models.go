@@ -254,14 +254,16 @@ type CourseEnrollment struct {
 }
 
 type CourseItem struct {
-	ID           uuid.UUID
-	SectionID    uuid.UUID
-	Kind         string
-	Title        string
-	VideoAssetID uuid.NullUUID
-	ResourceID   uuid.NullUUID
-	Position     int32
-	CreatedAt    pgtype.Timestamptz
+	ID              uuid.UUID
+	SectionID       uuid.UUID
+	Kind            string
+	Title           string
+	VideoAssetID    uuid.NullUUID
+	ResourceID      uuid.NullUUID
+	Position        int32
+	CreatedAt       pgtype.Timestamptz
+	IsPreview       bool
+	DurationSeconds int32
 }
 
 type CourseItemProgress struct {

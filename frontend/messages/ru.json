@@ -815,7 +815,13 @@
     "upTo500": "До 500 МБ.",
     "noPublishedResources": "У вас нет опубликованных материалов. <link>Создайте</link>.",
     "chooseResource": "Выберите материал…",
-    "loading": "Загрузка…"
+    "loading": "Загрузка…",
+    "freePreviewBadge": "Бесплатный фрагмент",
+    "freePreviewLabel": "Бесплатный фрагмент — этот урок можно посмотреть до покупки",
+    "watchFreePreview": "Смотреть бесплатный фрагмент",
+    "previewLesson": "Фрагмент",
+    "courseLengthHm": "{hours} ч {minutes} мин",
+    "courseLengthM": "{minutes} мин"
   },
   "admin": {
     "meta": "Админ",

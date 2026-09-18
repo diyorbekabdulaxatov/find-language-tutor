@@ -33,6 +33,11 @@ export interface CourseItem {
   videoAssetId: string | null;
   resourceId: string | null;
   position: number;
+  /** Free sample lecture, watchable without enrolling. Video items only. */
+  isPreview: boolean;
+  /** Video length in seconds. 0 = unknown; every surface omits the figure
+   *  rather than rendering "0m". */
+  durationSeconds: number;
   createdAt: string;
 }
 
@@ -73,6 +78,10 @@ export interface CourseCatalogEntry {
   teacher: CourseTeacherSummary;
   sectionCount: number;
   itemCount: number;
+  /** Summed length of every video item. 0 = unknown. */
+  totalDurationSeconds: number;
+  /** At least one lecture is free to watch. */
+  hasPreview: boolean;
 }
 
 /** A curriculum item's pre-purchase outline — title only, no content. */
@@ -81,6 +90,8 @@ export interface CourseCatalogItemOutline {
   kind: CourseItemKind;
   title: string;
   position: number;
+  isPreview: boolean;
+  durationSeconds: number;
 }
 
 export interface CourseCatalogSectionOutline {
@@ -104,6 +115,9 @@ export interface CourseCatalogDetail {
   sections: CourseCatalogSectionOutline[];
   isEnrolled: boolean;
   isOwner: boolean;
+  /** Headline "N lectures · H hours". */
+  itemCount: number;
+  totalDurationSeconds: number;
 }
 
 export type EnrollmentSource = "purchase" | "free";

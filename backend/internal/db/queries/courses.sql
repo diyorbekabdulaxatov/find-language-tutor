@@ -180,21 +180,25 @@ WHERE cs.id = ordered.id AND cs.course_id = sqlc.arg('course_id');
 
 -- name: AddCourseItem :one
 -- position is the current item count for the section, same idiom as sections.
-INSERT INTO course_items (section_id, kind, title, video_asset_id, resource_id, position)
+-- is_preview / duration_seconds are phase-D1 video metadata; the service has
+-- already refused a preview or a duration on a non-video item before we get
+-- here, and the table's CHECKs are the backstop.
+INSERT INTO course_items (section_id, kind, title, video_asset_id, resource_id, position, is_preview, duration_seconds)
 VALUES (
     sqlc.arg('section_id'), sqlc.arg('kind'), sqlc.arg('title'),
     sqlc.narg('video_asset_id'), sqlc.narg('resource_id'),
-    COALESCE((SELECT max(position) + 1 FROM course_items WHERE section_id = sqlc.arg('section_id')), 0)
+    COALESCE((SELECT max(position) + 1 FROM course_items WHERE section_id = sqlc.arg('section_id')), 0),
+    sqlc.arg('is_preview'), sqlc.arg('duration_seconds')
 )
-RETURNING id, section_id, kind, title, video_asset_id, resource_id, position, created_at;
+RETURNING id, section_id, kind, title, video_asset_id, resource_id, position, created_at, is_preview, duration_seconds;
 
 -- name: GetCourseItem :one
-SELECT id, section_id, kind, title, video_asset_id, resource_id, position, created_at
+SELECT id, section_id, kind, title, video_asset_id, resource_id, position, created_at, is_preview, duration_seconds
 FROM course_items
 WHERE id = $1;
 
 -- name: ListCourseItems :many
-SELECT id, section_id, kind, title, video_asset_id, resource_id, position, created_at
+SELECT id, section_id, kind, title, video_asset_id, resource_id, position, created_at, is_preview, duration_seconds
 FROM course_items
 WHERE section_id = $1
 ORDER BY position, id;
@@ -203,17 +207,22 @@ ORDER BY position, id;
 -- Every item across a course's sections, in curriculum order (section
 -- position, then item position) — one query for the whole tree instead of
 -- N+1 per-section queries; the service groups rows by section_id in Go.
-SELECT ci.id, ci.section_id, ci.kind, ci.title, ci.video_asset_id, ci.resource_id, ci.position, ci.created_at
+SELECT ci.id, ci.section_id, ci.kind, ci.title, ci.video_asset_id, ci.resource_id, ci.position, ci.created_at, ci.is_preview, ci.duration_seconds
 FROM course_items ci
 JOIN course_sections cs ON cs.id = ci.section_id
 WHERE cs.course_id = $1
 ORDER BY cs.position, cs.id, ci.position, ci.id;
 
--- name: RenameCourseItem :one
+-- name: UpdateCourseItem :one
+-- Phase D1: the item edit now carries the preview flag and the video duration
+-- alongside the title. Both are COALESCEd so a caller that omits them (the
+-- plain rename path) leaves the stored values alone.
 UPDATE course_items
-SET title = $2
-WHERE id = $1
-RETURNING id, section_id, kind, title, video_asset_id, resource_id, position, created_at;
+SET title            = sqlc.arg('title'),
+    is_preview       = COALESCE(sqlc.narg('is_preview'), is_preview),
+    duration_seconds = COALESCE(sqlc.narg('duration_seconds'), duration_seconds)
+WHERE id = sqlc.arg('id')
+RETURNING id, section_id, kind, title, video_asset_id, resource_id, position, created_at, is_preview, duration_seconds;
 
 -- name: DeleteCourseItem :exec
 DELETE FROM course_items WHERE id = $1;
@@ -259,7 +268,14 @@ SELECT
     c.suspended_at, c.created_at, c.updated_at,
     t.slug AS teacher_slug, t.display_name AS teacher_display_name,
     (SELECT count(*) FROM course_sections cs WHERE cs.course_id = c.id) AS section_count,
-    (SELECT count(*) FROM course_items ci JOIN course_sections cs2 ON cs2.id = ci.section_id WHERE cs2.course_id = c.id) AS item_count
+    (SELECT count(*) FROM course_items ci JOIN course_sections cs2 ON cs2.id = ci.section_id WHERE cs2.course_id = c.id) AS item_count,
+    -- Phase D1 card metadata. The duration is summed on read rather than
+    -- denormalised so it can never drift from the items. The card only needs
+    -- to know *whether* a free preview exists (a badge); which item plays is
+    -- the landing page's business, and its outline already carries per-item
+    -- is_preview — so this stays a cheap non-null EXISTS.
+    (SELECT COALESCE(sum(ci.duration_seconds), 0)::bigint FROM course_items ci JOIN course_sections cs3 ON cs3.id = ci.section_id WHERE cs3.course_id = c.id) AS total_duration_seconds,
+    EXISTS(SELECT 1 FROM course_items ci JOIN course_sections cs4 ON cs4.id = ci.section_id WHERE cs4.course_id = c.id AND ci.is_preview) AS has_preview
 FROM courses c
 JOIN teachers t ON t.id = c.teacher_id
 WHERE c.status = 'published' AND c.archived_at IS NULL AND c.suspended_at IS NULL AND t.status = 'approved'
@@ -366,7 +382,7 @@ WHERE e.id = sqlc.arg('id');
 -- Resolves the curriculum item a course-context submission's resource
 -- corresponds to, scoped to the enrollment's own course. Backs
 -- resources.CourseProgress.ItemCompleted.
-SELECT ci.id, ci.section_id, ci.kind, ci.title, ci.video_asset_id, ci.resource_id, ci.position, ci.created_at
+SELECT ci.id, ci.section_id, ci.kind, ci.title, ci.video_asset_id, ci.resource_id, ci.position, ci.created_at, ci.is_preview, ci.duration_seconds
 FROM course_enrollments e
 JOIN course_sections cs ON cs.course_id = e.course_id
 JOIN course_items ci ON ci.section_id = cs.id
@@ -443,3 +459,22 @@ DELETE FROM course_sections;
 
 -- name: DeleteAllCourses :exec
 DELETE FROM courses;
+
+
+-- Phase D1: free preview lessons.
+
+-- name: GetPreviewItem :one
+-- Resolves a course item for the PUBLIC preview stream, returning everything
+-- the access decision needs in one query so the handler can't accidentally
+-- check a subset: the item's own preview flag and video asset, plus the
+-- storefront gates (published, not archived, not suspended, approved teacher)
+-- of the course it actually belongs to. The course_id predicate is what stops
+-- a caller pairing a preview item id with an unrelated published course id.
+SELECT ci.id, ci.video_asset_id, ci.is_preview, ci.duration_seconds, ci.title,
+       c.id AS course_id,
+       (c.status = 'published' AND c.archived_at IS NULL AND c.suspended_at IS NULL AND t.status = 'approved') AS on_storefront
+FROM course_items ci
+JOIN course_sections cs ON cs.id = ci.section_id
+JOIN courses c ON c.id = cs.course_id
+JOIN teachers t ON t.id = c.teacher_id
+WHERE ci.id = sqlc.arg('item_id') AND c.id = sqlc.arg('course_id');

@@ -75,10 +75,13 @@ func (s *Service) CatalogDetail(ctx context.Context, callerID, courseID uuid.UUI
 		return CatalogDetail{}, err
 	}
 	bySection := make(map[uuid.UUID][]ItemOutline, len(sections))
+	var totalDuration int64
 	for _, it := range items {
 		bySection[it.SectionID] = append(bySection[it.SectionID], ItemOutline{
 			ID: it.ID, Kind: it.Kind, Title: it.Title, Position: it.Position,
+			IsPreview: it.IsPreview, DurationSeconds: it.DurationSeconds,
 		})
+		totalDuration += int64(it.DurationSeconds)
 	}
 	outline := make([]SectionOutline, len(sections))
 	for i, sec := range sections {
@@ -97,7 +100,36 @@ func (s *Service) CatalogDetail(ctx context.Context, callerID, courseID uuid.UUI
 		}
 	}
 
-	return CatalogDetail{Course: c, Teacher: teacher, Outline: outline, IsEnrolled: isEnrolled, IsOwner: isOwner}, nil
+	// The items are already loaded for the outline, so the headline totals
+	// are summed here rather than costing a second aggregate query.
+	return CatalogDetail{
+		Course: c, Teacher: teacher, Outline: outline,
+		IsEnrolled: isEnrolled, IsOwner: isOwner,
+		ItemCount: len(items), TotalDurationSeconds: totalDuration,
+	}, nil
+}
+
+// PreviewVideo streams a free preview lecture with NO auth: the phase-D1
+// "try before you buy" route. Every gate is resolved in one repository query
+// (PreviewItem) so no caller can check a subset — the item must be flagged
+// is_preview, must belong to courseID, and that course must be on the
+// storefront (published, not archived, not suspended, approved teacher).
+// Everything that fails reads as ErrItemNotFound: a would-be prober learns
+// nothing about whether a draft course or a non-preview lecture exists.
+//
+// A nil FileReader fails closed the same way, mirroring CoverImage.
+func (s *Service) PreviewVideo(ctx context.Context, courseID, itemID uuid.UUID) (redirectURL string, body io.ReadCloser, contentType string, err error) {
+	ref, err := s.repo.PreviewItem(ctx, courseID, itemID)
+	if err != nil {
+		return "", nil, "", err
+	}
+	if !ref.IsPreview || !ref.OnStorefront || ref.VideoAssetID == nil {
+		return "", nil, "", ErrItemNotFound
+	}
+	if s.files == nil {
+		return "", nil, "", ErrItemNotFound
+	}
+	return s.files.PublicAsset(ctx, *ref.VideoAssetID)
 }
 
 // CoverImage streams a published course's cover image with no auth — 404

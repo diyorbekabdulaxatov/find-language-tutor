@@ -31,19 +31,22 @@ type updateCourseRequest struct {
 }
 
 type itemDTO struct {
-	ID           string    `json:"id"`
-	Kind         string    `json:"kind"`
-	Title        string    `json:"title"`
-	VideoAssetID *string   `json:"video_asset_id"`
-	ResourceID   *string   `json:"resource_id"`
-	Position     int       `json:"position"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID              string    `json:"id"`
+	Kind            string    `json:"kind"`
+	Title           string    `json:"title"`
+	VideoAssetID    *string   `json:"video_asset_id"`
+	ResourceID      *string   `json:"resource_id"`
+	Position        int       `json:"position"`
+	IsPreview       bool      `json:"is_preview"`
+	DurationSeconds int       `json:"duration_seconds"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 func toItemDTO(it Item) itemDTO {
 	dto := itemDTO{
 		ID: it.ID.String(), Kind: string(it.Kind), Title: it.Title,
-		Position: it.Position, CreatedAt: it.CreatedAt.UTC(),
+		Position: it.Position, IsPreview: it.IsPreview, DurationSeconds: it.DurationSeconds,
+		CreatedAt: it.CreatedAt.UTC(),
 	}
 	if it.VideoAssetID != nil {
 		v := it.VideoAssetID.String()
@@ -184,10 +187,20 @@ type createItemRequest struct {
 	Title        string  `json:"title"`
 	VideoAssetID *string `json:"video_asset_id"`
 	ResourceID   *string `json:"resource_id"`
+	// Phase D1, video items only. Both default to the zero value, so an
+	// existing client that doesn't send them keeps creating non-preview
+	// items of unknown duration.
+	IsPreview       bool `json:"is_preview"`
+	DurationSeconds int  `json:"duration_seconds"`
 }
 
 type updateItemRequest struct {
 	Title string `json:"title"`
+	// Pointers so the edit can distinguish "leave as stored" (omitted) from
+	// "set to false / 0" — a teacher un-checking "free preview" must be able
+	// to send is_preview:false and have it stick.
+	IsPreview       *bool `json:"is_preview"`
+	DurationSeconds *int  `json:"duration_seconds"`
 }
 
 type reorderItemsRequest struct {

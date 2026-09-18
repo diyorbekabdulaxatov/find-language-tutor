@@ -3,12 +3,25 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowLeft, CheckCircle2, FileText, Film, GraduationCap, Layers } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Clock,
+  FileText,
+  Film,
+  GraduationCap,
+  Layers,
+  PlayCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatMoney } from "@/lib/format";
+import { courseLengthParts, formatLectureLength, formatMoney } from "@/lib/format";
 import { useAuth } from "@/features/auth/auth-context";
 import { refreshSession } from "@/features/auth/browser-client";
-import { courseCoverUrl, getMyCourseCatalogDetail } from "@/features/courses/api";
+import {
+  courseCoverUrl,
+  coursePreviewUrl,
+  getMyCourseCatalogDetail,
+} from "@/features/courses/api";
 import type { CourseCatalogDetail, CourseEnrollment } from "@/features/courses/types";
 import { PurchaseCoursePanel } from "./purchase-course-panel";
 
@@ -35,6 +48,9 @@ export function CourseLanding({ id }: { id: string }) {
   const [course, setCourse] = useState<CourseCatalogDetail | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "not-found" | "error">("loading");
   const [justEnrolled, setJustEnrolled] = useState<CourseEnrollment | null>(null);
+  // Which free preview lecture is playing in the hero, if any. Clearing it
+  // puts the cover image back.
+  const [previewItemId, setPreviewItemId] = useState<string | null>(null);
   const t = useTranslations("courses");
   const locale = useLocale();
 
@@ -97,6 +113,11 @@ export function CourseLanding({ id }: { id: string }) {
 
   const free = course.price.amountMinor === 0;
   const totalItems = course.sections.reduce((n, s) => n + s.items.length, 0);
+  const length = courseLengthParts(course.totalDurationSeconds);
+  // The first free lecture in curriculum order — what the hero's play button
+  // starts with. null when the teacher has not marked any.
+  const firstPreview =
+    course.sections.flatMap((s) => s.items).find((i) => i.isPreview) ?? null;
   const enrolled = course.isEnrolled || justEnrolled !== null;
 
   return (
@@ -113,7 +134,15 @@ export function CourseLanding({ id }: { id: string }) {
         {/* Header card */}
         <div className="overflow-hidden rounded-2xl bg-card ring-1 ring-border shadow-card lg:col-start-1 lg:row-start-1">
           <div className="relative aspect-[16/7] bg-muted">
-            {course.coverAssetId ? (
+            {previewItemId ? (
+              <video
+                key={previewItemId}
+                controls
+                autoPlay
+                src={coursePreviewUrl(course.id, previewItemId)}
+                className="size-full bg-black object-contain"
+              />
+            ) : course.coverAssetId ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={courseCoverUrl(course.id)}
@@ -124,6 +153,22 @@ export function CourseLanding({ id }: { id: string }) {
               <div className="grid size-full place-items-center text-muted-foreground">
                 <Film className="size-10" />
               </div>
+            )}
+
+            {/* The cover doubles as the play surface when a free sample
+                exists — the "try before you buy" affordance shoppers look
+                for before they read anything else. */}
+            {!previewItemId && firstPreview && (
+              <button
+                type="button"
+                onClick={() => setPreviewItemId(firstPreview.id)}
+                className="absolute inset-0 grid place-items-center bg-foreground/25 transition-colors hover:bg-foreground/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              >
+                <span className="inline-flex items-center gap-2 rounded-full bg-background/95 px-4 py-2.5 text-sm font-semibold text-foreground shadow-lift backdrop-blur">
+                  <PlayCircle className="size-5" />
+                  {t("watchFreePreview")}
+                </span>
+              </button>
             )}
           </div>
 
@@ -143,9 +188,18 @@ export function CourseLanding({ id }: { id: string }) {
               {course.teacher.displayName}
             </Link>
 
-            <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+            <p className="mt-2 inline-flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
               <Layers className="size-4" />
               {t("sections", { count: course.sections.length })} · {t("lessons", { count: totalItems })}
+              {length && (
+                <>
+                  <span aria-hidden>·</span>
+                  <Clock className="size-4" />
+                  {length.hours > 0
+                    ? t("courseLengthHm", { hours: length.hours, minutes: length.minutes })
+                    : t("courseLengthM", { minutes: length.minutes })}
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -213,19 +267,41 @@ export function CourseLanding({ id }: { id: string }) {
                 <li key={section.id}>
                   <p className="font-medium text-foreground">{section.title}</p>
                   <ul className="mt-2 flex flex-col gap-1.5 border-l border-border pl-4">
-                    {section.items.map((item) => (
-                      <li
-                        key={item.id}
-                        className="flex items-center gap-2 text-sm text-muted-foreground"
-                      >
-                        {item.kind === "video" ? (
-                          <Film className="size-3.5 shrink-0" />
-                        ) : (
-                          <FileText className="size-3.5 shrink-0" />
-                        )}
-                        {item.title || (item.kind === "video" ? t("video") : t("resource"))}
-                      </li>
-                    ))}
+                    {section.items.map((item) => {
+                      const itemLength = formatLectureLength(item.durationSeconds);
+                      return (
+                        <li
+                          key={item.id}
+                          className="flex items-center gap-2 text-sm text-muted-foreground"
+                        >
+                          {item.kind === "video" ? (
+                            <Film className="size-3.5 shrink-0" />
+                          ) : (
+                            <FileText className="size-3.5 shrink-0" />
+                          )}
+                          <span className="min-w-0 flex-1 truncate">
+                            {item.title || (item.kind === "video" ? t("video") : t("resource"))}
+                          </span>
+
+                          {item.isPreview && (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewItemId(item.id)}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
+                            >
+                              <PlayCircle className="size-3.5" />
+                              {t("previewLesson")}
+                            </button>
+                          )}
+
+                          {itemLength && (
+                            <span className="shrink-0 font-mono text-xs tabular-nums">
+                              {itemLength}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
                     {section.items.length === 0 && (
                       <li className="text-sm text-muted-foreground/70">{t("nothingHereYet")}</li>
                     )}

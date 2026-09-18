@@ -99,6 +99,14 @@ type CatalogEntry struct {
 	Teacher      TeacherSummary
 	SectionCount int
 	ItemCount    int
+	// TotalDurationSeconds (phase D1) is the summed length of every video
+	// item, for the card's "N lectures · H hours" line. 0 = unknown, and the
+	// card omits the hours rather than showing "0m".
+	TotalDurationSeconds int64
+	// HasPreview (phase D1) is true when at least one lecture is free to
+	// watch — a badge on the card. Which item plays is the landing page's
+	// business; its outline carries per-item IsPreview.
+	HasPreview bool
 }
 
 // CatalogPage is a page of the public catalog plus the total match count.
@@ -115,6 +123,11 @@ type ItemOutline struct {
 	Kind     ItemKind
 	Title    string
 	Position int
+	// IsPreview / DurationSeconds (phase D1) are safe to expose pre-purchase:
+	// a duration is exactly the "what am I buying" signal the outline exists
+	// for, and IsPreview is what renders the play button.
+	IsPreview       bool
+	DurationSeconds int
 }
 
 // SectionOutline is a curriculum section's public outline.
@@ -134,6 +147,10 @@ type CatalogDetail struct {
 	Outline    []SectionOutline
 	IsEnrolled bool
 	IsOwner    bool
+	// ItemCount / TotalDurationSeconds (phase D1) are the landing page's
+	// headline "N lectures · H hours".
+	ItemCount            int
+	TotalDurationSeconds int64
 }
 
 // CourseResourceView is a published resource's student-safe view (correct
@@ -175,4 +192,19 @@ type LearnDetail struct {
 	// POST /v1/submissions {resource_id, enrollment_id} for a resource item.
 	EnrollmentID *uuid.UUID
 	Sections     []LearnSection
+}
+
+
+// PreviewRef (phase D1) is everything the public preview-stream decision
+// needs, resolved in one query so no caller can check a subset: the item's
+// own preview flag and video asset, and whether the course it actually
+// belongs to is on the storefront.
+type PreviewRef struct {
+	ItemID          uuid.UUID
+	CourseID        uuid.UUID
+	Title           string
+	VideoAssetID    *uuid.UUID
+	IsPreview       bool
+	DurationSeconds int
+	OnStorefront    bool
 }

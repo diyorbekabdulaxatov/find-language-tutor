@@ -15,6 +15,9 @@ type Querier interface {
 	AddAvailabilitySlot(ctx context.Context, arg AddAvailabilitySlotParams) error
 	// Items.
 	// position is the current item count for the section, same idiom as sections.
+	// is_preview / duration_seconds are phase-D1 video metadata; the service has
+	// already refused a preview or a duration on a non-video item before we get
+	// here, and the table's CHECKs are the backstop.
 	AddCourseItem(ctx context.Context, arg AddCourseItemParams) (CourseItem, error)
 	// Sections.
 	// position is the current section count for the course, computed here so the
@@ -324,6 +327,14 @@ type Querier interface {
 	GetOpenDisputeForBooking(ctx context.Context, bookingID uuid.UUID) (GetOpenDisputeForBookingRow, error)
 	GetPaymentByBooking(ctx context.Context, bookingID uuid.UUID) (Payment, error)
 	GetPaymentByID(ctx context.Context, id uuid.UUID) (Payment, error)
+	// Phase D1: free preview lessons.
+	// Resolves a course item for the PUBLIC preview stream, returning everything
+	// the access decision needs in one query so the handler can't accidentally
+	// check a subset: the item's own preview flag and video asset, plus the
+	// storefront gates (published, not archived, not suspended, approved teacher)
+	// of the course it actually belongs to. The course_id predicate is what stops
+	// a caller pairing a preview item id with an unrelated published course id.
+	GetPreviewItem(ctx context.Context, arg GetPreviewItemParams) (GetPreviewItemRow, error)
 	GetResource(ctx context.Context, id uuid.UUID) (Resource, error)
 	// Reviews module (Phase 6): a student's rating + comment for a completed lesson.
 	// A real review carries booking_id; the demo seed inserts booking-less samples.
@@ -515,7 +526,6 @@ type Querier interface {
 	// removed. Result clamped to [0, 5]; a teacher with no baseline and no visible
 	// reviews reads as 0.
 	RecomputeTeacherRating(ctx context.Context, teacherID uuid.UUID) error
-	RenameCourseItem(ctx context.Context, arg RenameCourseItemParams) (CourseItem, error)
 	RenameCourseSection(ctx context.Context, arg RenameCourseSectionParams) (CourseSection, error)
 	ReorderCourseItems(ctx context.Context, arg ReorderCourseItemsParams) (int64, error)
 	// Rewrites positions 0..n-1 from the given ordered id array in one statement.
@@ -636,6 +646,10 @@ type Querier interface {
 	// / price. The service passes the current value for anything it isn't
 	// changing, same convention as UpdateResource.
 	UpdateCourse(ctx context.Context, arg UpdateCourseParams) (Course, error)
+	// Phase D1: the item edit now carries the preview flag and the video duration
+	// alongside the title. Both are COALESCEd so a caller that omits them (the
+	// plain rename path) leaves the stored values alone.
+	UpdateCourseItem(ctx context.Context, arg UpdateCourseItemParams) (CourseItem, error)
 	// Partial edit: title / instructions / content are replaced wholesale when
 	// provided (the service passes the current value for fields it isn't changing).
 	UpdateResource(ctx context.Context, arg UpdateResourceParams) (Resource, error)

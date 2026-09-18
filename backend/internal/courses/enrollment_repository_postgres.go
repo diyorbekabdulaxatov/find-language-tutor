@@ -73,8 +73,10 @@ func (r *repositoryPostgres) CatalogList(ctx context.Context, q CatalogQuery) ([
 				CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 			},
 			Teacher:      TeacherSummary{ID: row.TeacherID, DisplayName: row.TeacherDisplayName, Slug: row.TeacherSlug},
-			SectionCount: int(row.SectionCount),
-			ItemCount:    int(row.ItemCount),
+			SectionCount:         int(row.SectionCount),
+			ItemCount:            int(row.ItemCount),
+			TotalDurationSeconds: row.TotalDurationSeconds,
+			HasPreview:           row.HasPreview,
 		}
 		if row.CoverAssetID.Valid {
 			v := row.CoverAssetID.UUID
@@ -86,6 +88,30 @@ func (r *repositoryPostgres) CatalogList(ctx context.Context, q CatalogQuery) ([
 		}
 	}
 	return out, int(total), nil
+}
+
+// PreviewItem resolves an item plus the storefront state of the course it
+// belongs to, for the public preview stream (phase D1). An item id that isn't
+// part of courseID simply doesn't match the query's join, so it reads as
+// ErrItemNotFound like any unknown id.
+func (r *repositoryPostgres) PreviewItem(ctx context.Context, courseID, itemID uuid.UUID) (PreviewRef, error) {
+	row, err := r.q.GetPreviewItem(ctx, sqlc.GetPreviewItemParams{ItemID: itemID, CourseID: courseID})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return PreviewRef{}, ErrItemNotFound
+		}
+		return PreviewRef{}, fmt.Errorf("get preview item: %w", err)
+	}
+	ref := PreviewRef{
+		ItemID: row.ID, CourseID: row.CourseID, Title: row.Title,
+		IsPreview: row.IsPreview, DurationSeconds: int(row.DurationSeconds),
+		OnStorefront: row.OnStorefront.Valid && row.OnStorefront.Bool,
+	}
+	if row.VideoAssetID.Valid {
+		v := row.VideoAssetID.UUID
+		ref.VideoAssetID = &v
+	}
+	return ref, nil
 }
 
 // --- enrollment ---

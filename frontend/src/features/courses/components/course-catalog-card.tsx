@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { Film, GraduationCap, Layers } from "lucide-react";
-import { formatMoney } from "@/lib/format";
+import { Clock, Film, GraduationCap, Layers, PlayCircle } from "lucide-react";
+import { courseLengthParts, formatMoney } from "@/lib/format";
 import { courseCoverUrl } from "@/features/courses/api";
 import type { CourseCatalogEntry } from "@/features/courses/types";
 
@@ -14,6 +14,9 @@ export function CourseCatalogCard({ course }: { course: CourseCatalogEntry }) {
   const free = course.price.amountMinor === 0;
   const t = useTranslations("courses");
   const locale = useLocale();
+  // null when no item reported a length — the row is omitted rather than
+  // rendered as "0m", so a missing figure never reads as an empty course.
+  const length = courseLengthParts(course.totalDurationSeconds);
 
   return (
     <Link
@@ -41,6 +44,13 @@ export function CourseCatalogCard({ course }: { course: CourseCatalogEntry }) {
             {t("free")}
           </span>
         )}
+
+        {course.hasPreview && (
+          <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-background/90 px-2.5 py-1 text-xs font-semibold text-foreground shadow-soft backdrop-blur">
+            <PlayCircle className="size-3.5" />
+            {t("freePreviewBadge")}
+          </span>
+        )}
       </div>
 
       <div className="flex flex-1 flex-col gap-2.5 p-4">
@@ -59,9 +69,18 @@ export function CourseCatalogCard({ course }: { course: CourseCatalogEntry }) {
           {course.teacher.displayName}
         </p>
 
-        <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <p className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
           <Layers className="size-3.5" />
           {t("sections", { count: course.sectionCount })} · {t("lessons", { count: course.itemCount })}
+          {length && (
+            <>
+              <span aria-hidden>·</span>
+              <Clock className="size-3.5" />
+              {length.hours > 0
+                ? t("courseLengthHm", { hours: length.hours, minutes: length.minutes })
+                : t("courseLengthM", { minutes: length.minutes })}
+            </>
+          )}
         </p>
 
         <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-3">

@@ -1091,10 +1091,10 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Edit an item's display-title override
-         * @description An empty title clears the override, falling back to the video filename / resource title in the UI.
+         * Edit an item's title, preview flag and duration
+         * @description An empty title clears the override, falling back to the video filename / resource title in the UI. `is_preview` and `duration_seconds` are merge-on-write: omit either to leave the stored value alone, which is what a plain rename does. Both are video-only — setting a preview or a non-zero duration on a `resource` item is a 400.
          */
-        patch: operations["renameCourseItem"];
+        patch: operations["updateCourseItem"];
         trace?: never;
     };
     "/v1/courses/{id}/sections/{sectionId}/items/reorder": {
@@ -1169,6 +1169,28 @@ export interface paths {
          * @description Streams (or redirects to) the cover image's bytes. No auth. 404 unless the course is published and has a cover set.
          */
         get: operations["courseCover"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/{id}/items/{itemId}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream a free preview lecture
+         * @description Public, no auth — the "try before you buy" route, so an anonymous shopper's <video> can load it straight from the landing page. Disk-backed files are served with Range support (http.ServeContent) so the player can seek; an R2-backed file 302s to a signed URL.
+         *
+         *     404 unless the item is flagged `is_preview`, belongs to `{id}`, and that course is on the storefront (published, not archived, not suspended, approved teacher). Every failure is the same flat 404, so a prober learns nothing about drafts or non-preview lectures.
+         */
+        get: operations["previewCourseItem"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2703,6 +2725,10 @@ export interface components {
             /** Format: uuid */
             resource_id: string | null;
             position: number;
+            /** @description Free sample lecture: anyone may stream it from the course landing page without enrolling, via GET /v1/courses/{id}/items/{itemId}/preview. Only a `video` item may set this — asking for it on a `resource` item is a 400. */
+            is_preview: boolean;
+            /** @description Video length, reported by the client from the browser's own <video> metadata. Display metadata only — it never gates access, pricing or payouts. 0 means unknown (a container the browser could not read, or an item created before this field existed) and every surface omits the figure rather than rendering "0m". */
+            duration_seconds: number;
             /** Format: date-time */
             created_at: string;
         };
@@ -2762,10 +2788,18 @@ export interface components {
              * @description Required when kind is `resource`.
              */
             resource_id?: string;
+            /** @description Mark this lecture a free preview. Defaults to false. 400 when kind is `resource`. */
+            is_preview?: boolean;
+            /** @description Video length from the browser's <video> metadata. 400 when kind is `resource`, or when the value is negative or above 86400. Omit (or send 0) when unknown. */
+            duration_seconds?: number;
         };
         UpdateItemRequest: {
             /** @description "" clears the override. */
             title: string;
+            /** @description Omit to leave the stored value alone; send false to un-mark a preview. 400 when the item is a `resource`. */
+            is_preview?: boolean | null;
+            /** @description Omit to leave the stored value alone. 400 when the item is a `resource`. */
+            duration_seconds?: number | null;
         };
         ReorderItemsRequest: {
             /** @description Exactly the section's current item ids, each once, in the new order. */
@@ -2790,6 +2824,10 @@ export interface components {
             teacher: components["schemas"]["CourseTeacherSummary"];
             section_count: number;
             item_count: number;
+            /** @description Summed length of every video item. 0 = unknown; the card omits the figure. */
+            total_duration_seconds: number;
+            /** @description True when at least one lecture is free to watch. Which item plays is the landing page's business. */
+            has_preview: boolean;
         };
         CourseCatalogList: {
             courses: components["schemas"]["CourseCatalogEntry"][];
@@ -2803,6 +2841,10 @@ export interface components {
             kind: components["schemas"]["CourseItemKind"];
             title: string;
             position: number;
+            /** @description Renders the play button on the landing page's curriculum. */
+            is_preview: boolean;
+            /** @description 0 = unknown; the row omits the figure. */
+            duration_seconds: number;
         };
         CourseCatalogSectionOutline: {
             /** Format: uuid */
@@ -2827,6 +2869,10 @@ export interface components {
             is_enrolled: boolean;
             /** @description False when unauthenticated. */
             is_owner: boolean;
+            /** @description Headline: N lectures. */
+            item_count: number;
+            /** @description Headline: total hours. 0 = unknown. */
+            total_duration_seconds: number;
         };
         PurchaseCourseRequest: {
             /** @description Omitted/ignored for a free course. */
@@ -5618,7 +5664,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
-    renameCourseItem: {
+    updateCourseItem: {
         parameters: {
             query?: never;
             header?: never;
@@ -5751,6 +5797,37 @@ export interface operations {
                 content?: never;
             };
             /** @description Redirect to a presigned URL for the image (R2-backed storage). */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    previewCourseItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The video bytes (or 206 for a Range request). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "video/*": string;
+                };
+            };
+            /** @description Redirect to a signed URL (R2-backed store). */
             302: {
                 headers: {
                     [name: string]: unknown;

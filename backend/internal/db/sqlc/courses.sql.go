@@ -14,25 +14,31 @@ import (
 
 const addCourseItem = `-- name: AddCourseItem :one
 
-INSERT INTO course_items (section_id, kind, title, video_asset_id, resource_id, position)
+INSERT INTO course_items (section_id, kind, title, video_asset_id, resource_id, position, is_preview, duration_seconds)
 VALUES (
     $1, $2, $3,
     $4, $5,
-    COALESCE((SELECT max(position) + 1 FROM course_items WHERE section_id = $1), 0)
+    COALESCE((SELECT max(position) + 1 FROM course_items WHERE section_id = $1), 0),
+    $6, $7
 )
-RETURNING id, section_id, kind, title, video_asset_id, resource_id, position, created_at
+RETURNING id, section_id, kind, title, video_asset_id, resource_id, position, created_at, is_preview, duration_seconds
 `
 
 type AddCourseItemParams struct {
-	SectionID    uuid.UUID
-	Kind         string
-	Title        string
-	VideoAssetID uuid.NullUUID
-	ResourceID   uuid.NullUUID
+	SectionID       uuid.UUID
+	Kind            string
+	Title           string
+	VideoAssetID    uuid.NullUUID
+	ResourceID      uuid.NullUUID
+	IsPreview       bool
+	DurationSeconds int32
 }
 
 // Items.
 // position is the current item count for the section, same idiom as sections.
+// is_preview / duration_seconds are phase-D1 video metadata; the service has
+// already refused a preview or a duration on a non-video item before we get
+// here, and the table's CHECKs are the backstop.
 func (q *Queries) AddCourseItem(ctx context.Context, arg AddCourseItemParams) (CourseItem, error) {
 	row := q.db.QueryRow(ctx, addCourseItem,
 		arg.SectionID,
@@ -40,6 +46,8 @@ func (q *Queries) AddCourseItem(ctx context.Context, arg AddCourseItemParams) (C
 		arg.Title,
 		arg.VideoAssetID,
 		arg.ResourceID,
+		arg.IsPreview,
+		arg.DurationSeconds,
 	)
 	var i CourseItem
 	err := row.Scan(
@@ -51,6 +59,8 @@ func (q *Queries) AddCourseItem(ctx context.Context, arg AddCourseItemParams) (C
 		&i.ResourceID,
 		&i.Position,
 		&i.CreatedAt,
+		&i.IsPreview,
+		&i.DurationSeconds,
 	)
 	return i, err
 }
@@ -227,7 +237,14 @@ SELECT
     c.suspended_at, c.created_at, c.updated_at,
     t.slug AS teacher_slug, t.display_name AS teacher_display_name,
     (SELECT count(*) FROM course_sections cs WHERE cs.course_id = c.id) AS section_count,
-    (SELECT count(*) FROM course_items ci JOIN course_sections cs2 ON cs2.id = ci.section_id WHERE cs2.course_id = c.id) AS item_count
+    (SELECT count(*) FROM course_items ci JOIN course_sections cs2 ON cs2.id = ci.section_id WHERE cs2.course_id = c.id) AS item_count,
+    -- Phase D1 card metadata. The duration is summed on read rather than
+    -- denormalised so it can never drift from the items. The card only needs
+    -- to know *whether* a free preview exists (a badge); which item plays is
+    -- the landing page's business, and its outline already carries per-item
+    -- is_preview — so this stays a cheap non-null EXISTS.
+    (SELECT COALESCE(sum(ci.duration_seconds), 0)::bigint FROM course_items ci JOIN course_sections cs3 ON cs3.id = ci.section_id WHERE cs3.course_id = c.id) AS total_duration_seconds,
+    EXISTS(SELECT 1 FROM course_items ci JOIN course_sections cs4 ON cs4.id = ci.section_id WHERE cs4.course_id = c.id AND ci.is_preview) AS has_preview
 FROM courses c
 JOIN teachers t ON t.id = c.teacher_id
 WHERE c.status = 'published' AND c.archived_at IS NULL AND c.suspended_at IS NULL AND t.status = 'approved'
@@ -249,24 +266,26 @@ type CatalogListCoursesParams struct {
 }
 
 type CatalogListCoursesRow struct {
-	ID                 uuid.UUID
-	TeacherID          uuid.UUID
-	Title              string
-	Subtitle           string
-	Description        string
-	CoverAssetID       uuid.NullUUID
-	PriceAmountMinor   int64
-	PriceCurrency      CurrencyCode
-	Status             string
-	EverPublished      bool
-	ArchivedAt         pgtype.Timestamptz
-	SuspendedAt        pgtype.Timestamptz
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
-	TeacherSlug        string
-	TeacherDisplayName string
-	SectionCount       int64
-	ItemCount          int64
+	ID                   uuid.UUID
+	TeacherID            uuid.UUID
+	Title                string
+	Subtitle             string
+	Description          string
+	CoverAssetID         uuid.NullUUID
+	PriceAmountMinor     int64
+	PriceCurrency        CurrencyCode
+	Status               string
+	EverPublished        bool
+	ArchivedAt           pgtype.Timestamptz
+	SuspendedAt          pgtype.Timestamptz
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+	TeacherSlug          string
+	TeacherDisplayName   string
+	SectionCount         int64
+	ItemCount            int64
+	TotalDurationSeconds int64
+	HasPreview           bool
 }
 
 // Catalog: published, non-archived, non-suspended courses only, from an
@@ -314,6 +333,8 @@ func (q *Queries) CatalogListCourses(ctx context.Context, arg CatalogListCourses
 			&i.TeacherDisplayName,
 			&i.SectionCount,
 			&i.ItemCount,
+			&i.TotalDurationSeconds,
+			&i.HasPreview,
 		); err != nil {
 			return nil, err
 		}
@@ -587,7 +608,7 @@ func (q *Queries) GetCourse(ctx context.Context, id uuid.UUID) (Course, error) {
 }
 
 const getCourseItem = `-- name: GetCourseItem :one
-SELECT id, section_id, kind, title, video_asset_id, resource_id, position, created_at
+SELECT id, section_id, kind, title, video_asset_id, resource_id, position, created_at, is_preview, duration_seconds
 FROM course_items
 WHERE id = $1
 `
@@ -604,12 +625,14 @@ func (q *Queries) GetCourseItem(ctx context.Context, id uuid.UUID) (CourseItem, 
 		&i.ResourceID,
 		&i.Position,
 		&i.CreatedAt,
+		&i.IsPreview,
+		&i.DurationSeconds,
 	)
 	return i, err
 }
 
 const getCourseItemForEnrollmentResource = `-- name: GetCourseItemForEnrollmentResource :one
-SELECT ci.id, ci.section_id, ci.kind, ci.title, ci.video_asset_id, ci.resource_id, ci.position, ci.created_at
+SELECT ci.id, ci.section_id, ci.kind, ci.title, ci.video_asset_id, ci.resource_id, ci.position, ci.created_at, ci.is_preview, ci.duration_seconds
 FROM course_enrollments e
 JOIN course_sections cs ON cs.course_id = e.course_id
 JOIN course_items ci ON ci.section_id = cs.id
@@ -637,6 +660,8 @@ func (q *Queries) GetCourseItemForEnrollmentResource(ctx context.Context, arg Ge
 		&i.ResourceID,
 		&i.Position,
 		&i.CreatedAt,
+		&i.IsPreview,
+		&i.DurationSeconds,
 	)
 	return i, err
 }
@@ -730,6 +755,55 @@ func (q *Queries) GetEnrollmentParticipants(ctx context.Context, id uuid.UUID) (
 	return i, err
 }
 
+const getPreviewItem = `-- name: GetPreviewItem :one
+
+SELECT ci.id, ci.video_asset_id, ci.is_preview, ci.duration_seconds, ci.title,
+       c.id AS course_id,
+       (c.status = 'published' AND c.archived_at IS NULL AND c.suspended_at IS NULL AND t.status = 'approved') AS on_storefront
+FROM course_items ci
+JOIN course_sections cs ON cs.id = ci.section_id
+JOIN courses c ON c.id = cs.course_id
+JOIN teachers t ON t.id = c.teacher_id
+WHERE ci.id = $1 AND c.id = $2
+`
+
+type GetPreviewItemParams struct {
+	ItemID   uuid.UUID
+	CourseID uuid.UUID
+}
+
+type GetPreviewItemRow struct {
+	ID              uuid.UUID
+	VideoAssetID    uuid.NullUUID
+	IsPreview       bool
+	DurationSeconds int32
+	Title           string
+	CourseID        uuid.UUID
+	OnStorefront    pgtype.Bool
+}
+
+// Phase D1: free preview lessons.
+// Resolves a course item for the PUBLIC preview stream, returning everything
+// the access decision needs in one query so the handler can't accidentally
+// check a subset: the item's own preview flag and video asset, plus the
+// storefront gates (published, not archived, not suspended, approved teacher)
+// of the course it actually belongs to. The course_id predicate is what stops
+// a caller pairing a preview item id with an unrelated published course id.
+func (q *Queries) GetPreviewItem(ctx context.Context, arg GetPreviewItemParams) (GetPreviewItemRow, error) {
+	row := q.db.QueryRow(ctx, getPreviewItem, arg.ItemID, arg.CourseID)
+	var i GetPreviewItemRow
+	err := row.Scan(
+		&i.ID,
+		&i.VideoAssetID,
+		&i.IsPreview,
+		&i.DurationSeconds,
+		&i.Title,
+		&i.CourseID,
+		&i.OnStorefront,
+	)
+	return i, err
+}
+
 const getTeacherOwnerID = `-- name: GetTeacherOwnerID :one
 
 SELECT user_id FROM teachers WHERE id = $1
@@ -811,7 +885,7 @@ func (q *Queries) InsertEnrollment(ctx context.Context, arg InsertEnrollmentPara
 }
 
 const listCourseItems = `-- name: ListCourseItems :many
-SELECT id, section_id, kind, title, video_asset_id, resource_id, position, created_at
+SELECT id, section_id, kind, title, video_asset_id, resource_id, position, created_at, is_preview, duration_seconds
 FROM course_items
 WHERE section_id = $1
 ORDER BY position, id
@@ -835,6 +909,8 @@ func (q *Queries) ListCourseItems(ctx context.Context, sectionID uuid.UUID) ([]C
 			&i.ResourceID,
 			&i.Position,
 			&i.CreatedAt,
+			&i.IsPreview,
+			&i.DurationSeconds,
 		); err != nil {
 			return nil, err
 		}
@@ -847,7 +923,7 @@ func (q *Queries) ListCourseItems(ctx context.Context, sectionID uuid.UUID) ([]C
 }
 
 const listCourseItemsByCourse = `-- name: ListCourseItemsByCourse :many
-SELECT ci.id, ci.section_id, ci.kind, ci.title, ci.video_asset_id, ci.resource_id, ci.position, ci.created_at
+SELECT ci.id, ci.section_id, ci.kind, ci.title, ci.video_asset_id, ci.resource_id, ci.position, ci.created_at, ci.is_preview, ci.duration_seconds
 FROM course_items ci
 JOIN course_sections cs ON cs.id = ci.section_id
 WHERE cs.course_id = $1
@@ -875,6 +951,8 @@ func (q *Queries) ListCourseItemsByCourse(ctx context.Context, courseID uuid.UUI
 			&i.ResourceID,
 			&i.Position,
 			&i.CreatedAt,
+			&i.IsPreview,
+			&i.DurationSeconds,
 		); err != nil {
 			return nil, err
 		}
@@ -1101,34 +1179,6 @@ func (q *Queries) ListTeacherCourses(ctx context.Context, arg ListTeacherCourses
 		return nil, err
 	}
 	return items, nil
-}
-
-const renameCourseItem = `-- name: RenameCourseItem :one
-UPDATE course_items
-SET title = $2
-WHERE id = $1
-RETURNING id, section_id, kind, title, video_asset_id, resource_id, position, created_at
-`
-
-type RenameCourseItemParams struct {
-	ID    uuid.UUID
-	Title string
-}
-
-func (q *Queries) RenameCourseItem(ctx context.Context, arg RenameCourseItemParams) (CourseItem, error) {
-	row := q.db.QueryRow(ctx, renameCourseItem, arg.ID, arg.Title)
-	var i CourseItem
-	err := row.Scan(
-		&i.ID,
-		&i.SectionID,
-		&i.Kind,
-		&i.Title,
-		&i.VideoAssetID,
-		&i.ResourceID,
-		&i.Position,
-		&i.CreatedAt,
-	)
-	return i, err
 }
 
 const renameCourseSection = `-- name: RenameCourseSection :one
@@ -1432,6 +1482,48 @@ func (q *Queries) UpdateCourse(ctx context.Context, arg UpdateCourseParams) (Cou
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SuspendedAt,
+	)
+	return i, err
+}
+
+const updateCourseItem = `-- name: UpdateCourseItem :one
+UPDATE course_items
+SET title            = $1,
+    is_preview       = COALESCE($2, is_preview),
+    duration_seconds = COALESCE($3, duration_seconds)
+WHERE id = $4
+RETURNING id, section_id, kind, title, video_asset_id, resource_id, position, created_at, is_preview, duration_seconds
+`
+
+type UpdateCourseItemParams struct {
+	Title           string
+	IsPreview       pgtype.Bool
+	DurationSeconds pgtype.Int4
+	ID              uuid.UUID
+}
+
+// Phase D1: the item edit now carries the preview flag and the video duration
+// alongside the title. Both are COALESCEd so a caller that omits them (the
+// plain rename path) leaves the stored values alone.
+func (q *Queries) UpdateCourseItem(ctx context.Context, arg UpdateCourseItemParams) (CourseItem, error) {
+	row := q.db.QueryRow(ctx, updateCourseItem,
+		arg.Title,
+		arg.IsPreview,
+		arg.DurationSeconds,
+		arg.ID,
+	)
+	var i CourseItem
+	err := row.Scan(
+		&i.ID,
+		&i.SectionID,
+		&i.Kind,
+		&i.Title,
+		&i.VideoAssetID,
+		&i.ResourceID,
+		&i.Position,
+		&i.CreatedAt,
+		&i.IsPreview,
+		&i.DurationSeconds,
 	)
 	return i, err
 }
