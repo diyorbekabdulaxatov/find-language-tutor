@@ -896,7 +896,9 @@
     "studentFeedback": "Отзывы студентов",
     "courseRating": "Рейтинг курса",
     "sectionN": "Раздел {n}: {title}",
-    "overview": "Обзор"
+    "overview": "Обзор",
+    "startCourse": "Начать курс",
+    "percentComplete": "Пройдено {pct}%"
   },
   "admin": {
     "meta": "Админ",

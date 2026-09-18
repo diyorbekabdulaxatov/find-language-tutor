@@ -896,7 +896,9 @@
     "studentFeedback": "O'quvchilar fikri",
     "courseRating": "Kurs reytingi",
     "sectionN": "{n}-bo'lim: {title}",
-    "overview": "Umumiy"
+    "overview": "Umumiy",
+    "startCourse": "Kursni boshlash",
+    "percentComplete": "{pct}% bajarildi"
   },
   "admin": {
     "meta": "Admin",

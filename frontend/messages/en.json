@@ -896,7 +896,9 @@
     "studentFeedback": "Student feedback",
     "courseRating": "Course rating",
     "sectionN": "Section {n}: {title}",
-    "overview": "Overview"
+    "overview": "Overview",
+    "startCourse": "Start course",
+    "percentComplete": "{pct}% complete"
   },
   "admin": {
     "meta": "Admin",

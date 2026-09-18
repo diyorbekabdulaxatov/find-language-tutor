@@ -55,12 +55,12 @@ test("a new student can sign up, book a lesson and pay for it", async ({ page })
 
 test("the UI follows the language switcher", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Find a language teacher who gets you talking" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Learn a language with a real teacher" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Change language" }).click();
+  await page.getByRole("banner").getByRole("button", { name: "Change language" }).click();
   await page.getByRole("menuitem", { name: "Русский" }).click();
 
-  await expect(page.getByRole("heading", { name: "Найдите преподавателя, с которым вы заговорите" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Учите язык с настоящим преподавателем" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("lang", "ru");
 });
 
