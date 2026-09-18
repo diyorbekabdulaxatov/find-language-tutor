@@ -83,7 +83,7 @@ export function TimezoneSelect({
         <PopoverPrimitive.Content
           align="start"
           sideOffset={4}
-          className="z-50 w-[--radix-popover-trigger-width] overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-lift"
+          className="z-50 w-(--radix-popover-trigger-width) overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-lift"
         >
           <input
             autoFocus

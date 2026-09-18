@@ -241,6 +241,9 @@ func run(logger *slog.Logger) error {
 	courseService.SetFileReader(files.NewCourseGateway(fileService))
 	// Publishing also needs a confirmed email (same gate as teacher submit).
 	courseService.SetAccountReader(authService)
+	// teachers -> files, same shape: a profile's uploaded photo / intro video
+	// must be the owner's own file, and the public media route serves it.
+	teacherService.SetFileReader(files.NewTeacherGateway(fileService))
 
 	// Phase C2: public catalog, one-time purchase, the enrolled-student
 	// player, and progress tracking.

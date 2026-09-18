@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -68,6 +70,7 @@ type Service struct {
 	repo     Repository
 	accounts AccountReader // nil fails closed (see SetAccountReader)
 	notifier Notifier      // nil is a no-op
+	files    FileReader    // nil fails closed (see FileReader)
 }
 
 func NewService(repo Repository) *Service {
@@ -79,6 +82,103 @@ func (s *Service) SetAccountReader(a AccountReader) { s.accounts = a }
 
 // SetNotifier wires the moderation-queue notifier in.
 func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
+
+// SetFileReader wires the files module's ownership check + public serving in.
+func (s *Service) SetFileReader(f FileReader) { s.files = f }
+
+// MediaKind names one of the profile's uploaded media slots; it is also the
+// last path segment of the public media route.
+type MediaKind string
+
+const (
+	MediaAvatar     MediaKind = "avatar"
+	MediaIntroVideo MediaKind = "intro-video"
+)
+
+// mediaPath is the public route that serves a profile's uploaded media. It is
+// written into the matching *_url column when an asset is set, so the many
+// readers of avatar_url (cards, bookings, admin) need no change; the frontend
+// prefixes the API origin. Slugs are immutable, so the path never goes stale.
+func mediaPath(slug string, kind MediaKind) string {
+	return "/v1/teachers/" + slug + "/media/" + string(kind)
+}
+
+// applyMedia checks the referenced uploads belong to ownerID and are of the
+// right type, then derives the URL columns from them: an asset id wins over
+// whatever avatar_url / intro_video_url the request carried, and a cleared
+// asset (nil while cur had one) blanks the URL rather than leaving the dead
+// media path behind.
+func (s *Service) applyMedia(ctx context.Context, ownerID uuid.UUID, slug string, cur *Teacher, in *ProfileInput) error {
+	if in.AvatarAssetID != nil {
+		if err := s.checkFileOwned(ctx, *in.AvatarAssetID, ownerID, "image/"); errors.Is(err, errMediaTypeMismatch) {
+			return invalid("The photo must be an image you've uploaded.")
+		} else if err != nil {
+			return err
+		}
+		in.AvatarURL = mediaPath(slug, MediaAvatar)
+	} else if cur != nil && cur.AvatarAssetID != nil {
+		in.AvatarURL = ""
+	}
+	if in.IntroVideoAssetID != nil {
+		if err := s.checkFileOwned(ctx, *in.IntroVideoAssetID, ownerID, "video/"); errors.Is(err, errMediaTypeMismatch) {
+			return invalid("The intro video must be a video you've uploaded.")
+		} else if err != nil {
+			return err
+		}
+		in.IntroVideoURL = mediaPath(slug, MediaIntroVideo)
+	} else if cur != nil && cur.IntroVideoAssetID != nil {
+		in.IntroVideoURL = ""
+	}
+	return nil
+}
+
+// errMediaTypeMismatch: the asset is the caller's but not of the wanted kind;
+// the call site turns it into the slot-specific message (kept as literals
+// there so the i18n guard sees them).
+var errMediaTypeMismatch = errors.New("media asset has the wrong content type")
+
+func (s *Service) checkFileOwned(ctx context.Context, fileAssetID, callerID uuid.UUID, wantPrefix string) error {
+	if s.files == nil {
+		return invalid("File validation isn't available right now.")
+	}
+	ok, contentType, err := s.files.FileOwnedBy(ctx, fileAssetID, callerID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return invalid("That file doesn't belong to you.")
+	}
+	if !strings.HasPrefix(contentType, wantPrefix) {
+		return errMediaTypeMismatch
+	}
+	return nil
+}
+
+// Media serves one of an APPROVED profile's uploaded media slots with no
+// auth — a public page's <img> / <video> can't attach a bearer token. Any
+// other status, an unknown slug, an unknown kind, or an empty slot reads as
+// ErrNotFound so a pending profile's photo is never leaked. The caller must
+// Close body when it is non-nil.
+func (s *Service) Media(ctx context.Context, slug string, kind MediaKind) (redirectURL string, body io.ReadCloser, contentType string, err error) {
+	t, err := s.repo.GetBySlug(ctx, slug)
+	if err != nil {
+		return "", nil, "", err
+	}
+	if t.Status != StatusApproved || s.files == nil {
+		return "", nil, "", ErrNotFound
+	}
+	var id *uuid.UUID
+	switch kind {
+	case MediaAvatar:
+		id = t.AvatarAssetID
+	case MediaIntroVideo:
+		id = t.IntroVideoAssetID
+	}
+	if id == nil {
+		return "", nil, "", ErrNotFound
+	}
+	return s.files.PublicAsset(ctx, *id)
+}
 
 // requireVerified is the gate in front of anything that makes a teacher
 // visible to students. Fails closed when no AccountReader is wired.
@@ -173,6 +273,9 @@ func (s *Service) Create(ctx context.Context, ownerID uuid.UUID, in ProfileInput
 	if err != nil {
 		return nil, err
 	}
+	if err := s.applyMedia(ctx, ownerID, slug, nil, &in); err != nil {
+		return nil, err
+	}
 
 	if _, err := s.repo.Create(ctx, ownerID, slug, in); err != nil {
 		return nil, err
@@ -203,6 +306,9 @@ func (s *Service) Update(ctx context.Context, slug string, actingUserID uuid.UUI
 
 	merged := mergePatch(current, patch)
 	if err := validateProfile(merged); err != nil {
+		return nil, err
+	}
+	if err := s.applyMedia(ctx, actingUserID, slug, current, &merged); err != nil {
 		return nil, err
 	}
 

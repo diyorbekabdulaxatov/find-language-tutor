@@ -13,7 +13,6 @@ import { IntroVideo } from "@/features/teachers/components/intro-video";
 import { BookingPanel } from "@/features/teachers/components/booking-panel";
 import { ReviewsSection } from "@/features/reviews/components/reviews-section";
 import { VerifiedBadge } from "@/features/teachers/components/verified-badge";
-import { photoUrl } from "@/features/teachers/components/teacher-avatar";
 import { greetingFor, languageName, localTimeIn } from "@/lib/i18n";
 import { flagEmoji } from "@/lib/country";
 
@@ -53,7 +52,7 @@ export async function generateMetadata({
     openGraph: {
       title: t("ogTitle", { name: teacher.displayName, subject }),
       description: teacher.headline,
-      images: [teacher.avatarUrl],
+      images: teacher.avatarUrl ? [teacher.avatarUrl] : [],
     },
   };
 }
@@ -90,7 +89,8 @@ export default async function TeacherProfilePage({
         <div className="rounded-2xl bg-card p-5 ring-1 ring-border shadow-card sm:p-6 lg:col-start-1 lg:row-start-1">
           <div className="grid gap-5 sm:grid-cols-[220px_1fr] sm:gap-6">
             <IntroVideo
-              poster={photoUrl(teacher.avatarUrl, 640)}
+              poster={teacher.avatarUrl}
+              videoUrl={teacher.introVideoUrl}
               name={teacher.displayName}
               className="aspect-[4/5] w-full"
             />

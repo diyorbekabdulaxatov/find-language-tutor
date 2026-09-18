@@ -285,7 +285,7 @@ var seedTeachers = []seedTeacher{
 		Rating: 4.9, ReviewCount: 214, LessonsCompleted: 3800, StudentCount: 260, ResponseTimeHours: 1, Accepting: true,
 		AvatarURL:         "https://i.pravatar.cc/240?img=45",
 		VideoThumbnailURL: "https://picsum.photos/seed/nodira/640/360",
-		IntroVideoURL:     "https://example.com/video/nodira",
+		IntroVideoURL:     "", // no demo video — the profile page says so instead of a broken player
 		About:             "I've taught English in Tashkent for nine years, the last five focused almost entirely on IELTS. More than 200 of my students have reached the band they needed for a scholarship or a visa.\n\nMost people come to me because their speaking score won't move. We work on fluency first — getting you talking without the long pauses — then accuracy. You get a written summary and a target for the week after every lesson.",
 		TeachingStyle:     "Structured but conversational. Each lesson has a clear goal tied to one of the four IELTS skills. I record your speaking answers so you can hear the difference over time. Homework is short and every lesson.",
 		Teaches:           []seedLang{{"en", "English", "c2"}},
@@ -305,7 +305,7 @@ var seedTeachers = []seedTeacher{
 		Rating: 4.7, ReviewCount: 96, LessonsCompleted: 1720, StudentCount: 140, ResponseTimeHours: 3, Accepting: true,
 		AvatarURL:         "https://i.pravatar.cc/240?img=33",
 		VideoThumbnailURL: "https://picsum.photos/seed/sardor/640/360",
-		IntroVideoURL:     "https://example.com/video/sardor",
+		IntroVideoURL:     "", // no demo video — the profile page says so instead of a broken player
 		About:             "I work in IT project management and use English every day with clients abroad. I started tutoring because I remember how useless it felt to know grammar rules but not be able to hold a call.\n\nThese are speaking-focused sessions for people who already have some English and need to actually use it — at work, in interviews, while travelling.",
 		TeachingStyle:     "We talk the whole hour. I take notes on the mistakes that get in the way of being understood and we review them at the end. I'll push you to explain things, not just answer yes or no.",
 		Teaches:           []seedLang{{"en", "English", "c1"}},
@@ -325,7 +325,7 @@ var seedTeachers = []seedTeacher{
 		Rating: 4.9, ReviewCount: 158, LessonsCompleted: 4300, StudentCount: 190, ResponseTimeHours: 2, Accepting: true,
 		AvatarURL:         "https://i.pravatar.cc/240?img=47",
 		VideoThumbnailURL: "https://picsum.photos/seed/elena/640/360",
-		IntroVideoURL:     "https://example.com/video/elena",
+		IntroVideoURL:     "", // no demo video — the profile page says so instead of a broken player
 		About:             "I taught Russian language and literature in a Tashkent school for fifteen years before moving to tutoring full time.\n\nMy students are mostly teenagers preparing for university entrance and adults who need clearer, more correct Russian for work. We build from wherever you are — no lesson assumes you remember something we haven't covered.",
 		TeachingStyle:     "Calm and thorough. I explain a rule, we practise it in speech and in writing, and I don't move on until it's solid. I send a short grammar reference after each topic so you can review offline.",
 		Teaches:           []seedLang{{"ru", "Russian", "native"}},
@@ -345,7 +345,7 @@ var seedTeachers = []seedTeacher{
 		Rating: 4.8, ReviewCount: 122, LessonsCompleted: 2600, StudentCount: 110, ResponseTimeHours: 4, Accepting: true,
 		AvatarURL:         "https://i.pravatar.cc/240?img=31",
 		VideoThumbnailURL: "https://picsum.photos/seed/dilnoza/640/360",
-		IntroVideoURL:     "https://example.com/video/dilnoza",
+		IntroVideoURL:     "", // no demo video — the profile page says so instead of a broken player
 		About:             "I specialise in learners aged 7 to 15. I have a teaching degree and a CELT-P certificate for teaching young learners.\n\nLessons use games, stories, and a lot of pictures. Parents get a short message after each lesson so you know what we did and how it went.",
 		TeachingStyle:     "Playful and consistent. Short activities, frequent changes of pace, praise for effort. For teens I bring in music, football, and YouTube so the English feels worth learning.",
 		Teaches:           []seedLang{{"en", "English", "c1"}},
@@ -365,7 +365,7 @@ var seedTeachers = []seedTeacher{
 		Rating: 4.6, ReviewCount: 71, LessonsCompleted: 1180, StudentCount: 95, ResponseTimeHours: 8, Accepting: true,
 		AvatarURL:         "https://i.pravatar.cc/240?img=52",
 		VideoThumbnailURL: "https://picsum.photos/seed/jasur/640/360",
-		IntroVideoURL:     "https://example.com/video/jasur",
+		IntroVideoURL:     "", // no demo video — the profile page says so instead of a broken player
 		About:             "I'm a final-year linguistics student and I've been tutoring school and university students for four years.\n\nMost of my students are getting ready for a placement test or a national exam and keep losing points on the same few things — tenses, articles, prepositions. We drill those until they're automatic.",
 		TeachingStyle:     "Explanation, then a lot of practice. I use error correction from your own writing rather than generic worksheets. Homework every lesson, checked at the start of the next one.",
 		Teaches:           []seedLang{{"en", "English", "c1"}},
@@ -385,7 +385,7 @@ var seedTeachers = []seedTeacher{
 		Rating: 4.9, ReviewCount: 84, LessonsCompleted: 1600, StudentCount: 90, ResponseTimeHours: 5, Accepting: false,
 		AvatarURL:         "https://i.pravatar.cc/240?img=44",
 		VideoThumbnailURL: "https://picsum.photos/seed/aziza/640/360",
-		IntroVideoURL:     "https://example.com/video/aziza",
+		IntroVideoURL:     "", // no demo video — the profile page says so instead of a broken player
 		About:             "I studied for a master's degree in Cologne and now teach German to people planning the same move — for an Ausbildung, a university place, or the Blue Card.\n\nWe follow a clear A1-to-B2 path and prepare specifically for the Goethe or telc exam you need.",
 		TeachingStyle:     "Systematic. I teach grammar in patterns and colours, not long lists. Lots of speaking practice about real situations: renting a flat, registering at the Bürgeramt, a job interview.",
 		Teaches:           []seedLang{{"de", "German", "c1"}},
@@ -405,7 +405,7 @@ var seedTeachers = []seedTeacher{
 		Rating: 4.8, ReviewCount: 133, LessonsCompleted: 2900, StudentCount: 180, ResponseTimeHours: 6, Accepting: true,
 		AvatarURL:         "https://i.pravatar.cc/240?img=68",
 		VideoThumbnailURL: "https://picsum.photos/seed/minjun/640/360",
-		IntroVideoURL:     "https://example.com/video/minjun",
+		IntroVideoURL:     "", // no demo video — the profile page says so instead of a broken player
 		About:             "I'm a certified Korean teacher in Seoul with students in a dozen countries, including a growing group in Uzbekistan.\n\nWhether you're learning for K-content, for work with Korean companies, or to study in Korea, we start with solid Hangul and pronunciation so bad habits never set in.",
 		TeachingStyle:     "Immersive but supported. I speak mostly Korean from early on, with English when it saves time. Shared slides for every grammar point and a flashcard deck after each lesson.",
 		Teaches:           []seedLang{{"ko", "Korean", "native"}},
@@ -424,7 +424,7 @@ var seedTeachers = []seedTeacher{
 		Rating: 4.7, ReviewCount: 58, LessonsCompleted: 940, StudentCount: 80, ResponseTimeHours: 5, Accepting: true,
 		AvatarURL:         "https://i.pravatar.cc/240?img=59",
 		VideoThumbnailURL: "https://picsum.photos/seed/mehmet/640/360",
-		IntroVideoURL:     "https://example.com/video/mehmet",
+		IntroVideoURL:     "", // no demo video — the profile page says so instead of a broken player
 		About:             "I'm a graphic designer in Istanbul and I love that Uzbek and Turkish are close enough to get a real conversation going in the first lesson.\n\nThese are casual speaking sessions. Bring a topic or let me pick one. I'll point out the false friends between our languages so they stop tripping you up.",
 		TeachingStyle:     "Casual and patient. We talk, I correct what matters, and I keep a running list of new words that I send you afterwards.",
 		Teaches:           []seedLang{{"tr", "Turkish", "native"}},
@@ -443,7 +443,7 @@ var seedTeachers = []seedTeacher{
 		Rating: 4.9, ReviewCount: 76, LessonsCompleted: 1340, StudentCount: 85, ResponseTimeHours: 2, Accepting: true,
 		AvatarURL:         "https://i.pravatar.cc/240?img=24",
 		VideoThumbnailURL: "https://picsum.photos/seed/kamola/640/360",
-		IntroVideoURL:     "https://example.com/video/kamola",
+		IntroVideoURL:     "", // no demo video — the profile page says so instead of a broken player
 		About:             "I have a degree in Uzbek philology and I've spent the last six years teaching the language to diplomats, NGO staff, and people who married into an Uzbek family.\n\nWe start with the survival phrases you need this week — the bazaar, the taxi, your neighbours — and build grammar around them so it never feels abstract.",
 		TeachingStyle:     "Practical and warm. Lots of role-play from real situations you'll face. I teach the spoken Tashkent variety first and point out where the textbook written form differs.",
 		Teaches:           []seedLang{{"uz", "Uzbek", "native"}},
@@ -463,7 +463,7 @@ var seedTeachers = []seedTeacher{
 		Rating: 4.7, ReviewCount: 44, LessonsCompleted: 720, StudentCount: 60, ResponseTimeHours: 7, Accepting: true,
 		AvatarURL:         "https://i.pravatar.cc/240?img=13",
 		VideoThumbnailURL: "https://picsum.photos/seed/bekzod/640/360",
-		IntroVideoURL:     "https://example.com/video/bekzod",
+		IntroVideoURL:     "", // no demo video — the profile page says so instead of a broken player
 		About:             "I'm a history teacher in Andijan. Most of my online students grew up abroad in Uzbek families and can follow a conversation but freeze when it's their turn.\n\nNo grammar drills unless you ask. We talk about family, food, and where your relatives are from, and your speaking comes back faster than you'd think.",
 		TeachingStyle:     "Gentle and conversational. I speak slowly, repeat a lot, and never make you feel behind. I'll write down the words you reach for in Russian or English so you have them next time.",
 		Teaches:           []seedLang{{"uz", "Uzbek", "native"}},
@@ -486,7 +486,7 @@ var seedTeachers = []seedTeacher{
 		Rating: 0, ReviewCount: 0, LessonsCompleted: 0, StudentCount: 0, ResponseTimeHours: 6, Accepting: true,
 		AvatarURL:         "https://i.pravatar.cc/240?img=32",
 		VideoThumbnailURL: "https://picsum.photos/seed/malika/640/360",
-		IntroVideoURL:     "https://example.com/video/malika",
+		IntroVideoURL:     "", // no demo video — the profile page says so instead of a broken player
 		About:             "I spent eight years in corporate finance in Tashkent and Almaty, most of it working in English with regional teams.\n\nI coach professionals who already have solid English but want it to sound sharper at work — clearer emails, more confident calls, and the phrasing that makes a negotiation go your way.",
 		TeachingStyle:     "We work from your real material: an email you need to send, a presentation next week, a call you're dreading. Every lesson ends with something you can use the next morning.",
 		Teaches:           []seedLang{{"en", "English", "c1"}},

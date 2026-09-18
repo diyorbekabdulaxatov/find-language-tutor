@@ -24,9 +24,13 @@ export interface ProfileFormValues {
   trialPriceMinor: number | null;
   about: string;
   teachingStyle: string;
+  /** Current media as displayable URLs (read-only here — the writable side
+   *  is the asset id; a seed teacher's pasted photo shows until replaced). */
   avatarUrl: string;
   introVideoUrl: string;
-  videoThumbnailUrl: string;
+  /** Uploads chosen in the media step; null = none / removed. */
+  avatarAssetId: string | null;
+  introVideoAssetId: string | null;
   meetingUrl: string;
   languages: {
     role: "teaches" | "also_speaks";
@@ -74,9 +78,11 @@ function toWritable(v: ProfileFormValues): Writable {
     currency: "UZS",
     about: v.about,
     teaching_style: v.teachingStyle,
-    avatar_url: v.avatarUrl,
-    intro_video_url: v.introVideoUrl,
-    video_thumbnail_url: v.videoThumbnailUrl,
+    // Media is written as asset ids only; the backend derives the URLs
+    // (and clears them on an explicit null), so the *_url strings never
+    // round-trip from the form.
+    avatar_asset_id: v.avatarAssetId,
+    intro_video_asset_id: v.introVideoAssetId,
     meeting_url: v.meetingUrl,
     languages: v.languages,
     focus: v.focus,
@@ -136,7 +142,8 @@ export function emptyProfileForm(displayName = ""): ProfileFormValues {
     teachingStyle: "",
     avatarUrl: "",
     introVideoUrl: "",
-    videoThumbnailUrl: "",
+    avatarAssetId: null,
+    introVideoAssetId: null,
     meetingUrl: "",
     languages: [],
     focus: [],
@@ -160,7 +167,8 @@ export function profileToForm(p: TeacherProfile): ProfileFormValues {
     teachingStyle: p.teachingStyle,
     avatarUrl: p.avatarUrl,
     introVideoUrl: p.introVideoUrl,
-    videoThumbnailUrl: p.videoThumbnailUrl,
+    avatarAssetId: p.avatarAssetId,
+    introVideoAssetId: p.introVideoAssetId,
     meetingUrl: p.meetingUrl,
     languages: [
       ...p.teaches.map((l) => ({

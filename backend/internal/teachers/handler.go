@@ -2,8 +2,10 @@ package teachers
 
 import (
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -32,6 +34,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler, requireAuth gin.HandlerFunc
 	rg.GET("/me", requireAuth, h.GetMine)
 	rg.GET("/:slug", h.GetBySlug)
 	rg.PATCH("/:slug", requireAuth, h.Update)
+	rg.GET("/:slug/media/:kind", h.Media)
 }
 
 type listQuery struct {
@@ -118,6 +121,44 @@ func (h *Handler) GetMine(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toProfile(*t))
+}
+
+// Media handles GET /v1/teachers/:slug/media/:kind — an approved profile's
+// uploaded photo or intro video, with no auth so a public page's <img> /
+// <video> can load it. Disk-backed files go through http.ServeContent so a
+// <video> can seek (Range requests); R2 redirects to a signed URL.
+func (h *Handler) Media(c *gin.Context) {
+	slug := c.Param("slug")
+	kind := MediaKind(c.Param("kind"))
+	if kind != MediaAvatar && kind != MediaIntroVideo {
+		web.NotFound(c, "No teacher with that slug.")
+		return
+	}
+
+	redirectURL, body, contentType, err := h.svc.Media(c.Request.Context(), slug, kind)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		web.NotFound(c, "No teacher with that slug.")
+		return
+	case err != nil:
+		h.logger.Error("teacher media", slog.String("slug", slug), slog.String("kind", string(kind)), slog.Any("error", err))
+		web.Internal(c)
+		return
+	}
+	if redirectURL != "" {
+		c.Redirect(http.StatusFound, redirectURL)
+		return
+	}
+	defer body.Close()
+
+	c.Header("Cache-Control", "public, max-age=300")
+	c.Header("Content-Type", contentType)
+	if rs, ok := body.(io.ReadSeeker); ok {
+		http.ServeContent(c.Writer, c.Request, "", time.Time{}, rs)
+		return
+	}
+	c.Status(http.StatusOK)
+	_, _ = io.Copy(c.Writer, body)
 }
 
 // Create handles POST /v1/teachers — claim/create the caller's profile.

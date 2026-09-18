@@ -5,6 +5,7 @@ import type {
   TeacherSummary,
 } from "@/types/teacher";
 import { api, type ApiSchemas } from "@/lib/api/client";
+import { mediaUrl } from "@/lib/media";
 
 /**
  * Data-access layer for the teachers module.
@@ -123,8 +124,8 @@ export function toSummary(t: ApiSchemas["TeacherSummary"]): TeacherSummary {
     slug: t.slug,
     displayName: t.display_name,
     headline: t.headline,
-    avatarUrl: t.avatar_url,
-    videoThumbnailUrl: t.video_thumbnail_url,
+    avatarUrl: mediaUrl(t.avatar_url),
+    videoThumbnailUrl: mediaUrl(t.video_thumbnail_url),
     kind: t.kind,
     countryCode: t.country_code,
     countryName: t.country_name,
@@ -152,7 +153,9 @@ export function toProfile(t: ApiSchemas["TeacherProfile"]): TeacherProfile {
   };
   return {
     ...toSummary(t),
-    introVideoUrl: t.intro_video_url,
+    introVideoUrl: mediaUrl(t.intro_video_url),
+    avatarAssetId: t.avatar_asset_id ?? null,
+    introVideoAssetId: t.intro_video_asset_id ?? null,
     about: t.about,
     teachingStyle: t.teaching_style,
     experience: t.experience,

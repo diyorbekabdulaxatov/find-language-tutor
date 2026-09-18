@@ -38,6 +38,8 @@ UPDATE teachers SET
     video_thumbnail_url  = $15,
     intro_video_url      = $16,
     meeting_url          = $17,
+    avatar_asset_id      = $18,
+    intro_video_asset_id = $19,
     updated_at           = now()
 WHERE id = $1;
 
@@ -61,7 +63,8 @@ INSERT INTO teachers (
     rating, review_count, lessons_completed, student_count,
     response_time_hours, accepting_students,
     avatar_url, video_thumbnail_url, intro_video_url, about, teaching_style,
-    user_id, status, verified
+    user_id, status, verified,
+    avatar_asset_id, intro_video_asset_id, meeting_url
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7, $8,
@@ -69,7 +72,8 @@ INSERT INTO teachers (
     $12, $13, $14, $15,
     $16, $17,
     $18, $19, $20, $21, $22,
-    $23, $24, $25
+    $23, $24, $25,
+    $26, $27, $28
 )
 RETURNING id;
 

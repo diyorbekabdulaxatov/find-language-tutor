@@ -11,7 +11,7 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/features/auth/auth-context";
 import { getMyProfile } from "@/features/dashboard/api";
-import { ProfileEditor } from "@/features/dashboard/components/profile-editor";
+import { ProfileWizard } from "@/features/dashboard/components/profile-wizard";
 import { AvailabilityEditor } from "@/features/availability/components/availability-editor";
 import { EarningsPanel } from "@/features/dashboard/components/earnings-panel";
 import type { TeacherProfile } from "@/types/teacher";
@@ -83,7 +83,7 @@ export function DashboardShell() {
           </TabsList>
 
           <TabsContent value="profile" className="mt-6">
-            <ProfileEditor initial={profile} onSaved={handleSaved} />
+            <ProfileWizard initial={profile} onSaved={handleSaved} />
           </TabsContent>
 
           <TabsContent value="availability" className="mt-6">

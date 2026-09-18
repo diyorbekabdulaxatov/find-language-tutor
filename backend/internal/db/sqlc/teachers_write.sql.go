@@ -86,7 +86,8 @@ INSERT INTO teachers (
     rating, review_count, lessons_completed, student_count,
     response_time_hours, accepting_students,
     avatar_url, video_thumbnail_url, intro_video_url, about, teaching_style,
-    user_id, status, verified
+    user_id, status, verified,
+    avatar_asset_id, intro_video_asset_id, meeting_url
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7, $8,
@@ -94,7 +95,8 @@ INSERT INTO teachers (
     $12, $13, $14, $15,
     $16, $17,
     $18, $19, $20, $21, $22,
-    $23, $24, $25
+    $23, $24, $25,
+    $26, $27, $28
 )
 RETURNING id
 `
@@ -125,6 +127,9 @@ type CreateTeacherParams struct {
 	UserID            uuid.NullUUID
 	Status            string
 	Verified          bool
+	AvatarAssetID     uuid.NullUUID
+	IntroVideoAssetID uuid.NullUUID
+	MeetingUrl        string
 }
 
 // Both the demo seed and POST /v1/teachers insert through here. The seed passes
@@ -157,6 +162,9 @@ func (q *Queries) CreateTeacher(ctx context.Context, arg CreateTeacherParams) (u
 		arg.UserID,
 		arg.Status,
 		arg.Verified,
+		arg.AvatarAssetID,
+		arg.IntroVideoAssetID,
+		arg.MeetingUrl,
 	)
 	var id uuid.UUID
 	err := row.Scan(&id)
@@ -292,6 +300,8 @@ UPDATE teachers SET
     video_thumbnail_url  = $15,
     intro_video_url      = $16,
     meeting_url          = $17,
+    avatar_asset_id      = $18,
+    intro_video_asset_id = $19,
     updated_at           = now()
 WHERE id = $1
 `
@@ -314,6 +324,8 @@ type UpdateTeacherParams struct {
 	VideoThumbnailUrl string
 	IntroVideoUrl     string
 	MeetingUrl        string
+	AvatarAssetID     uuid.NullUUID
+	IntroVideoAssetID uuid.NullUUID
 }
 
 // Edit the caller-editable profile fields. Server-controlled aggregates (rating,
@@ -338,6 +350,8 @@ func (q *Queries) UpdateTeacher(ctx context.Context, arg UpdateTeacherParams) er
 		arg.VideoThumbnailUrl,
 		arg.IntroVideoUrl,
 		arg.MeetingUrl,
+		arg.AvatarAssetID,
+		arg.IntroVideoAssetID,
 	)
 	return err
 }

@@ -129,6 +129,12 @@ type Teacher struct {
 	About             string
 	TeachingStyle     string
 
+	// Uploaded media (file_assets ids). When set, the matching *URL above is
+	// the public media route for it (see mediaPath); nil means the URL is
+	// whatever was written directly (the seed's placeholder photos, or "").
+	AvatarAssetID     *uuid.UUID
+	IntroVideoAssetID *uuid.UUID
+
 	Teaches    []Language
 	AlsoSpeaks []Language
 	Focus      []string // free-text focus tags, e.g. "IELTS", "Kids & teens"
@@ -255,9 +261,19 @@ type ProfileInput struct {
 	IntroVideoURL     string
 	VideoThumbnailURL string
 	MeetingURL        string
+	AvatarAssetID     *uuid.UUID // must be the owner's own image upload
+	IntroVideoAssetID *uuid.UUID // must be the owner's own video upload
 	Languages         []LanguageEntry
 	Focus             []string
 	Experience        []Experience
+}
+
+// OptionalUUID is a nullable uuid field of a patch that also remembers whether
+// it was present at all: Set=false leaves the field unchanged, Set=true with a
+// nil Value clears it.
+type OptionalUUID struct {
+	Set   bool
+	Value *uuid.UUID
 }
 
 // ProfilePatch is a partial edit: a nil pointer / slice means "field absent,
@@ -280,6 +296,8 @@ type ProfilePatch struct {
 	IntroVideoURL     *string
 	VideoThumbnailURL *string
 	MeetingURL        *string
+	AvatarAssetID     OptionalUUID
+	IntroVideoAssetID OptionalUUID
 	Languages         *[]LanguageEntry
 	Focus             *[]string
 	Experience        *[]Experience
@@ -314,6 +332,8 @@ func mergePatch(cur *Teacher, p ProfilePatch) ProfileInput {
 		IntroVideoURL:     cur.IntroVideoURL,
 		VideoThumbnailURL: cur.VideoThumbnailURL,
 		MeetingURL:        cur.MeetingURL,
+		AvatarAssetID:     cur.AvatarAssetID,
+		IntroVideoAssetID: cur.IntroVideoAssetID,
 	}
 	if cur.TrialPrice != nil {
 		v := cur.TrialPrice.AmountMinor
@@ -377,6 +397,12 @@ func mergePatch(cur *Teacher, p ProfilePatch) ProfileInput {
 	}
 	if p.MeetingURL != nil {
 		in.MeetingURL = *p.MeetingURL
+	}
+	if p.AvatarAssetID.Set {
+		in.AvatarAssetID = p.AvatarAssetID.Value
+	}
+	if p.IntroVideoAssetID.Set {
+		in.IntroVideoAssetID = p.IntroVideoAssetID.Value
 	}
 	if p.Languages != nil {
 		in.Languages = *p.Languages

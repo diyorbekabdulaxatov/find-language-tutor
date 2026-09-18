@@ -244,6 +244,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/teachers/{slug}/media/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A teacher's uploaded photo or intro video
+         * @description Streams (or 302-redirects to) the bytes with no auth, so a public page's `<img>` / `<video>` can load them; Range requests are honoured for the video. 404 unless the profile is `approved` and that slot was set from an upload — a pending profile's media is never public.
+         */
+        get: operations["getTeacherMedia"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/teachers/{slug}": {
         parameters: {
             query?: never;
@@ -1961,15 +1981,24 @@ export interface components {
             /** @description Median hours to reply to a booking request. */
             response_time_hours: number;
             accepting_students: boolean;
-            /** Format: uri */
+            /** @description Either an absolute URL, or — when the photo was uploaded — the API-relative path of the public media route (`/v1/teachers/{slug}/media/avatar`), which the client prefixes with the API origin. Empty when no photo is set. */
             avatar_url: string;
-            /** Format: uri */
             video_thumbnail_url: string;
         };
         /** @description Full profile — every summary field plus the long-form content. */
         TeacherProfile: components["schemas"]["TeacherSummary"] & {
-            /** Format: uri */
+            /** @description Same shape as `avatar_url` (`/v1/teachers/{slug}/media/intro-video` when uploaded). Empty when none. */
             intro_video_url: string;
+            /**
+             * Format: uuid
+             * @description The upload behind `avatar_url`, or null when the URL was pasted / there is none. The owner previews a not-yet-approved photo through `GET /v1/files/{id}`.
+             */
+            avatar_asset_id?: string | null;
+            /**
+             * Format: uuid
+             * @description The upload behind `intro_video_url`, or null.
+             */
+            intro_video_asset_id?: string | null;
             /** @description The teacher's default video room for lessons (may be empty). Set via `PATCH /v1/teachers/{slug}`; surfaced on a booking only once it is confirmed (see `Booking.meeting_url`). */
             meeting_url: string;
             /** @description Long-form, plain text; paragraphs separated by "\n\n". */
@@ -2017,9 +2046,21 @@ export interface components {
             currency?: components["schemas"]["Currency"];
             about?: string;
             teaching_style?: string;
+            /** @description Ignored whenever `avatar_asset_id` is sent. */
             avatar_url?: string;
+            /** @description Ignored whenever `intro_video_asset_id` is sent. */
             intro_video_url?: string;
             video_thumbnail_url?: string;
+            /**
+             * Format: uuid
+             * @description An image the caller uploaded via `POST /v1/uploads` (400 otherwise). When sent, `avatar_url` is derived from it: the public media route path when non-null, empty when null. Omit to leave the photo alone.
+             */
+            avatar_asset_id?: string | null;
+            /**
+             * Format: uuid
+             * @description A video the caller uploaded; same rules as `avatar_asset_id`.
+             */
+            intro_video_asset_id?: string | null;
             /** @description Default video room for this teacher's lessons. Must be an http(s) URL, or empty. Never revealed to students until a lesson is confirmed. */
             meeting_url?: string;
             languages?: components["schemas"]["LanguageEntry"][];
@@ -3760,6 +3801,42 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getTeacherMedia: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+                kind: "avatar" | "intro-video";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The media bytes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A byte range of the media. */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Redirect to a short-lived signed URL. */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             404: components["responses"]["NotFound"];
         };
     };

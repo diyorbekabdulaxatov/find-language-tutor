@@ -1,5 +1,12 @@
 package teachers
 
+import (
+	"bytes"
+	"encoding/json"
+
+	"github.com/google/uuid"
+)
+
 // Wire DTOs. These are the source of truth for the JSON shape and must stay in
 // sync with openapi.yaml (snake_case, money as {amount_minor, currency}).
 
@@ -58,6 +65,11 @@ type profileDTO struct {
 	TrialPrice     *moneyDTO       `json:"trial_price,omitempty"`
 	Status         string          `json:"status"`
 	ModerationNote string          `json:"moderation_note"`
+	// The uploaded media behind avatar_url / intro_video_url, when they came
+	// from an upload rather than a pasted URL. The owner's editor previews
+	// them through GET /v1/files/{id} (a pending profile's media route 404s).
+	AvatarAssetID     *string `json:"avatar_asset_id"`
+	IntroVideoAssetID *string `json:"intro_video_asset_id"`
 }
 
 // Profile is the exported alias for the full-profile wire shape so the admin
@@ -98,9 +110,33 @@ type createProfileRequest struct {
 	IntroVideoURL     string             `json:"intro_video_url"`
 	VideoThumbnailURL string             `json:"video_thumbnail_url"`
 	MeetingURL        string             `json:"meeting_url"`
+	AvatarAssetID     *uuid.UUID         `json:"avatar_asset_id"`
+	IntroVideoAssetID *uuid.UUID         `json:"intro_video_asset_id"`
 	Languages         []languageEntryDTO `json:"languages"`
 	Focus             []string           `json:"focus"`
 	Experience        []experienceDTO    `json:"experience"`
+}
+
+// nullableUUID is a patch field that tells an omitted key from an explicit
+// null: encoding/json only calls UnmarshalJSON for keys that are present, so
+// Set is true exactly when the client sent the field.
+type nullableUUID struct {
+	Set   bool
+	Value *uuid.UUID
+}
+
+func (n *nullableUUID) UnmarshalJSON(b []byte) error {
+	n.Set = true
+	if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+		n.Value = nil
+		return nil
+	}
+	var id uuid.UUID
+	if err := json.Unmarshal(b, &id); err != nil {
+		return err
+	}
+	n.Value = &id
+	return nil
 }
 
 // patchProfileRequest is the PATCH /v1/teachers/{slug} body. Every field is
@@ -123,6 +159,8 @@ type patchProfileRequest struct {
 	IntroVideoURL     *string             `json:"intro_video_url"`
 	VideoThumbnailURL *string             `json:"video_thumbnail_url"`
 	MeetingURL        *string             `json:"meeting_url"`
+	AvatarAssetID     nullableUUID        `json:"avatar_asset_id"`
+	IntroVideoAssetID nullableUUID        `json:"intro_video_asset_id"`
 	Languages         *[]languageEntryDTO `json:"languages"`
 	Focus             *[]string           `json:"focus"`
 	Experience        *[]experienceDTO    `json:"experience"`
@@ -173,6 +211,8 @@ func (r createProfileRequest) toInput() ProfileInput {
 		IntroVideoURL:     r.IntroVideoURL,
 		VideoThumbnailURL: r.VideoThumbnailURL,
 		MeetingURL:        r.MeetingURL,
+		AvatarAssetID:     r.AvatarAssetID,
+		IntroVideoAssetID: r.IntroVideoAssetID,
 		Languages:         languageEntries(r.Languages),
 		Focus:             r.Focus,
 		Experience:        experienceEntries(r.Experience),
@@ -199,6 +239,8 @@ func (r patchProfileRequest) toPatch() ProfilePatch {
 		IntroVideoURL:     r.IntroVideoURL,
 		VideoThumbnailURL: r.VideoThumbnailURL,
 		MeetingURL:        r.MeetingURL,
+		AvatarAssetID:     OptionalUUID{Set: r.AvatarAssetID.Set, Value: r.AvatarAssetID.Value},
+		IntroVideoAssetID: OptionalUUID{Set: r.IntroVideoAssetID.Set, Value: r.IntroVideoAssetID.Value},
 	}
 	if r.Languages != nil {
 		entries := languageEntries(*r.Languages)
@@ -299,6 +341,14 @@ func toProfile(t Teacher) profileDTO {
 	if t.TrialPrice != nil {
 		m := money(*t.TrialPrice)
 		p.TrialPrice = &m
+	}
+	if t.AvatarAssetID != nil {
+		id := t.AvatarAssetID.String()
+		p.AvatarAssetID = &id
+	}
+	if t.IntroVideoAssetID != nil {
+		id := t.IntroVideoAssetID.String()
+		p.IntroVideoAssetID = &id
 	}
 	return p
 }

@@ -7,6 +7,7 @@
 
 import { browserApi } from "@/features/auth/browser-client";
 import type { components } from "@/lib/api/schema";
+import { mediaUrl } from "@/lib/media";
 import type { Money } from "@/types/teacher";
 import type {
   ResourceKind,
@@ -244,7 +245,7 @@ function toBooking(b: WireBooking): Booking {
       slug: b.teacher.slug,
       displayName: b.teacher.display_name,
       timezone: b.teacher.timezone,
-      avatarUrl: b.teacher.avatar_url,
+      avatarUrl: mediaUrl(b.teacher.avatar_url),
     },
     student: { id: b.student.id, displayName: b.student.display_name },
   };

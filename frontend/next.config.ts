@@ -14,11 +14,26 @@ const securityHeaders = [
     : []),
 ];
 
+// Uploaded teacher photos are served by the API's public media route, so the
+// image optimizer must be allowed to fetch from that origin.
+const apiUrl = new URL(process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080");
+
+const isLocalApi = ["localhost", "127.0.0.1", "::1"].includes(apiUrl.hostname);
+
 const nextConfig: NextConfig = {
   images: {
-    // Placeholder image hosts used by the mock data. Remove these once profile
-    // photos and video posters are served from Cloudflare R2.
+    // Next 16 refuses to optimize images from private IPs (SSRF guard). Local
+    // dev serves them from localhost:8080, so allow it only in that case —
+    // never on a real deployment.
+    dangerouslyAllowLocalIP: isLocalApi,
     remotePatterns: [
+      {
+        protocol: apiUrl.protocol.replace(":", "") as "http" | "https",
+        hostname: apiUrl.hostname,
+        port: apiUrl.port,
+        pathname: "/v1/teachers/**",
+      },
+      // Placeholder image hosts used by the seed's demo teachers.
       { protocol: "https", hostname: "i.pravatar.cc" },
       { protocol: "https", hostname: "picsum.photos" },
     ],

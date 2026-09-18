@@ -1,24 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { Play } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TeacherPhoto } from "@/features/teachers/components/teacher-avatar";
 
 /**
- * Intro-video placeholder. The real player (a <video> or an embed from R2) drops
- * in where the "coming soon" panel is. For now, clicking the poster reveals that
- * panel so the interaction is wired up.
+ * The teacher's photo with a play affordance. Clicking swaps in the uploaded
+ * intro video (autoplaying, with native controls); a profile with no video
+ * yet explains that in place. The photo doubles as the poster, so a teacher
+ * with no photo gets the initials tile here too.
  *
  * `className` controls the aspect ratio / size from the caller.
  */
 export function IntroVideo({
   poster,
+  videoUrl,
   name,
   className,
 }: {
   poster: string;
+  videoUrl: string;
   name: string;
   className?: string;
 }) {
@@ -32,7 +35,16 @@ export function IntroVideo({
         className,
       )}
     >
-      {playing ? (
+      {playing && videoUrl ? (
+        <video
+          src={videoUrl}
+          poster={poster || undefined}
+          controls
+          autoPlay
+          playsInline
+          className="absolute inset-0 size-full bg-black object-contain"
+        />
+      ) : playing ? (
         <div className="grid h-full place-items-center bg-foreground p-6 text-center text-sm text-background">
           {t("introNotWired", { name })}
         </div>
@@ -43,13 +55,13 @@ export function IntroVideo({
           className="group absolute inset-0"
           aria-label={t("playIntro", { name })}
         >
-          <Image
+          <TeacherPhoto
             src={poster}
-            alt={name}
-            fill
-            priority
+            name={name}
+            size={640}
             sizes="(max-width: 768px) 100vw, 320px"
-            className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+            priority
+            className="transition-transform duration-500 group-hover:scale-[1.04]"
           />
           <span className="absolute inset-0 grid place-items-center bg-black/15 transition-colors group-hover:bg-black/25">
             <span className="grid size-14 place-items-center rounded-full bg-card/95 text-foreground shadow-lift transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
