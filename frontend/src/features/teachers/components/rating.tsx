@@ -39,9 +39,7 @@ export function Rating({
       <span className="font-bold tabular-nums text-rating">{value.toFixed(1)}</span>
       <Stars value={value} />
       {reviewCount != null && (
-        <span className="text-muted-foreground">
-          ({t("reviewsCount", { count: reviewCount })})
-        </span>
+        <span className="text-muted-foreground">{t("reviewsCount", { count: reviewCount })}</span>
       )}
     </span>
   );

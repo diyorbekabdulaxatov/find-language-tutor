@@ -122,7 +122,8 @@
     "intro": "Bu yerdagi har bir o'qituvchi pullik yakka video darslar beradi. Bir nechta tanishuvni ko'ring, sinov darsiga yoziling va o'zingizga mosini tanlang.",
     "available": "{count, plural, other {<b>#</b> o'qituvchi mavjud}}",
     "noMatchTitle": "Bu filtrlarga mos o'qituvchi yo'q",
-    "noMatchBody": "Narx oralig'ini kengaytirib yoki boshqa til tanlab ko'ring."
+    "noMatchBody": "Narx oralig'ini kengaytirib yoki boshqa til tanlab ko'ring.",
+    "resultsFor": "“{q}” bo'yicha natijalar"
   },
   "filters": {
     "filtersSort": "Filtr va saralash",
@@ -137,7 +138,12 @@
     "sortRecommended": "Tavsiya etilgan",
     "sortPriceAsc": "Narx: arzondan qimmatga",
     "sortPriceDesc": "Narx: qimmatdan arzonga",
-    "sortRatingDesc": "Eng yuqori baho"
+    "sortRatingDesc": "Eng yuqori baho",
+    "filter": "Filtr",
+    "sortBy": "Saralash",
+    "results": "{count, plural, one {# natija} other {# natija}}",
+    "language": "Til",
+    "teacherType": "O'qituvchi turi"
   },
   "profile": {
     "allTeachers": "Barcha o'qituvchilar",
@@ -160,7 +166,10 @@
     "localTime": "{city}da {time}",
     "sameTime": "siz bilan bir xil vaqt",
     "hoursAhead": "{count, plural, other {sizdan # soat oldinda}}",
-    "hoursBehind": "{count, plural, other {sizdan # soat orqada}}"
+    "hoursBehind": "{count, plural, other {sizdan # soat orqada}}",
+    "activeStudentsLabel": "Faol o'quvchilar",
+    "reviewsLabel": "Sharhlar",
+    "ratingLabel": "Reyting"
   },
   "bookingPanel": {
     "per60": "/ 60 daqiqa",

@@ -122,7 +122,8 @@
     "intro": "Every teacher here gives paid one-on-one video lessons. Watch a few intros, book a trial, keep the one you click with.",
     "available": "{count, plural, one {<b>#</b> teacher available} other {<b>#</b> teachers available}}",
     "noMatchTitle": "No teachers match those filters",
-    "noMatchBody": "Try widening the price range or choosing a different language."
+    "noMatchBody": "Try widening the price range or choosing a different language.",
+    "resultsFor": "Results for “{q}”"
   },
   "filters": {
     "filtersSort": "Filters & sort",
@@ -137,7 +138,12 @@
     "sortRecommended": "Recommended",
     "sortPriceAsc": "Price: low to high",
     "sortPriceDesc": "Price: high to low",
-    "sortRatingDesc": "Highest rated"
+    "sortRatingDesc": "Highest rated",
+    "filter": "Filter",
+    "sortBy": "Sort by",
+    "results": "{count, plural, one {# result} other {# results}}",
+    "language": "Language",
+    "teacherType": "Teacher type"
   },
   "profile": {
     "allTeachers": "All teachers",
@@ -160,7 +166,10 @@
     "localTime": "{time} in {city}",
     "sameTime": "same time as you",
     "hoursAhead": "{count, plural, one {# hour ahead of you} other {# hours ahead of you}}",
-    "hoursBehind": "{count, plural, one {# hour behind you} other {# hours behind you}}"
+    "hoursBehind": "{count, plural, one {# hour behind you} other {# hours behind you}}",
+    "activeStudentsLabel": "Active students",
+    "reviewsLabel": "Reviews",
+    "ratingLabel": "Rating"
   },
   "bookingPanel": {
     "per60": "/ 60 min",

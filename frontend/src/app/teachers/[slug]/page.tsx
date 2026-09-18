@@ -1,19 +1,17 @@
 import { cache } from "react";
-import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getLocale, getTranslations } from "next-intl/server";
-import { ArrowLeft } from "lucide-react";
 
 import { getTeacherBySlug, listTeacherSlugs } from "@/features/teachers/api";
-import { Rating } from "@/features/teachers/components/rating";
+import { Stars } from "@/features/reviews/components/star-rating";
 import { LanguageLine } from "@/features/teachers/components/language-line";
 import { LocalTime } from "@/features/teachers/components/local-time";
 import { IntroVideo } from "@/features/teachers/components/intro-video";
 import { BookingPanel } from "@/features/teachers/components/booking-panel";
 import { ReviewsSection } from "@/features/reviews/components/reviews-section";
 import { VerifiedBadge } from "@/features/teachers/components/verified-badge";
-import { greetingFor, languageName, localTimeIn } from "@/lib/i18n";
+import { languageName, localTimeIn } from "@/lib/i18n";
 import { flagEmoji } from "@/lib/country";
 
 /**
@@ -75,124 +73,126 @@ export default async function TeacherProfilePage({
   });
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:py-10">
-      <Link
-        href="/teachers"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" />
-        {t("allTeachers")}
-      </Link>
+    <div className="mx-auto max-w-[1340px] px-4 py-8 sm:px-6 lg:py-12">
+      <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-16">
+        {/* Column 1: the instructor page body. */}
+        <div className="max-w-[760px]">
+          <p className="text-sm font-bold text-muted-foreground">{kindLabel}</p>
+          <h1 className="mt-1 flex flex-wrap items-center gap-2 font-display text-3xl sm:text-[2.5rem]">
+            {teacher.displayName}
+            {teacher.verified && <VerifiedBadge className="[&_svg]:size-6" />}
+            <span className="text-2xl" title={teacher.countryName}>
+              {flagEmoji(teacher.countryCode)}
+            </span>
+          </h1>
+          <p className="mt-2 text-lg font-bold text-foreground/90">{teacher.headline}</p>
 
-      <div className="mt-5 grid gap-6 lg:grid-cols-[1fr_340px]">
-        {/* Header card — column 1, row 1 */}
-        <div className="rounded-2xl bg-card p-5 ring-1 ring-border shadow-card sm:p-6 lg:col-start-1 lg:row-start-1">
-          <div className="grid gap-5 sm:grid-cols-[220px_1fr] sm:gap-6">
+          <div className="mt-6 flex flex-wrap gap-10">
+            <Stat label={t("activeStudentsLabel")} value={teacher.studentCount.toLocaleString(locale)} />
+            <Stat label={t("reviewsLabel")} value={teacher.reviewCount.toLocaleString(locale)} />
+            <Stat label={t("ratingLabel")} value={teacher.rating.toFixed(1)}>
+              <Stars value={teacher.rating} className="mt-1 [&_svg]:size-3.5" />
+            </Stat>
+          </div>
+
+          <div className="mt-6 space-y-1.5 text-sm">
+            <LocalTime
+              timezone={teacher.timezone}
+              city={teacher.city}
+              initial={localTimeIn(teacher.timezone, new Date(), locale)}
+            />
+            <LanguageLine teaches={teacher.teaches} alsoSpeaks={teacher.alsoSpeaks} />
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-1.5">
+            {teacher.focus.map((tag) => (
+              <span key={tag} className="border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                {tag}
+              </span>
+            ))}
+          </div>
+
+          {/* Photo + intro on phones, above the fold. */}
+          <div className="mt-8 lg:hidden">
             <IntroVideo
               poster={teacher.avatarUrl}
               videoUrl={teacher.introVideoUrl}
               name={teacher.displayName}
-              className="aspect-[4/5] w-full"
+              className="aspect-[4/3] w-full"
             />
-
-            <div>
-              <p className="font-display text-lg text-primary">
-                {greetingFor(primaryLanguage.code)}.
-              </p>
-              <h1 className="mt-1 flex flex-wrap items-center gap-2 font-display text-3xl tracking-tight sm:text-[2rem]">
-                {teacher.displayName}
-                <span className="text-2xl" title={teacher.countryName}>
-                  {flagEmoji(teacher.countryCode)}
-                </span>
-              </h1>
-              <p className="mt-1 flex items-center gap-2 text-muted-foreground">
-                {kindLabel}
-                {teacher.verified && <VerifiedBadge withLabel />}
-              </p>
-
-              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
-                <Rating value={teacher.rating} reviewCount={teacher.reviewCount} />
-                <span className="text-muted-foreground">
-                  {t("activeStudents", { count: teacher.studentCount })}
-                </span>
-              </div>
-
-              <div className="mt-2 text-sm">
-                <LocalTime
-                  timezone={teacher.timezone}
-                  city={teacher.city}
-                  initial={localTimeIn(teacher.timezone, new Date(), locale)}
-                />
-              </div>
-
-              <LanguageLine
-                teaches={teacher.teaches}
-                alsoSpeaks={teacher.alsoSpeaks}
-                className="mt-3 text-sm"
-              />
-
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                {teacher.focus.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
+            <div className="mt-6">
+              <BookingPanel teacher={teacher} />
             </div>
           </div>
 
-          <p className="mt-5 border-t border-border pt-5 font-display text-xl leading-snug text-foreground">
-            &ldquo;{teacher.headline}&rdquo;
-          </p>
-        </div>
-
-        {/* Booking panel — column 2, spanning both rows, sticky */}
-        <aside className="lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start">
-          <BookingPanel teacher={teacher} />
-        </aside>
-
-        {/* Long-form content — column 1, row 2 */}
-        <div className="space-y-6 lg:col-start-1 lg:row-start-2">
-          <Card title={t("about")}>
+          <Section title={t("about")}>
             <Prose text={teacher.about} />
-          </Card>
+          </Section>
 
-          <Card title={t("howITeach")}>
+          <Section title={t("howITeach")}>
             <Prose text={teacher.teachingStyle} />
-          </Card>
+          </Section>
 
-          <Card title={t("experience")}>
-            <ul className="space-y-4">
+          <Section title={t("experience")}>
+            <ul className="space-y-3">
               {teacher.experience.map((item) => (
                 <li
                   key={`${item.title}-${item.period}`}
                   className="grid gap-x-4 gap-y-0.5 text-sm sm:grid-cols-[9rem_1fr]"
                 >
-                  <span className="font-medium text-muted-foreground">
-                    {item.period}
-                  </span>
+                  <span className="font-bold text-muted-foreground">{item.period}</span>
                   <span className="text-foreground">
                     {item.title} — {item.org}
                   </span>
                 </li>
               ))}
             </ul>
-          </Card>
+          </Section>
 
-          <ReviewsSection slug={slug} reviewCount={teacher.reviewCount} />
+          <div className="mt-10">
+            <ReviewsSection slug={slug} reviewCount={teacher.reviewCount} />
+          </div>
         </div>
+
+        {/* Column 2: photo / intro video, then the sticky booking card. */}
+        <aside className="hidden lg:block">
+          <div className="sticky top-[88px] space-y-6">
+            <IntroVideo
+              poster={teacher.avatarUrl}
+              videoUrl={teacher.introVideoUrl}
+              name={teacher.displayName}
+              className="aspect-square w-full"
+            />
+            <BookingPanel teacher={teacher} />
+          </div>
+        </aside>
       </div>
     </div>
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Stat({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value: string;
+  children?: React.ReactNode;
+}) {
   return (
-    <section className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-soft">
-      <h2 className="font-display text-xl">{title}</h2>
+    <div>
+      <p className="text-sm font-bold text-muted-foreground">{label}</p>
+      <p className="font-display text-2xl">{value}</p>
+      {children}
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mt-10">
+      <h2 className="font-display text-2xl">{title}</h2>
       <div className="mt-3">{children}</div>
     </section>
   );
@@ -201,7 +201,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 /** Renders \n\n-separated plain text as paragraphs at a readable measure. */
 function Prose({ text }: { text: string }) {
   return (
-    <div className="max-w-[64ch] space-y-4 leading-relaxed text-foreground/90">
+    <div className="max-w-[70ch] space-y-4 text-base leading-relaxed text-foreground/90">
       {text.split("\n\n").map((para, i) => (
         <p key={i}>{para}</p>
       ))}

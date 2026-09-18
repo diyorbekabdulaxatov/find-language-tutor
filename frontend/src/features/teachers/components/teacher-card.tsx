@@ -80,3 +80,62 @@ export function TeacherCard({
     </Link>
   );
 }
+
+/**
+ * Udemy's search-result row: photo on the left, name / headline / languages /
+ * rating in the middle, the hourly price on the right.
+ */
+export function TeacherRow({ teacher }: { teacher: TeacherSummary }) {
+  const t = useTranslations("teacherCard");
+  const tLang = useTranslations("languages");
+  const locale = useLocale();
+  const alsoCount = teacher.alsoSpeaks.length;
+
+  return (
+    <Link
+      href={`/teachers/${teacher.slug}`}
+      className="group flex gap-4 border-b border-border py-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+    >
+      <div className="relative aspect-[4/3] w-32 shrink-0 overflow-hidden border border-border bg-muted sm:w-64">
+        <TeacherPhoto
+          src={teacher.avatarUrl}
+          name={teacher.displayName}
+          size={640}
+          sizes="(max-width: 640px) 128px, 256px"
+        />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex items-start justify-between gap-4">
+          <h3 className="text-base leading-tight font-bold text-foreground group-hover:text-link">
+            {teacher.displayName}
+            {teacher.verified && <VerifiedBadge className="ml-1 inline-block align-text-bottom" />}
+          </h3>
+          <p className="shrink-0 text-base font-bold text-foreground">
+            {formatMoney(teacher.pricePerHour, locale)}
+            <span className="text-xs font-normal text-muted-foreground"> {t("perHour")}</span>
+          </p>
+        </div>
+        <p className="line-clamp-2 text-sm text-foreground/90">{teacher.headline}</p>
+        <p className="text-xs text-muted-foreground">
+          {t("teaches")} {teacher.teaches.map((l) => languageName(tLang, l)).join(", ")}
+          {alsoCount > 0 && ` ${t("more", { count: alsoCount })}`}
+          {" · "}
+          {teacher.city}, {teacher.countryName}
+        </p>
+        <Rating value={teacher.rating} reviewCount={teacher.reviewCount} variant="pill" />
+        <div className="mt-0.5 flex flex-wrap gap-1.5">
+          {teacher.kind === "professional" && (
+            <span className="bg-[#eceb98] px-2 py-0.5 text-xs font-bold text-[#3d3c0a]">
+              {t("professional")}
+            </span>
+          )}
+          {teacher.focus.slice(0, 3).map((tag) => (
+            <span key={tag} className="border border-border px-2 py-0.5 text-xs text-muted-foreground">
+              {tag}
+            </span>
+          ))}
+        </div>
+      </div>
+    </Link>
+  );
+}
