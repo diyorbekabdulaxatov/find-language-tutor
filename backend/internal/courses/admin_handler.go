@@ -19,6 +19,15 @@ func RegisterAdminRoutes(rg *gin.RouterGroup, h *Handler, guard *rbac.Guard) {
 	rg.GET("/courses", guard.Require(rbac.PermCoursesModerate), h.AdminList)
 	rg.POST("/courses/:id/suspend", guard.Require(rbac.PermCoursesModerate), h.AdminSuspend)
 	rg.POST("/courses/:id/unsuspend", guard.Require(rbac.PermCoursesModerate), h.AdminUnsuspend)
+
+	// Phase D2 course-review moderation. It reuses `reviews.moderate` rather
+	// than minting a `course_reviews.moderate` key: the capability an
+	// operator is being granted — "judge whether a student's published
+	// opinion stays up" — is the same one, and splitting it would mean every
+	// existing moderator role silently loses half its job on deploy.
+	rg.GET("/course-reviews", guard.Require(rbac.PermReviewsModerate), h.AdminReviews)
+	rg.POST("/course-reviews/:id/hide", guard.Require(rbac.PermReviewsModerate), h.setReviewHidden(true))
+	rg.POST("/course-reviews/:id/unhide", guard.Require(rbac.PermReviewsModerate), h.setReviewHidden(false))
 }
 
 // AdminList handles GET /v1/admin/courses?status&suspended&teacher_slug&q&page&page_size.

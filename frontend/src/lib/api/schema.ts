@@ -1199,6 +1199,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/courses/{id}/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A course's public reviews
+         * @description Visible reviews only, newest first, plus the star histogram over all of them. No auth. 404 unless the course is on the storefront (published, not archived, not suspended, approved teacher) — an unpublished course never leaks its reviews.
+         */
+        get: operations["listCourseReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/courses/{id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review a course you bought
+         * @description Eligibility is the enrollment: the caller must own a course_enrollment for this course. One review per purchase — a second attempt is a 409, and the client should PATCH the existing review instead.
+         *
+         *     A buyer of a course that has since been unpublished or suspended may still review it: they paid for it, and their opinion of it did not stop being true. Only new *buyers* are turned away.
+         */
+        post: operations["createCourseReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Revise your own course review
+         * @description A course review is a standing opinion of something the student keeps using, so the author can change it. 404 when they haven't written one yet — this never silently creates.
+         */
+        patch: operations["updateCourseReview"];
+        trace?: never;
+    };
     "/v1/courses/{id}/purchase": {
         parameters: {
             query?: never;
@@ -1865,6 +1911,66 @@ export interface paths {
          * @description Permission: `courses.moderate`. Idempotent. No request body.
          */
         post: operations["adminUnsuspendCourse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/course-reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The course-review moderation queue
+         * @description Every course review regardless of visibility, newest first. Requires the `reviews.moderate` permission — the same key that guards the lesson-review queue, because the capability being granted ("judge whether a student's published opinion stays up") is the same one.
+         */
+        get: operations["adminListCourseReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/course-reviews/{id}/hide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hide a course review
+         * @description Pulls the review from the public list and from the course's rating aggregate, in one transaction, so the stars and the list can never disagree. The row stays, so its author still counts as having reviewed and cannot post a replacement. Idempotent. Requires `reviews.moderate`.
+         */
+        post: operations["adminHideCourseReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/course-reviews/{id}/unhide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore a hidden course review
+         * @description The exact inverse of hide — the rating returns to what it was. Idempotent. Requires `reviews.moderate`.
+         */
+        post: operations["adminUnhideCourseReview"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2665,6 +2771,13 @@ export interface components {
             archived: boolean;
             /** @description (Phase C3) True when an operator has pulled this course from the storefront — independent of `status`/`archived`. Shown here so the teacher's own authoring views can surface a "suspended by admin" banner. */
             is_suspended: boolean;
+            /**
+             * Format: float
+             * @description (Phase D2) The derived display aggregate over the course's currently VISIBLE reviews, rounded to one decimal. 0 with a review_count of 0 means "no ratings yet" — render that, not zero stars.
+             */
+            rating: number;
+            /** @description Visible reviews only. */
+            review_count: number;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -2758,6 +2871,13 @@ export interface components {
             archived: boolean;
             /** @description (Phase C3) See Course.is_suspended. */
             is_suspended: boolean;
+            /**
+             * Format: float
+             * @description (Phase D2) See Course.rating.
+             */
+            rating: number;
+            /** @description Visible reviews only. */
+            review_count: number;
             sections: components["schemas"]["CourseSection"][];
             /** Format: date-time */
             created_at: string;
@@ -2828,6 +2948,13 @@ export interface components {
             total_duration_seconds: number;
             /** @description True when at least one lecture is free to watch. Which item plays is the landing page's business. */
             has_preview: boolean;
+            /**
+             * Format: float
+             * @description (Phase D2) The derived display aggregate over the course's currently VISIBLE reviews, rounded to one decimal. 0 with a review_count of 0 means "no ratings yet" — render that, not zero stars.
+             */
+            rating: number;
+            /** @description Visible reviews only. */
+            review_count: number;
         };
         CourseCatalogList: {
             courses: components["schemas"]["CourseCatalogEntry"][];
@@ -2873,6 +3000,61 @@ export interface components {
             item_count: number;
             /** @description Headline: total hours. 0 = unknown. */
             total_duration_seconds: number;
+            /**
+             * Format: float
+             * @description (Phase D2) The derived display aggregate over the course's currently VISIBLE reviews, rounded to one decimal. 0 with a review_count of 0 means "no ratings yet" — render that, not zero stars.
+             */
+            rating: number;
+            /** @description Visible reviews only. */
+            review_count: number;
+            /** @description (Phase D2) The viewer's own review of this course, so the page can offer "edit your review" instead of a "write one" button that would 409. Null for an anonymous viewer, the owner, a non-buyer, or a buyer who hasn't reviewed yet. A review hidden by a moderator is still returned to its own author. */
+            my_review: components["schemas"]["CourseReview"] | null;
+        };
+        /** @description One buyer's standing opinion of a course (phase D2). */
+        CourseReview: {
+            /** Format: uuid */
+            id: string;
+            rating: number;
+            comment: string;
+            /** @description Empty on the write responses, which don't join the user row. */
+            student_display_name: string;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description Differs from created_at when the author has revised their review.
+             */
+            updated_at: string;
+        };
+        CourseReviewList: {
+            reviews: components["schemas"]["CourseReview"][];
+            /** @description Total VISIBLE reviews */
+            total: number;
+            /** @description Star histogram over every visible review — index 0 = 1★ … index 4 = 5★. Computed over the whole course, not the page, so the bars don't move as the reader pages through. */
+            breakdown: number[];
+        };
+        CreateCourseReviewRequest: {
+            rating: number;
+            comment?: string;
+        };
+        AdminCourseReview: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            course_id: string;
+            course_title: string;
+            student_display_name: string;
+            rating: number;
+            comment: string;
+            /** @description A hidden review keeps its row — so its author still counts as having reviewed and can't slip a second one past the one-per-buyer constraint — but drops out of the public list and the rating aggregate. */
+            hidden: boolean;
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminCourseReviewList: {
+            reviews: components["schemas"]["AdminCourseReview"][];
+            /** @description Total matches */
+            total: number;
         };
         PurchaseCourseRequest: {
             /** @description Omitted/ignored for a free course. */
@@ -5735,7 +5917,8 @@ export interface operations {
                 max_price_minor?: number;
                 page?: number;
                 page_size?: number;
-                sort?: "newest" | "price_asc" | "price_desc";
+                /** @description `rating` sorts by the derived aggregate, with review_count as the tiebreak so one rave review doesn't outrank a real track record. */
+                sort?: "newest" | "price_asc" | "price_desc" | "rating";
             };
             header?: never;
             path?: never;
@@ -5834,6 +6017,119 @@ export interface operations {
                 };
                 content?: never;
             };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listCourseReviews: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of reviews. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseReviewList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createCourseReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCourseReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description The created review. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseReview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description `not_enrolled` — the caller hasn't bought it; or the caller's own teacher profile owns it. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description `already_reviewed` — this purchase already has a review; PATCH it instead. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `reviews_unavailable` — the review store isn't wired. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateCourseReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCourseReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated review. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseReview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -6991,6 +7287,88 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    adminListCourseReviews: {
+        parameters: {
+            query?: {
+                /** @description Omit for both. */
+                visibility?: "visible" | "hidden";
+                /** @description Narrow to one course. */
+                course_id?: string;
+                /** @description Surface the low-star reviews an operator is looking for. */
+                max_rating?: number;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the queue. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCourseReviewList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminHideCourseReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The updated review. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCourseReview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminUnhideCourseReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The updated review. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCourseReview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
 }

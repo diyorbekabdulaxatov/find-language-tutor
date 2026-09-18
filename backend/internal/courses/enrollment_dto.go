@@ -33,6 +33,10 @@ type catalogEntryDTO struct {
 	// a duration; the card omits the figure rather than rendering "0m".
 	TotalDurationSeconds int64 `json:"total_duration_seconds"`
 	HasPreview           bool  `json:"has_preview"`
+	// Phase D2 display aggregate over the course's visible reviews. 0/0 means
+	// "no ratings yet" — every surface says so rather than showing 0 stars.
+	Rating      float64 `json:"rating"`
+	ReviewCount int     `json:"review_count"`
 }
 
 func toCatalogEntryDTO(e CatalogEntry) catalogEntryDTO {
@@ -42,6 +46,7 @@ func toCatalogEntryDTO(e CatalogEntry) catalogEntryDTO {
 		Teacher:      toCourseTeacherSummaryDTO(e.Teacher),
 		SectionCount: e.SectionCount, ItemCount: e.ItemCount,
 		TotalDurationSeconds: e.TotalDurationSeconds, HasPreview: e.HasPreview,
+		Rating: e.Course.Rating, ReviewCount: e.Course.ReviewCount,
 	}
 	if e.Course.CoverAssetID != nil {
 		v := e.Course.CoverAssetID.String()
@@ -106,6 +111,12 @@ type catalogDetailDTO struct {
 	// Phase D1 headline: "N lectures · H hours".
 	ItemCount            int   `json:"item_count"`
 	TotalDurationSeconds int64 `json:"total_duration_seconds"`
+	// Phase D2: the display aggregate, plus the viewer's own review when they
+	// have written one (null otherwise) so the page can offer "edit" instead
+	// of a "write one" button that would 409.
+	Rating      float64          `json:"rating"`
+	ReviewCount int              `json:"review_count"`
+	MyReview    *courseReviewDTO `json:"my_review"`
 }
 
 func toCatalogDetailDTO(d CatalogDetail) catalogDetailDTO {
@@ -120,6 +131,11 @@ func toCatalogDetailDTO(d CatalogDetail) catalogDetailDTO {
 		Sections:   sections,
 		IsEnrolled: d.IsEnrolled, IsOwner: d.IsOwner,
 		ItemCount: d.ItemCount, TotalDurationSeconds: d.TotalDurationSeconds,
+		Rating: d.Course.Rating, ReviewCount: d.Course.ReviewCount,
+	}
+	if d.MyReview != nil {
+		r := toCourseReviewDTO(*d.MyReview)
+		dto.MyReview = &r
 	}
 	if d.Course.CoverAssetID != nil {
 		v := d.Course.CoverAssetID.String()

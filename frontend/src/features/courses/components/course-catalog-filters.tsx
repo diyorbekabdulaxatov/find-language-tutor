@@ -14,8 +14,12 @@ import {
 } from "@/components/ui/select";
 import type { CourseSort } from "@/features/courses/types";
 
-const SORT_OPTIONS: { value: CourseSort; label: "sortNewest" | "sortPriceAsc" | "sortPriceDesc" }[] = [
+const SORT_OPTIONS: {
+  value: CourseSort;
+  label: "sortNewest" | "sortPriceAsc" | "sortPriceDesc" | "sortRating";
+}[] = [
   { value: "newest", label: "sortNewest" },
+  { value: "rating", label: "sortRating" },
   { value: "price_asc", label: "sortPriceAsc" },
   { value: "price_desc", label: "sortPriceDesc" },
 ];

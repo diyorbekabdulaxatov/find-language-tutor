@@ -93,7 +93,11 @@ type courseDTO struct {
 	// from the storefront. Surfaced here so the teacher's own authoring
 	// library/editor can show a "suspended by admin" banner; it never changes
 	// what the teacher is allowed to edit in this phase.
-	IsSuspended bool      `json:"is_suspended"`
+	IsSuspended bool `json:"is_suspended"`
+	// Phase D2 display aggregate — the teacher's own library shows how their
+	// course is rated without a separate call.
+	Rating      float64   `json:"rating"`
+	ReviewCount int       `json:"review_count"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -105,7 +109,8 @@ func toCourseDTO(c Course) courseDTO {
 		Status:      string(c.Status),
 		Archived:    c.ArchivedAt != nil,
 		IsSuspended: c.SuspendedAt != nil,
-		CreatedAt:   c.CreatedAt.UTC(), UpdatedAt: c.UpdatedAt.UTC(),
+		Rating:      c.Rating, ReviewCount: c.ReviewCount,
+		CreatedAt: c.CreatedAt.UTC(), UpdatedAt: c.UpdatedAt.UTC(),
 	}
 	if c.CoverAssetID != nil {
 		v := c.CoverAssetID.String()
@@ -140,6 +145,8 @@ type courseDetailDTO struct {
 	Status       string       `json:"status"`
 	Archived     bool         `json:"archived"`
 	IsSuspended  bool         `json:"is_suspended"` // phase C3 — see courseDTO.IsSuspended
+	Rating       float64      `json:"rating"`       // phase D2 — see courseDTO.Rating
+	ReviewCount  int          `json:"review_count"`
 	Sections     []sectionDTO `json:"sections"`
 	CreatedAt    time.Time    `json:"created_at"`
 	UpdatedAt    time.Time    `json:"updated_at"`
@@ -156,6 +163,7 @@ func toCourseDetailDTO(d CourseDetail) courseDetailDTO {
 		Status:      string(d.Course.Status),
 		Archived:    d.Course.ArchivedAt != nil,
 		IsSuspended: d.Course.SuspendedAt != nil,
+		Rating:      d.Course.Rating, ReviewCount: d.Course.ReviewCount,
 		Sections:    sections,
 		CreatedAt:   d.Course.CreatedAt.UTC(), UpdatedAt: d.Course.UpdatedAt.UTC(),
 	}

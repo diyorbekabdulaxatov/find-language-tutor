@@ -66,6 +66,13 @@ type Course struct {
 	// already-enrolled students' access. Set/cleared only via the
 	// courses.moderate admin endpoints.
 	SuspendedAt *time.Time
+	// Rating / ReviewCount (phase D2) are the derived display aggregate over
+	// the course's currently visible reviews, recomputed in the same
+	// transaction as any write that can change it. A course with no visible
+	// reviews reads 0/0, which every surface renders as "no ratings yet"
+	// rather than as a zero-star course.
+	Rating      float64
+	ReviewCount int
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }

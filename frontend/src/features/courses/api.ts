@@ -13,6 +13,8 @@ import type {
   Course,
   CourseCatalogDetail,
   CourseCatalogEntry,
+  CourseReview,
+  CourseReviewPage,
   CourseCatalogItemOutline,
   CourseCatalogSectionOutline,
   CourseDetail,
@@ -69,6 +71,8 @@ function toCourse(c: WireCourse): Course {
     price: toMoney(c.price),
     status: c.status,
     archived: c.archived,
+    rating: c.rating,
+    reviewCount: c.review_count,
     createdAt: c.created_at,
     updatedAt: c.updated_at,
   };
@@ -369,6 +373,8 @@ function toCatalogEntry(c: WireCatalogEntry): CourseCatalogEntry {
     itemCount: c.item_count,
     totalDurationSeconds: c.total_duration_seconds,
     hasPreview: c.has_preview,
+    rating: c.rating,
+    reviewCount: c.review_count,
   };
 }
 
@@ -406,7 +412,70 @@ function toCatalogDetail(c: WireCatalogDetail): CourseCatalogDetail {
     isOwner: c.is_owner,
     itemCount: c.item_count,
     totalDurationSeconds: c.total_duration_seconds,
+    rating: c.rating,
+    reviewCount: c.review_count,
+    myReview: c.my_review ? toCourseReview(c.my_review) : null,
   };
+}
+
+/* --------------------------- reviews (phase D2) --------------------------- */
+
+type WireCourseReview = components["schemas"]["CourseReview"];
+
+function toCourseReview(r: WireCourseReview): CourseReview {
+  return {
+    id: r.id,
+    rating: r.rating,
+    comment: r.comment,
+    studentDisplayName: r.student_display_name,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+/** A course's public review list. Unauthenticated — uses `browserApi` only
+ *  because the landing page that renders it is a client island. */
+export async function listCourseReviews(
+  courseId: string,
+  page = 1,
+): Promise<CourseReviewPage> {
+  const { data, error, response } = await browserApi.GET("/v1/courses/{id}/reviews", {
+    params: { path: { id: courseId }, query: { page } },
+  });
+  if (error || !data) throw toErr(error, response.status, "Could not load the reviews.");
+  return {
+    reviews: data.reviews.map(toCourseReview),
+    total: data.total,
+    breakdown: data.breakdown,
+  };
+}
+
+/** Write the caller's review. 409 when they already have one — the caller
+ *  should have used `updateCourseReview`, which the landing page decides
+ *  between using `myReview`. */
+export async function createCourseReview(
+  courseId: string,
+  input: { rating: number; comment: string },
+): Promise<CourseReview> {
+  const { data, error, response } = await browserApi.POST("/v1/courses/{id}/review", {
+    params: { path: { id: courseId } },
+    body: { rating: input.rating, comment: input.comment },
+  });
+  if (error || !data) throw toErr(error, response.status, "Could not save your review.");
+  return toCourseReview(data);
+}
+
+/** Revise the caller's own review. */
+export async function updateCourseReview(
+  courseId: string,
+  input: { rating: number; comment: string },
+): Promise<CourseReview> {
+  const { data, error, response } = await browserApi.PATCH("/v1/courses/{id}/review", {
+    params: { path: { id: courseId } },
+    body: { rating: input.rating, comment: input.comment },
+  });
+  if (error || !data) throw toErr(error, response.status, "Could not save your review.");
+  return toCourseReview(data);
 }
 
 function toEnrollment(e: WireEnrollment): CourseEnrollment {
