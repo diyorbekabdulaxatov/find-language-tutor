@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, CheckCircle2, Circle, FileText, Film } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronDown, FileText, PlaySquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { formatLectureLength } from "@/lib/format";
 import { ResourcePlayer } from "@/features/submissions/components/resource-player";
 import type { AttachedResource } from "@/features/resources/types";
 import { CourseError, getCourseLearn, recordCourseItemProgress } from "@/features/courses/api";
@@ -85,10 +86,11 @@ export function CoursePlayer({ id }: { id: string }) {
 
   if (state === "loading") {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-          <div className="h-96 animate-pulse rounded-2xl bg-muted" />
-          <div className="h-96 animate-pulse rounded-2xl bg-muted" />
+      <div>
+        <div className="h-14 bg-ink" />
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="aspect-video animate-pulse bg-muted" />
+          <div className="h-96 animate-pulse bg-muted/60" />
         </div>
       </div>
     );
@@ -131,60 +133,28 @@ export function CoursePlayer({ id }: { id: string }) {
   const completedCount = items.filter((it) => it.progress.status === "completed").length;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-      <Link
-        href="/learn"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" />
-        {t("myLearning")}
-      </Link>
+    <div className="flex min-h-[calc(100vh-72px)] flex-col">
+      {/* Udemy's course-taking top bar: wordmark, title, progress. */}
+      <div className="flex h-14 items-center gap-4 bg-ink px-4 text-ink-foreground sm:px-6">
+        <Link href="/" className="hidden font-display text-lg text-white sm:block" aria-label="FindTutor">
+          FindTutor
+        </Link>
+        <span className="hidden h-6 w-px bg-white/25 sm:block" aria-hidden />
+        <h1 className="min-w-0 flex-1 truncate text-sm font-bold sm:text-base">{learn.title}</h1>
+        <p className="shrink-0 text-xs text-white/80 sm:text-sm">
+          {t("completedOf", { completed: completedCount, total: items.length })}
+        </p>
+        <Link
+          href="/learn"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-white px-2.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-white/10 sm:text-sm"
+        >
+          <ArrowLeft className="size-4" />
+          <span className="hidden sm:inline">{t("myLearning")}</span>
+        </Link>
+      </div>
 
-      <h1 className="mt-3 font-display text-2xl sm:text-3xl">{learn.title}</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {t("completedOf", { completed: completedCount, total: items.length })}
-      </p>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-[280px_1fr] lg:items-start">
-        <nav className="order-2 flex flex-col gap-4 rounded-2xl bg-card p-4 ring-1 ring-border shadow-soft lg:order-1 lg:sticky lg:top-20">
-          {learn.sections.map((section) => (
-            <div key={section.id}>
-              <p className="px-1 text-xs font-semibold text-muted-foreground">{section.title}</p>
-              <ul className="mt-1.5 flex flex-col gap-0.5">
-                {section.items.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedId(item.id)}
-                      className={cn(
-                        "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
-                        item.id === selected?.id
-                          ? "bg-accent text-accent-foreground"
-                          : "text-foreground hover:bg-muted",
-                      )}
-                    >
-                      {item.progress.status === "completed" ? (
-                        <CheckCircle2 className="size-4 shrink-0 text-mint" />
-                      ) : (
-                        <Circle className="size-4 shrink-0 text-muted-foreground" />
-                      )}
-                      {item.kind === "video" ? (
-                        <Film className="size-3.5 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                      )}
-                      <span className="truncate">
-                        {item.title || (item.kind === "video" ? t("video") : t("resource"))}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </nav>
-
-        <div className="order-1 lg:order-2">
+      <div className="grid flex-1 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="min-w-0">
           {selected ? (
             <CourseItemView
               key={selected.id}
@@ -194,12 +164,102 @@ export function CoursePlayer({ id }: { id: string }) {
               onProgress={(p) => updateItemProgress(selected.id, p)}
             />
           ) : (
-            <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center text-sm text-muted-foreground">
+            <div className="m-6 border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
               {t("noLessons")}
             </div>
           )}
         </div>
+
+        {/* Course content sidebar — Udemy's right rail. */}
+        <nav className="border-t border-border lg:sticky lg:top-[72px] lg:max-h-[calc(100vh-72px)] lg:overflow-y-auto lg:border-t-0 lg:border-l">
+          <p className="border-b border-border px-4 py-3 text-base font-bold">{t("courseContent")}</p>
+          {learn.sections.map((section, i) => {
+            const done = section.items.filter((it) => it.progress.status === "completed").length;
+            const secs = section.items.reduce((n, it) => n + it.durationSeconds, 0);
+            return (
+              <PlayerSection
+                key={section.id}
+                title={t("sectionN", { n: i + 1, title: section.title })}
+                meta={[`${done} / ${section.items.length}`, formatLectureLength(secs)].filter(Boolean).join(" | ")}
+                defaultOpen={section.items.some((it) => it.id === selected?.id) || i === 0}
+              >
+                {section.items.map((item) => {
+                  const active = item.id === selected?.id;
+                  const completed = item.progress.status === "completed";
+                  const len = formatLectureLength(item.durationSeconds);
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(item.id)}
+                        aria-current={active ? "true" : undefined}
+                        className={cn(
+                          "flex w-full items-start gap-3 px-4 py-2.5 text-left text-sm transition-colors",
+                          active ? "bg-border/60" : "hover:bg-muted",
+                        )}
+                      >
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "mt-0.5 grid size-4 shrink-0 place-items-center border border-foreground",
+                            completed && "bg-ink text-ink-foreground",
+                          )}
+                        >
+                          {completed && <CheckCircle2 className="size-3" />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-foreground">
+                            {item.title || (item.kind === "video" ? t("video") : t("resource"))}
+                          </span>
+                          <span className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                            {item.kind === "video" ? (
+                              <PlaySquare className="size-3.5" />
+                            ) : (
+                              <FileText className="size-3.5" />
+                            )}
+                            {len ?? (item.kind === "video" ? t("video") : t("resource"))}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </PlayerSection>
+            );
+          })}
+        </nav>
       </div>
+    </div>
+  );
+}
+
+function PlayerSection({
+  title,
+  meta,
+  defaultOpen,
+  children,
+}: {
+  title: string;
+  meta: string;
+  defaultOpen: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-border">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-start gap-3 bg-muted px-4 py-3 text-left"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold text-foreground">{title}</span>
+          <span className="block text-xs text-muted-foreground">{meta}</span>
+        </span>
+        <ChevronDown className={cn("mt-1 size-4 shrink-0 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && <ul>{children}</ul>}
     </div>
   );
 }
@@ -240,8 +300,8 @@ function CourseItemView({
   const t = useTranslations("courses");
   if (item.kind === "resource" && item.resource) {
     return (
-      <div className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-soft">
-        <h2 className="font-display text-xl">{item.title || item.resource.title}</h2>
+      <div className="px-4 py-6 sm:px-8">
+        <h2 className="font-display text-2xl">{item.title || item.resource.title}</h2>
         <div className="mt-4">
           <ResourcePlayer
             attachment={toAttachedResource(item.resource)}
@@ -265,7 +325,7 @@ function CourseItemView({
   }
 
   return (
-    <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center text-sm text-muted-foreground">
+    <div className="m-6 border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
       {t("noContent")}
     </div>
   );
@@ -347,18 +407,8 @@ function VideoItem({
   }
 
   return (
-    <div className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-soft">
-      <div className="flex items-start justify-between gap-3">
-        <h2 className="font-display text-xl">{item.title || t("video")}</h2>
-        {completed && (
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-mint/12 px-2.5 py-1 text-xs font-semibold text-mint">
-            <CheckCircle2 className="size-3.5" />
-            {t("completed")}
-          </span>
-        )}
-      </div>
-
-      <div className="mt-4 overflow-hidden rounded-xl bg-black">
+    <div>
+      <div className="bg-black">
         {state === "error" && (
           <p className="p-6 text-center text-sm text-destructive">{t("couldNotLoadVideo")}</p>
         )}
@@ -379,15 +429,21 @@ function VideoItem({
         )}
       </div>
 
-      <div className="mt-4 flex items-center gap-3">
-        <Button
-          variant={completed ? "outline" : "default"}
-          size="sm"
-          disabled={marking || completed}
-          onClick={() => void handleMarkComplete()}
-        >
-          {completed ? t("completed") : marking ? t("saving") : t("markComplete")}
-        </Button>
+      <div className="px-4 sm:px-8">
+        <div className="flex gap-6 border-b border-border text-base font-bold">
+          <span className="-mb-px border-b-2 border-foreground py-3">{t("overview")}</span>
+        </div>
+        <div className="flex flex-wrap items-start justify-between gap-4 py-6">
+          <h2 className="font-display text-2xl">{item.title || t("video")}</h2>
+          <Button
+            variant={completed ? "outline" : "default"}
+            disabled={marking || completed}
+            onClick={() => void handleMarkComplete()}
+          >
+            {completed && <CheckCircle2 />}
+            {completed ? t("completed") : marking ? t("saving") : t("markComplete")}
+          </Button>
+        </div>
       </div>
     </div>
   );

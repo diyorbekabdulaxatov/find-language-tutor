@@ -110,17 +110,18 @@ export function CourseReviews({
   const hasRatings = shownCount > 0;
 
   return (
-    <section className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-soft">
-      <h2 className="font-display text-xl">{t("reviewsHeading")}</h2>
+    <section>
+      <h2 className="font-display text-2xl">{t("studentFeedback")}</h2>
 
       {hasRatings ? (
         <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-8">
-          <div className="shrink-0">
-            <p className="font-display text-4xl leading-none text-foreground">
+          <div className="shrink-0 text-center">
+            <p className="font-display text-6xl leading-none text-rating">
               {shownRating.toFixed(1)}
             </p>
-            <Stars value={shownRating} className="mt-1.5" />
-            <p className="mt-1 text-xs text-muted-foreground">
+            <Stars value={shownRating} className="mt-2" />
+            <p className="mt-1 text-sm font-bold text-rating">{t("courseRating")}</p>
+            <p className="text-xs text-muted-foreground">
               {t("ratingCount", { count: shownCount })}
             </p>
           </div>
@@ -131,15 +132,14 @@ export function CourseReviews({
                 const n = page.breakdown[star - 1] ?? 0;
                 const pct = page.total > 0 ? (n / page.total) * 100 : 0;
                 return (
-                  <li key={star} className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="w-8 shrink-0 tabular-nums">{t("starsShort", { count: star })}</span>
-                    <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                      <span
-                        className="block h-full rounded-full bg-star"
-                        style={{ width: `${pct}%` }}
-                      />
+                  <li key={star} className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="h-2 flex-1 overflow-hidden bg-border">
+                      <span className="block h-full bg-muted-foreground" style={{ width: `${pct}%` }} />
                     </span>
-                    <span className="w-6 shrink-0 text-right tabular-nums">{n}</span>
+                    <Stars value={star} className="shrink-0 [&_svg]:size-3.5" />
+                    <span className="w-8 shrink-0 tabular-nums text-link underline">
+                      {Math.round(pct)}%
+                    </span>
                   </li>
                 );
               })}
@@ -178,7 +178,8 @@ export function CourseReviews({
         </div>
       )}
 
-      <div className="mt-6 border-t border-border pt-5">
+      <div className="mt-8">
+        <h3 className="mb-4 font-display text-2xl">{t("reviewsHeading")}</h3>
         {state === "loading" && <div className="h-16 animate-pulse rounded-lg bg-muted" />}
         {state === "error" && (
           <p className="text-sm text-destructive">{t("couldNotLoadReviews")}</p>
@@ -187,23 +188,31 @@ export function CourseReviews({
           <p className="text-sm text-muted-foreground">{t("noReviewsYet")}</p>
         )}
         {state === "ready" && page && page.reviews.length > 0 && (
-          <ul className="divide-y divide-border">
+          <ul className="divide-y divide-border border-t border-border">
             {page.reviews.map((r) => (
-              <li key={r.id} className="py-4 first:pt-0 last:pb-0">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium text-foreground">
-                    {r.studentDisplayName}
-                  </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {formatDate(r.createdAt, locale)}
-                  </span>
+              <li key={r.id} className="flex gap-4 py-5">
+                <span className="grid size-12 shrink-0 place-items-center rounded-full bg-ink text-base font-bold text-ink-foreground">
+                  {r.studentDisplayName
+                    .split(/\s+/)
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map((p) => p[0]?.toUpperCase() ?? "")
+                    .join("")}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-base font-bold text-foreground">{r.studentDisplayName}</p>
+                  <div className="mt-0.5 flex items-center gap-2">
+                    <Stars value={r.rating} className="[&_svg]:size-3.5" />
+                    <span className="text-xs text-muted-foreground">
+                      {formatDate(r.createdAt, locale)}
+                    </span>
+                  </div>
+                  {r.comment && (
+                    <p className="mt-2 max-w-[68ch] text-sm leading-relaxed text-foreground/90">
+                      {r.comment}
+                    </p>
+                  )}
                 </div>
-                <Stars value={r.rating} className="mt-1" />
-                {r.comment && (
-                  <p className="mt-2 max-w-[68ch] text-sm leading-relaxed text-foreground/90">
-                    {r.comment}
-                  </p>
-                )}
               </li>
             ))}
           </ul>
@@ -212,7 +221,7 @@ export function CourseReviews({
           <button
             type="button"
             onClick={() => setListPage((p) => p + 1)}
-            className="mt-4 text-sm font-medium text-primary hover:underline"
+            className="mt-4 inline-flex h-10 items-center rounded-md border border-foreground bg-background px-3 text-sm font-bold text-foreground hover:bg-accent"
           >
             {t("showMoreReviews")}
           </button>

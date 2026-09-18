@@ -4835,12 +4835,15 @@ components:
 
     CourseLearnItem:
       type: object
-      required: [id, kind, title, position, video_asset_id, resource, progress]
+      required: [id, kind, title, position, duration_seconds, video_asset_id, resource, progress]
       properties:
         id: { type: string, format: uuid }
         kind: { $ref: "#/components/schemas/CourseItemKind" }
         title: { type: string }
         position: { type: integer }
+        duration_seconds:
+          type: integer
+          description: Video length in seconds, 0 when unknown or for a `resource` item. Same figure the catalog outline carries, so the player can show it next to each lecture.
         video_asset_id:
           type: string
           format: uuid

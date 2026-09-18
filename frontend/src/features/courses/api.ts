@@ -513,6 +513,7 @@ function toLearnItem(i: WireLearnItem): CourseLearnItem {
     kind: i.kind,
     title: i.title,
     position: i.position,
+    durationSeconds: i.duration_seconds,
     videoAssetId: i.video_asset_id,
     resource: i.resource ? toResourceView(i.resource) : null,
     progress: toItemProgress(i.progress),

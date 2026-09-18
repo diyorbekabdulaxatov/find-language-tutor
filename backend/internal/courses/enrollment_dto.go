@@ -219,19 +219,23 @@ func toCourseResourceViewDTO(v CourseResourceView) courseResourceViewDTO {
 }
 
 type learnItemDTO struct {
-	ID           string                 `json:"id"`
-	Kind         string                 `json:"kind"`
-	Title        string                 `json:"title"`
-	Position     int                    `json:"position"`
-	VideoAssetID *string                `json:"video_asset_id"`
-	Resource     *courseResourceViewDTO `json:"resource"`
-	Progress     itemProgressDTO        `json:"progress"`
+	ID       string `json:"id"`
+	Kind     string `json:"kind"`
+	Title    string `json:"title"`
+	Position int    `json:"position"`
+	// DurationSeconds mirrors the catalog outline so the player's sidebar
+	// can label each lecture; 0 for resources and unknown-length videos.
+	DurationSeconds int                    `json:"duration_seconds"`
+	VideoAssetID    *string                `json:"video_asset_id"`
+	Resource        *courseResourceViewDTO `json:"resource"`
+	Progress        itemProgressDTO        `json:"progress"`
 }
 
 func toLearnItemDTO(li LearnItem) learnItemDTO {
 	dto := learnItemDTO{
 		ID: li.Item.ID.String(), Kind: string(li.Item.Kind), Title: li.Item.Title, Position: li.Item.Position,
-		Progress: toItemProgressDTO(li.Progress),
+		DurationSeconds: li.Item.DurationSeconds,
+		Progress:        toItemProgressDTO(li.Progress),
 	}
 	if li.Item.VideoAssetID != nil {
 		v := li.Item.VideoAssetID.String()
