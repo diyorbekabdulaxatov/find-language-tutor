@@ -241,6 +241,8 @@ type Course struct {
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
 	SuspendedAt      pgtype.Timestamptz
+	Rating           float32
+	ReviewCount      int32
 }
 
 type CourseEnrollment struct {
@@ -298,6 +300,18 @@ type CoursePaymentEvent struct {
 	PaymentID  uuid.UUID
 	Type       string
 	ReceivedAt pgtype.Timestamptz
+}
+
+type CourseReview struct {
+	ID           uuid.UUID
+	CourseID     uuid.UUID
+	EnrollmentID uuid.UUID
+	StudentID    uuid.UUID
+	Rating       int16
+	Comment      string
+	Hidden       bool
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
 }
 
 type CourseSection struct {

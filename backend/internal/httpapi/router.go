@@ -145,6 +145,9 @@ func NewRouter(d Deps) *gin.Engine {
 	courses.RegisterCatalogRoutes(courseRoutes, d.CourseHandler, d.OptionalAuth)
 	courses.RegisterLearnerRoutes(courseRoutes, d.CourseHandler, d.AuthMiddleware)
 	courses.RegisterEnrollmentRoutes(v1.Group("/enrollments"), d.CourseHandler, d.AuthMiddleware)
+	// Phase D2: the public review list (no auth) plus write/edit for enrolled
+	// buyers. The moderation queue rides along on courses.RegisterAdminRoutes.
+	courses.RegisterReviewRoutes(courseRoutes, d.CourseHandler, d.AuthMiddleware)
 
 	// /v1/admin is behind a valid access token; each route then enforces its
 	// own RBAC permission via the guard.

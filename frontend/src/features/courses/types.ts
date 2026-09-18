@@ -19,6 +19,11 @@ export interface Course {
   price: Money;
   status: CourseStatus;
   archived: boolean;
+  /** Derived aggregate over the course's visible reviews, one decimal.
+   *  0 with a reviewCount of 0 means "no ratings yet" — render that, not
+   *  zero stars. */
+  rating: number;
+  reviewCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -59,7 +64,7 @@ export interface CourseDetail extends Course {
 
 /* ------------------- Phase C2 — catalog, purchase, player ------------------- */
 
-export type CourseSort = "newest" | "price_asc" | "price_desc";
+export type CourseSort = "newest" | "price_asc" | "price_desc" | "rating";
 
 /** Light teacher summary embedded in catalog rows. */
 export interface CourseTeacherSummary {
@@ -82,6 +87,8 @@ export interface CourseCatalogEntry {
   totalDurationSeconds: number;
   /** At least one lecture is free to watch. */
   hasPreview: boolean;
+  rating: number;
+  reviewCount: number;
 }
 
 /** A curriculum item's pre-purchase outline — title only, no content. */
@@ -118,6 +125,32 @@ export interface CourseCatalogDetail {
   /** Headline "N lectures · H hours". */
   itemCount: number;
   totalDurationSeconds: number;
+  rating: number;
+  reviewCount: number;
+  /** The viewer's own review, so the page can offer "edit" rather than a
+   *  "write one" button that would 409. Null for an anonymous viewer, the
+   *  owner, a non-buyer, or a buyer who hasn't reviewed yet. */
+  myReview: CourseReview | null;
+}
+
+/** One buyer's standing opinion of a course. */
+export interface CourseReview {
+  id: string;
+  rating: number;
+  comment: string;
+  studentDisplayName: string;
+  createdAt: string;
+  /** Differs from createdAt once the author has revised it. */
+  updatedAt: string;
+}
+
+/** A page of a course's public reviews, plus the star histogram over ALL
+ *  visible reviews (index 0 = 1★ … index 4 = 5★) so the bars don't move as
+ *  the reader pages through. */
+export interface CourseReviewPage {
+  reviews: CourseReview[];
+  total: number;
+  breakdown: number[];
 }
 
 export type EnrollmentSource = "purchase" | "free";

@@ -392,6 +392,19 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 		web.NotFound(c, "No section with that id on this course.")
 	case errors.Is(err, ErrItemNotFound):
 		web.NotFound(c, "No item with that id on this section.")
+	case errors.Is(err, ErrNotEnrolled):
+		web.WriteError(c, http.StatusForbidden, "not_enrolled",
+			"Buy this course before reviewing it.")
+	case errors.Is(err, ErrCannotReviewOwnCourse):
+		web.Forbidden(c, "You can't review your own course.")
+	case errors.Is(err, ErrAlreadyReviewed):
+		web.WriteError(c, http.StatusConflict, "already_reviewed",
+			"You've already reviewed this course. Edit your review instead.")
+	case errors.Is(err, ErrReviewNotFound):
+		web.NotFound(c, "No review with that id.")
+	case errors.Is(err, ErrReviewsUnavailable):
+		web.WriteError(c, http.StatusServiceUnavailable, "reviews_unavailable",
+			"Course reviews aren't available right now.")
 	case errors.Is(err, ErrCannotBuyOwnCourse):
 		web.Forbidden(c, "You can't buy your own course.")
 	case errors.Is(err, ErrPurchaseUnavailable):

@@ -27,9 +27,9 @@ func (s *Service) Catalog(ctx context.Context, q CatalogQuery) (CatalogPage, err
 	switch q.Sort {
 	case "":
 		q.Sort = "newest"
-	case "newest", "price_asc", "price_desc":
+	case "newest", "price_asc", "price_desc", "rating":
 	default:
-		return CatalogPage{}, invalid("`sort` must be one of newest, price_asc, price_desc.")
+		return CatalogPage{}, invalid("`sort` must be one of newest, price_asc, price_desc, rating.")
 	}
 	if q.MaxPriceMinor != nil && *q.MaxPriceMinor < 0 {
 		return CatalogPage{}, invalid("`max_price_minor` can't be negative.")
@@ -89,6 +89,7 @@ func (s *Service) CatalogDetail(ctx context.Context, callerID, courseID uuid.UUI
 	}
 
 	var isOwner, isEnrolled bool
+	var myReview *Review
 	if callerID != uuid.Nil {
 		isOwner = s.isCourseOwner(ctx, callerID, c.TeacherID)
 		if !isOwner {
@@ -97,6 +98,18 @@ func (s *Service) CatalogDetail(ctx context.Context, callerID, courseID uuid.UUI
 				return CatalogDetail{}, err
 			}
 			isEnrolled = ok
+			// Phase D2: hand the buyer their own review back so the page can
+			// offer "edit your review" instead of a "write one" button that
+			// would 409. A hidden review still comes back to its author.
+			if isEnrolled {
+				r, found, rErr := s.MyReview(ctx, callerID, courseID)
+				if rErr != nil {
+					return CatalogDetail{}, rErr
+				}
+				if found {
+					myReview = &r
+				}
+			}
 		}
 	}
 
@@ -104,7 +117,7 @@ func (s *Service) CatalogDetail(ctx context.Context, callerID, courseID uuid.UUI
 	// are summed here rather than costing a second aggregate query.
 	return CatalogDetail{
 		Course: c, Teacher: teacher, Outline: outline,
-		IsEnrolled: isEnrolled, IsOwner: isOwner,
+		IsEnrolled: isEnrolled, IsOwner: isOwner, MyReview: myReview,
 		ItemCount: len(items), TotalDurationSeconds: totalDuration,
 	}, nil
 }

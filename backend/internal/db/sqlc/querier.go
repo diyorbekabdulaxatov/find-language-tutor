@@ -32,6 +32,7 @@ type Querier interface {
 	// confirmed and not yet started. active_students = distinct people who booked.
 	AdminBookingStats(ctx context.Context) (AdminBookingStatsRow, error)
 	AdminCountBookings(ctx context.Context, arg AdminCountBookingsParams) (int64, error)
+	AdminCountCourseReviews(ctx context.Context, arg AdminCountCourseReviewsParams) (int64, error)
 	AdminCountCourses(ctx context.Context, arg AdminCountCoursesParams) (int64, error)
 	AdminCountDisputes(ctx context.Context, status pgtype.Text) (int64, error)
 	AdminCountPayoutBatches(ctx context.Context) (int64, error)
@@ -43,6 +44,10 @@ type Querier interface {
 	// fields plus the lifecycle extras, the effective meeting link (the per-booking
 	// override if set, else the teacher's default), and the payment detail.
 	AdminGetBooking(ctx context.Context, id uuid.UUID) (AdminGetBookingRow, error)
+	// One moderation-queue row by id, with the course title and student name the
+	// bare course_reviews row can't carry. Used to build the response after a
+	// hide/unhide, whose RETURNING clause only sees the one table.
+	AdminGetCourseReview(ctx context.Context, id uuid.UUID) (AdminGetCourseReviewRow, error)
 	AdminGetPayoutBatch(ctx context.Context, id uuid.UUID) (AdminGetPayoutBatchRow, error)
 	AdminGetReview(ctx context.Context, id uuid.UUID) (AdminGetReviewRow, error)
 	AdminGetTeacherModeration(ctx context.Context, slug string) (AdminGetTeacherModerationRow, error)
@@ -59,6 +64,10 @@ type Querier interface {
 	// booking has no intent yet (payments.booking_id is UNIQUE, so the LEFT JOIN
 	// cannot fan the row set out).
 	AdminListBookings(ctx context.Context, arg AdminListBookingsParams) ([]AdminListBookingsRow, error)
+	// The moderation queue: every course review regardless of visibility, newest
+	// first, optionally narrowed to one visibility, one course, or a rating
+	// ceiling (to surface the low-star reviews an operator is looking for).
+	AdminListCourseReviews(ctx context.Context, arg AdminListCourseReviewsParams) ([]AdminListCourseReviewsRow, error)
 	// Phase C3: admin moderation.
 	// The operator moderation queue: every course regardless of status/teacher/
 	// suspension, newest first. Filters mirror reviews' ModerationQuery shape:
@@ -140,11 +149,14 @@ type Querier interface {
 	// marketplace even if the course row itself is still 'published'). Phase C3
 	// adds suspended_at IS NULL: an operator takedown must 404 the storefront the
 	// same way an unpublished/archived course already does.
-	// sort: 'price_asc' | 'price_desc' | anything else (including "" / 'newest' /
-	// 'recommended' — there is no rating-based ranking for courses yet) falls
-	// back to newest-first. The two CASE columns are NULL for every row unless
-	// their own sort is selected, so they never affect ordering otherwise and the
-	// final created_at/id tiebreak always applies.
+	// sort: 'price_asc' | 'price_desc' | 'rating' | anything else (including "" /
+	// 'newest') falls back to newest-first. Each CASE column is NULL for every
+	// row unless its own sort is selected, so they never affect ordering
+	// otherwise and the final created_at/id tiebreak always applies.
+	//
+	// 'rating' sorts by the derived aggregate, with review_count as the
+	// tiebreaker so a lone 5★ review doesn't outrank a course with fifty of
+	// them — the usual "one rave review isn't a track record" correction.
 	CatalogListCourses(ctx context.Context, arg CatalogListCoursesParams) ([]CatalogListCoursesRow, error)
 	// Marks an item complete unconditionally (a course-embedded resource's
 	// submission reaching submitted/graded, via resources.CourseProgress). Never
@@ -160,12 +172,16 @@ type Querier interface {
 	// so only the newest link works.
 	ConsumeUserAuthTokens(ctx context.Context, arg ConsumeUserAuthTokensParams) error
 	CountCatalogCourses(ctx context.Context, arg CountCatalogCoursesParams) (int64, error)
+	CountCourseReviews(ctx context.Context, courseID uuid.UUID) (int64, error)
 	CountTeacherCourses(ctx context.Context, arg CountTeacherCoursesParams) (int64, error)
 	CountTeacherResources(ctx context.Context, arg CountTeacherResourcesParams) (int64, error)
 	CountTeacherReviews(ctx context.Context, teacherID uuid.UUID) (int64, error)
 	CountTeacherSubmissionInbox(ctx context.Context, arg CountTeacherSubmissionInboxParams) (int64, error)
 	CountTeachers(ctx context.Context, arg CountTeachersParams) (int64, error)
 	CountUsersWithRole(ctx context.Context, roleID uuid.UUID) (int64, error)
+	// The "5★ ▓▓▓ 12" histogram under a course's rating. Visible rows only, and
+	// only the star values that actually occur — the caller fills 1..5 with zeros.
+	CourseRatingBreakdown(ctx context.Context, courseID uuid.UUID) ([]CourseRatingBreakdownRow, error)
 	// --- account-recovery link tokens (migration 000013) ---
 	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (uuid.UUID, error)
 	CreateBooking(ctx context.Context, arg CreateBookingParams) (uuid.UUID, error)
@@ -219,6 +235,7 @@ type Querier interface {
 	// events before payments, and both before courses.DeleteAllCourses.
 	DeleteAllCoursePaymentEvents(ctx context.Context) error
 	DeleteAllCoursePayments(ctx context.Context) error
+	DeleteAllCourseReviews(ctx context.Context) error
 	DeleteAllCourseSections(ctx context.Context) error
 	DeleteAllCourses(ctx context.Context) error
 	// Seed-only. disputes.booking_id cascades, but raised_by / resolved_by
@@ -301,6 +318,8 @@ type Querier interface {
 	GetCourseItemForEnrollmentResource(ctx context.Context, arg GetCourseItemForEnrollmentResourceParams) (CourseItem, error)
 	GetCoursePaymentByCourseAndStudent(ctx context.Context, arg GetCoursePaymentByCourseAndStudentParams) (CoursePayment, error)
 	GetCoursePaymentByID(ctx context.Context, id uuid.UUID) (CoursePayment, error)
+	GetCourseReviewByEnrollment(ctx context.Context, enrollmentID uuid.UUID) (CourseReview, error)
+	GetCourseReviewByID(ctx context.Context, id uuid.UUID) (CourseReview, error)
 	GetCourseSection(ctx context.Context, id uuid.UUID) (CourseSection, error)
 	// Disputes module (phase D): a participant contests a confirmed / completed
 	// lesson, an operator with `disputes.resolve` closes it.
@@ -391,6 +410,13 @@ type Querier interface {
 	// double-submit racing EnsureEnrollment) never double-credits the teacher.
 	InsertCourseLedgerHeld(ctx context.Context, arg InsertCourseLedgerHeldParams) error
 	InsertCoursePaymentEvent(ctx context.Context, arg InsertCoursePaymentEventParams) error
+	// Course reviews (phase D2): a buyer's rating + comment for a course they are
+	// enrolled in, plus the derived display aggregate on courses.rating /
+	// review_count. See migration 000024 for the design notes.
+	// A duplicate (enrollment_id) raises SQLSTATE 23505 on the table's UNIQUE
+	// constraint, which the repository maps to ErrAlreadyReviewed — race-safe,
+	// never a check-then-insert.
+	InsertCourseReview(ctx context.Context, arg InsertCourseReviewParams) (CourseReview, error)
 	// A second OPEN dispute for the same booking raises SQLSTATE 23505 on
 	// disputes_one_open_per_booking, which the repository maps to ErrDisputeExists
 	// (race-safe, never a check-then-insert).
@@ -439,6 +465,8 @@ type Querier interface {
 	// position, then item position) — one query for the whole tree instead of
 	// N+1 per-section queries; the service groups rows by section_id in Go.
 	ListCourseItemsByCourse(ctx context.Context, courseID uuid.UUID) ([]CourseItem, error)
+	// One course's public review list: visible rows only, newest first.
+	ListCourseReviews(ctx context.Context, arg ListCourseReviewsParams) ([]ListCourseReviewsRow, error)
 	ListCourseSections(ctx context.Context, courseID uuid.UUID) ([]CourseSection, error)
 	// The whole dispute thread for one booking, newest first.
 	ListDisputesForBooking(ctx context.Context, bookingID uuid.UUID) ([]ListDisputesForBookingRow, error)
@@ -519,6 +547,12 @@ type Querier interface {
 	// request (never from the JWT).
 	// The caller's effective permission keys, deduped and sorted. One indexed join.
 	PermissionsForUser(ctx context.Context, userID uuid.UUID) ([]string, error)
+	// Rebuild courses.rating / review_count from the course's currently VISIBLE
+	// reviews. Idempotent and order-independent — run it inside the same
+	// transaction as any create / edit / hide / unhide / delete. A course with no
+	// visible reviews reads as 0/0, which every surface renders as "no ratings
+	// yet" rather than as a zero-star course.
+	RecomputeCourseRating(ctx context.Context, courseID uuid.UUID) error
 	// Rebuild a teacher's display aggregate (teachers.rating / review_count) from
 	// the immutable historical baseline (rating_base / review_count_base) folded
 	// with their currently VISIBLE, booking-tied reviews. Idempotent and
@@ -590,6 +624,7 @@ type Querier interface {
 	SetBookingNoShowParty(ctx context.Context, arg SetBookingNoShowPartyParams) error
 	SetBookingStatus(ctx context.Context, arg SetBookingStatusParams) error
 	SetCourseArchived(ctx context.Context, arg SetCourseArchivedParams) (Course, error)
+	SetCourseReviewHidden(ctx context.Context, arg SetCourseReviewHiddenParams) (CourseReview, error)
 	// ever_published is a one-way latch: OR'd with "is this setting `published`",
 	// so unpublishing (status back to draft) never clears it — Delete stays
 	// blocked forever once a course has gone live at least once.
@@ -650,6 +685,9 @@ type Querier interface {
 	// alongside the title. Both are COALESCEd so a caller that omits them (the
 	// plain rename path) leaves the stored values alone.
 	UpdateCourseItem(ctx context.Context, arg UpdateCourseItemParams) (CourseItem, error)
+	// The author edits their own standing opinion. Scoped by student_id so an
+	// edit can never touch someone else's row even if the id leaked.
+	UpdateCourseReview(ctx context.Context, arg UpdateCourseReviewParams) (CourseReview, error)
 	// Partial edit: title / instructions / content are replaced wholesale when
 	// provided (the service passes the current value for fields it isn't changing).
 	UpdateResource(ctx context.Context, arg UpdateResourceParams) (Resource, error)

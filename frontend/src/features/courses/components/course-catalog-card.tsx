@@ -4,6 +4,7 @@ import { Clock, Film, GraduationCap, Layers, PlayCircle } from "lucide-react";
 import { courseLengthParts, formatMoney } from "@/lib/format";
 import { courseCoverUrl } from "@/features/courses/api";
 import type { CourseCatalogEntry } from "@/features/courses/types";
+import { Stars } from "@/features/reviews/components/star-rating";
 
 /**
  * Grid card for the public course catalog. Mirrors `TeacherCard`'s
@@ -68,6 +69,14 @@ export function CourseCatalogCard({ course }: { course: CourseCatalogEntry }) {
           <GraduationCap className="size-3.5" />
           {course.teacher.displayName}
         </p>
+
+        {course.reviewCount > 0 && (
+          <p className="inline-flex items-center gap-1.5 text-xs">
+            <span className="font-semibold text-foreground">{course.rating.toFixed(1)}</span>
+            <Stars value={course.rating} className="[&_svg]:size-3.5" />
+            <span className="text-muted-foreground">({course.reviewCount})</span>
+          </p>
+        )}
 
         <p className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
           <Layers className="size-3.5" />

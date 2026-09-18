@@ -2157,7 +2157,7 @@ paths:
         - { name: max_price_minor, in: query, schema: { type: integer, format: int64 } }
         - { name: page, in: query, schema: { type: integer, default: 1 } }
         - { name: page_size, in: query, schema: { type: integer, default: 20, maximum: 100 } }
-        - { name: sort, in: query, schema: { type: string, enum: [newest, price_asc, price_desc], default: newest } }
+        - { name: sort, in: query, schema: { type: string, enum: [newest, price_asc, price_desc, rating], default: newest }, description: "`rating` sorts by the derived aggregate, with review_count as the tiebreak so one rave review doesn't outrank a real track record." }
       responses:
         "200":
           description: A page of the catalog.
@@ -2227,6 +2227,85 @@ paths:
           content:
             video/*: { schema: { type: string, format: binary } }
         "302": { description: Redirect to a signed URL (R2-backed store). }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/reviews:
+    get:
+      tags: [courses]
+      summary: A course's public reviews
+      description: >
+        Visible reviews only, newest first, plus the star histogram over all
+        of them. No auth. 404 unless the course is on the storefront
+        (published, not archived, not suspended, approved teacher) — an
+        unpublished course never leaks its reviews.
+      operationId: listCourseReviews
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200": { description: A page of reviews., content: { application/json: { schema: { $ref: "#/components/schemas/CourseReviewList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/courses/{id}/review:
+    post:
+      tags: [courses]
+      summary: Review a course you bought
+      description: >
+        Eligibility is the enrollment: the caller must own a course_enrollment
+        for this course. One review per purchase — a second attempt is a 409,
+        and the client should PATCH the existing review instead.
+
+
+        A buyer of a course that has since been unpublished or suspended may
+        still review it: they paid for it, and their opinion of it did not
+        stop being true. Only new *buyers* are turned away.
+      operationId: createCourseReview
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCourseReviewRequest" }
+      responses:
+        "201": { description: The created review., content: { application/json: { schema: { $ref: "#/components/schemas/CourseReview" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: "`not_enrolled` — the caller hasn't bought it; or the caller's own teacher profile owns it."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`already_reviewed` — this purchase already has a review; PATCH it instead."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "503":
+          description: "`reviews_unavailable` — the review store isn't wired."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    patch:
+      tags: [courses]
+      summary: Revise your own course review
+      description: >
+        A course review is a standing opinion of something the student keeps
+        using, so the author can change it. 404 when they haven't written one
+        yet — this never silently creates.
+      operationId: updateCourseReview
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCourseReviewRequest" }
+      responses:
+        "200": { description: The updated review., content: { application/json: { schema: { $ref: "#/components/schemas/CourseReview" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /v1/courses/{id}/purchase:
@@ -3127,6 +3206,63 @@ paths:
         "404":
           description: "`not_found` — no course with that id."
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/admin/course-reviews:
+    get:
+      tags: [admin]
+      summary: The course-review moderation queue
+      description: >
+        Every course review regardless of visibility, newest first. Requires
+        the `reviews.moderate` permission — the same key that guards the
+        lesson-review queue, because the capability being granted ("judge
+        whether a student's published opinion stays up") is the same one.
+      operationId: adminListCourseReviews
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: visibility, in: query, schema: { type: string, enum: [visible, hidden] }, description: Omit for both. }
+        - { name: course_id, in: query, schema: { type: string, format: uuid }, description: Narrow to one course. }
+        - { name: max_rating, in: query, schema: { type: integer, minimum: 1, maximum: 5 }, description: Surface the low-star reviews an operator is looking for. }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200": { description: A page of the queue., content: { application/json: { schema: { $ref: "#/components/schemas/AdminCourseReviewList" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/admin/course-reviews/{id}/hide:
+    post:
+      tags: [admin]
+      summary: Hide a course review
+      description: >
+        Pulls the review from the public list and from the course's rating
+        aggregate, in one transaction, so the stars and the list can never
+        disagree. The row stays, so its author still counts as having reviewed
+        and cannot post a replacement. Idempotent. Requires `reviews.moderate`.
+      operationId: adminHideCourseReview
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The updated review., content: { application/json: { schema: { $ref: "#/components/schemas/AdminCourseReview" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/admin/course-reviews/{id}/unhide:
+    post:
+      tags: [admin]
+      summary: Restore a hidden course review
+      description: The exact inverse of hide — the rating returns to what it was. Idempotent. Requires `reviews.moderate`.
+      operationId: adminUnhideCourseReview
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The updated review., content: { application/json: { schema: { $ref: "#/components/schemas/AdminCourseReview" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
 components:
   securitySchemes:
@@ -4278,7 +4414,7 @@ components:
     Course:
       type: object
       description: A library-list row — course fields only, no curriculum. See CourseDetail for the full tree.
-      required: [id, title, subtitle, description, cover_asset_id, price, status, archived, is_suspended, created_at, updated_at]
+      required: [id, title, subtitle, description, cover_asset_id, price, status, archived, is_suspended, rating, review_count, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -4295,6 +4431,17 @@ components:
             storefront — independent of `status`/`archived`. Shown here so the
             teacher's own authoring views can surface a "suspended by admin"
             banner.
+        rating:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+          description: >
+            (Phase D2) The derived display aggregate over the course's
+            currently VISIBLE reviews, rounded to one decimal. 0 with a
+            review_count of 0 means "no ratings yet" — render that, not zero
+            stars.
+        review_count: { type: integer, minimum: 0, description: Visible reviews only. }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -4382,7 +4529,7 @@ components:
         every course- and curriculum-mutating endpoint (create/get/update/
         publish/archive, and every section/item mutation), so a client can
         re-render its whole authoring view from one response.
-      required: [id, title, subtitle, description, cover_asset_id, price, status, archived, is_suspended, sections, created_at, updated_at]
+      required: [id, title, subtitle, description, cover_asset_id, price, status, archived, is_suspended, rating, review_count, sections, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -4393,6 +4540,8 @@ components:
         status: { type: string, enum: [draft, published] }
         archived: { type: boolean }
         is_suspended: { type: boolean, description: "(Phase C3) See Course.is_suspended." }
+        rating: { type: number, format: float, minimum: 0, maximum: 5, description: "(Phase D2) See Course.rating." }
+        review_count: { type: integer, minimum: 0, description: Visible reviews only. }
         sections: { type: array, items: { $ref: "#/components/schemas/CourseSection" } }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
@@ -4477,7 +4626,7 @@ components:
     CourseCatalogEntry:
       type: object
       description: One public catalog row — course summary + teacher summary + curriculum size, no curriculum detail.
-      required: [id, title, subtitle, cover_asset_id, price, teacher, section_count, item_count, total_duration_seconds, has_preview]
+      required: [id, title, subtitle, cover_asset_id, price, teacher, section_count, item_count, total_duration_seconds, has_preview, rating, review_count]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -4493,6 +4642,17 @@ components:
         has_preview:
           type: boolean
           description: True when at least one lecture is free to watch. Which item plays is the landing page's business.
+        rating:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+          description: >
+            (Phase D2) The derived display aggregate over the course's
+            currently VISIBLE reviews, rounded to one decimal. 0 with a
+            review_count of 0 means "no ratings yet" — render that, not zero
+            stars.
+        review_count: { type: integer, minimum: 0, description: Visible reviews only. }
 
     CourseCatalogList:
       type: object
@@ -4525,7 +4685,7 @@ components:
     CourseCatalogDetail:
       type: object
       description: A course's public landing page — course + teacher summary, curriculum outline only, and the viewer's relationship to it.
-      required: [id, title, subtitle, description, cover_asset_id, price, teacher, sections, is_enrolled, is_owner, item_count, total_duration_seconds]
+      required: [id, title, subtitle, description, cover_asset_id, price, teacher, sections, is_enrolled, is_owner, item_count, total_duration_seconds, rating, review_count, my_review]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -4539,6 +4699,92 @@ components:
         is_owner: { type: boolean, description: False when unauthenticated. }
         item_count: { type: integer, description: "Headline: N lectures." }
         total_duration_seconds: { type: integer, description: "Headline: total hours. 0 = unknown." }
+        rating:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+          description: >
+            (Phase D2) The derived display aggregate over the course's
+            currently VISIBLE reviews, rounded to one decimal. 0 with a
+            review_count of 0 means "no ratings yet" — render that, not zero
+            stars.
+        review_count: { type: integer, minimum: 0, description: Visible reviews only. }
+        my_review:
+          allOf: [{ $ref: "#/components/schemas/CourseReview" }]
+          nullable: true
+          description: >
+            (Phase D2) The viewer's own review of this course, so the page can
+            offer "edit your review" instead of a "write one" button that would
+            409. Null for an anonymous viewer, the owner, a non-buyer, or a
+            buyer who hasn't reviewed yet. A review hidden by a moderator is
+            still returned to its own author.
+
+    CourseReview:
+      type: object
+      description: One buyer's standing opinion of a course (phase D2).
+      required: [id, rating, comment, student_display_name, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        student_display_name:
+          type: string
+          description: Empty on the write responses, which don't join the user row.
+        created_at: { type: string, format: date-time }
+        updated_at:
+          type: string
+          format: date-time
+          description: Differs from created_at when the author has revised their review.
+
+    CourseReviewList:
+      type: object
+      required: [reviews, total, breakdown]
+      properties:
+        reviews: { type: array, items: { $ref: "#/components/schemas/CourseReview" } }
+        total: { type: integer, description: Total VISIBLE reviews, not just this page. }
+        breakdown:
+          type: array
+          items: { type: integer }
+          minItems: 5
+          maxItems: 5
+          description: >
+            Star histogram over every visible review — index 0 = 1★ … index 4
+            = 5★. Computed over the whole course, not the page, so the bars
+            don't move as the reader pages through.
+
+    CreateCourseReviewRequest:
+      type: object
+      required: [rating]
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string, maxLength: 2000 }
+
+    AdminCourseReview:
+      type: object
+      required: [id, course_id, course_title, student_display_name, rating, comment, hidden, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        course_id: { type: string, format: uuid }
+        course_title: { type: string }
+        student_display_name: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        hidden:
+          type: boolean
+          description: >
+            A hidden review keeps its row — so its author still counts as
+            having reviewed and can't slip a second one past the one-per-buyer
+            constraint — but drops out of the public list and the rating
+            aggregate.
+        created_at: { type: string, format: date-time }
+
+    AdminCourseReviewList:
+      type: object
+      required: [reviews, total]
+      properties:
+        reviews: { type: array, items: { $ref: "#/components/schemas/AdminCourseReview" } }
+        total: { type: integer, description: Total matches, not just this page. }
 
     PurchaseCourseRequest:
       type: object

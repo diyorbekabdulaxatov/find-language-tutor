@@ -87,7 +87,7 @@ type TeacherSummary struct {
 type CatalogQuery struct {
 	Q             string
 	MaxPriceMinor *int64
-	Sort          string // "newest" (default) | "price_asc" | "price_desc"
+	Sort          string // "newest" (default) | "price_asc" | "price_desc" | "rating"
 	Page          int
 	PageSize      int
 }
@@ -151,6 +151,10 @@ type CatalogDetail struct {
 	// headline "N lectures · H hours".
 	ItemCount            int
 	TotalDurationSeconds int64
+	// MyReview (phase D2) is the viewer's own review of this course, when
+	// they have written one — nil for an anonymous viewer, the owner, a
+	// non-buyer, or a buyer who hasn't reviewed yet.
+	MyReview *Review
 }
 
 // CourseResourceView is a published resource's student-safe view (correct

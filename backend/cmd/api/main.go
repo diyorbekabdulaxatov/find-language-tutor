@@ -241,6 +241,10 @@ func run(logger *slog.Logger) error {
 	courseService.SetFileReader(files.NewCourseGateway(fileService))
 	// Publishing also needs a confirmed email (same gate as teacher submit).
 	courseService.SetAccountReader(authService)
+	// Phase D2: course ratings and reviews. Its own repository (own tables,
+	// own transaction boundary for the rating recompute) rather than an
+	// extension of the authoring one.
+	courseService.SetReviewRepository(courses.NewPostgresReviewRepository(pool))
 	// teachers -> files, same shape: a profile's uploaded photo / intro video
 	// must be the owner's own file, and the public media route serves it.
 	teacherService.SetFileReader(files.NewTeacherGateway(fileService))

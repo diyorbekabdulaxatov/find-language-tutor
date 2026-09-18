@@ -9,6 +9,7 @@ import {
   BookOpen,
   CalendarClock,
   GraduationCap,
+  MessageSquareText,
   ShieldAlert,
   ShieldCheck,
   Star,
@@ -32,12 +33,13 @@ const LINKS: {
   { href: "/admin/payouts", label: "navPayouts", icon: Banknote, perm: PERMISSIONS.payoutsView },
   { href: "/admin/reviews", label: "navReviews", icon: Star, perm: PERMISSIONS.reviewsModerate },
   { href: "/admin/courses", label: "navCourses", icon: BookOpen, perm: PERMISSIONS.coursesModerate },
+  { href: "/admin/course-reviews", label: "navCourseReviews", icon: MessageSquareText, perm: PERMISSIONS.reviewsModerate },
   { href: "/admin/users", label: "navUsers", icon: Users, perm: PERMISSIONS.usersView },
   { href: "/admin/roles", label: "navRoles", icon: ShieldCheck, perm: PERMISSIONS.rolesManage },
 ];
 type NavKey =
   | "navDashboard" | "navTeachers" | "navBookings" | "navDisputes" | "navPayouts"
-  | "navReviews" | "navCourses" | "navUsers" | "navRoles";
+  | "navReviews" | "navCourses" | "navCourseReviews" | "navUsers" | "navRoles";
 
 export function AdminNav() {
   const pathname = usePathname();

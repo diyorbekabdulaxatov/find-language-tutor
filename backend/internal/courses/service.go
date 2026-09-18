@@ -165,6 +165,7 @@ type Service struct {
 	resources ResourceReader // nil until SetResourceReader; guarded, fails closed
 	files     FileReader     // nil until SetFileReader; guarded, fails closed
 	payments  PaymentGateway // nil until SetPaymentGateway; guarded, fails closed (phase C2)
+	reviews   ReviewRepository // nil until SetReviewRepository; guarded (phase D2)
 	accounts  AccountReader  // nil until SetAccountReader; publish fails closed
 	now       func() time.Time
 	logger    *slog.Logger

@@ -6,12 +6,12 @@ INSERT INTO courses (teacher_id, title, subtitle, description, price_amount_mino
 VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
           price_amount_minor, price_currency, status, ever_published, archived_at,
-          created_at, updated_at, suspended_at;
+          created_at, updated_at, suspended_at, rating, review_count;
 
 -- name: GetCourse :one
 SELECT id, teacher_id, title, subtitle, description, cover_asset_id,
        price_amount_minor, price_currency, status, ever_published, archived_at,
-       created_at, updated_at, suspended_at
+       created_at, updated_at, suspended_at, rating, review_count
 FROM courses
 WHERE id = $1;
 
@@ -20,7 +20,7 @@ WHERE id = $1;
 -- and whether to include archived rows.
 SELECT id, teacher_id, title, subtitle, description, cover_asset_id,
        price_amount_minor, price_currency, status, ever_published, archived_at,
-       created_at, updated_at, suspended_at
+       created_at, updated_at, suspended_at, rating, review_count
 FROM courses
 WHERE teacher_id = $1
   AND (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status')::text)
@@ -45,7 +45,7 @@ SET title = $2, subtitle = $3, description = $4, cover_asset_id = $5,
 WHERE id = $1
 RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
           price_amount_minor, price_currency, status, ever_published, archived_at,
-          created_at, updated_at, suspended_at;
+          created_at, updated_at, suspended_at, rating, review_count;
 
 -- name: SetCourseStatus :one
 -- ever_published is a one-way latch: OR'd with "is this setting `published`",
@@ -58,7 +58,7 @@ SET status = sqlc.arg('status'),
 WHERE id = sqlc.arg('id')
 RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
           price_amount_minor, price_currency, status, ever_published, archived_at,
-          created_at, updated_at, suspended_at;
+          created_at, updated_at, suspended_at, rating, review_count;
 
 -- name: SetCourseArchived :one
 UPDATE courses
@@ -67,7 +67,7 @@ SET archived_at = CASE WHEN sqlc.arg('archived')::bool THEN now() ELSE NULL END,
 WHERE id = sqlc.arg('id')
 RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
           price_amount_minor, price_currency, status, ever_published, archived_at,
-          created_at, updated_at, suspended_at;
+          created_at, updated_at, suspended_at, rating, review_count;
 
 -- name: DeleteCourse :exec
 DELETE FROM courses WHERE id = $1;
@@ -83,7 +83,7 @@ DELETE FROM courses WHERE id = $1;
 SELECT
     c.id, c.teacher_id, c.title, c.subtitle, c.description, c.cover_asset_id,
     c.price_amount_minor, c.price_currency, c.status, c.ever_published, c.archived_at,
-    c.suspended_at, c.created_at, c.updated_at,
+    c.suspended_at, c.created_at, c.updated_at, c.rating, c.review_count,
     t.slug AS teacher_slug, t.display_name AS teacher_display_name
 FROM courses c
 JOIN teachers t ON t.id = c.teacher_id
@@ -126,7 +126,7 @@ SET suspended_at = CASE WHEN sqlc.arg('suspended')::bool THEN COALESCE(suspended
 WHERE id = sqlc.arg('course_id')
 RETURNING id, teacher_id, title, subtitle, description, cover_asset_id,
           price_amount_minor, price_currency, status, ever_published, archived_at,
-          created_at, updated_at, suspended_at;
+          created_at, updated_at, suspended_at, rating, review_count;
 
 -- Sections.
 
@@ -257,15 +257,18 @@ SELECT id, slug, display_name, (status = 'approved') AS approved FROM teachers W
 -- same way an unpublished/archived course already does.
 
 -- name: CatalogListCourses :many
--- sort: 'price_asc' | 'price_desc' | anything else (including "" / 'newest' /
--- 'recommended' — there is no rating-based ranking for courses yet) falls
--- back to newest-first. The two CASE columns are NULL for every row unless
--- their own sort is selected, so they never affect ordering otherwise and the
--- final created_at/id tiebreak always applies.
+-- sort: 'price_asc' | 'price_desc' | 'rating' | anything else (including "" /
+-- 'newest') falls back to newest-first. Each CASE column is NULL for every
+-- row unless its own sort is selected, so they never affect ordering
+-- otherwise and the final created_at/id tiebreak always applies.
+--
+-- 'rating' sorts by the derived aggregate, with review_count as the
+-- tiebreaker so a lone 5★ review doesn't outrank a course with fifty of
+-- them — the usual "one rave review isn't a track record" correction.
 SELECT
     c.id, c.teacher_id, c.title, c.subtitle, c.description, c.cover_asset_id,
     c.price_amount_minor, c.price_currency, c.status, c.ever_published, c.archived_at,
-    c.suspended_at, c.created_at, c.updated_at,
+    c.suspended_at, c.created_at, c.updated_at, c.rating, c.review_count,
     t.slug AS teacher_slug, t.display_name AS teacher_display_name,
     (SELECT count(*) FROM course_sections cs WHERE cs.course_id = c.id) AS section_count,
     (SELECT count(*) FROM course_items ci JOIN course_sections cs2 ON cs2.id = ci.section_id WHERE cs2.course_id = c.id) AS item_count,
@@ -284,6 +287,8 @@ WHERE c.status = 'published' AND c.archived_at IS NULL AND c.suspended_at IS NUL
 ORDER BY
     (CASE WHEN sqlc.arg('sort')::text = 'price_asc'  THEN c.price_amount_minor END) ASC NULLS LAST,
     (CASE WHEN sqlc.arg('sort')::text = 'price_desc' THEN c.price_amount_minor END) DESC NULLS LAST,
+    (CASE WHEN sqlc.arg('sort')::text = 'rating'     THEN c.rating END) DESC NULLS LAST,
+    (CASE WHEN sqlc.arg('sort')::text = 'rating'     THEN c.review_count END) DESC NULLS LAST,
     c.created_at DESC, c.id
 LIMIT sqlc.arg('page_limit')::int OFFSET sqlc.arg('page_offset')::int;
 

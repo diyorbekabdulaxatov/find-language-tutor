@@ -943,3 +943,67 @@ export async function unsuspendCourse(id: string): Promise<AdminCourse> {
   );
   return toAdminCourse(w);
 }
+
+/* ---------------------- course reviews (phase D2) ----------------------- */
+
+type WireAdminCourseReview = components["schemas"]["AdminCourseReview"];
+
+export interface AdminCourseReview {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  studentName: string;
+  rating: number;
+  comment: string;
+  hidden: boolean;
+  createdAt: string;
+}
+
+const toAdminCourseReview = (r: WireAdminCourseReview): AdminCourseReview => ({
+  id: r.id,
+  courseId: r.course_id,
+  courseTitle: r.course_title,
+  studentName: r.student_display_name,
+  rating: r.rating,
+  comment: r.comment,
+  hidden: r.hidden,
+  createdAt: r.created_at,
+});
+
+export async function listAdminCourseReviews(opts: {
+  visibility?: ReviewVisibility;
+  courseId?: string;
+  maxRating?: number;
+  page?: number;
+}): Promise<Paged<AdminCourseReview>> {
+  const p = new URLSearchParams({ page: String(opts.page ?? 1) });
+  if (opts.visibility && opts.visibility !== "all") p.set("visibility", opts.visibility);
+  if (opts.courseId) p.set("course_id", opts.courseId);
+  if (opts.maxRating) p.set("max_rating", String(opts.maxRating));
+  const w = await call<components["schemas"]["AdminCourseReviewList"]>(
+    `/v1/admin/course-reviews?${p}`,
+    {},
+    "Could not load the course-review queue.",
+  );
+  return { items: w.reviews.map(toAdminCourseReview), total: w.total };
+}
+
+/** Hiding pulls the review from the public list AND the course's rating in one
+ *  transaction, so the stars and the list can never disagree. */
+export async function hideCourseReview(id: string): Promise<AdminCourseReview> {
+  const w = await call<WireAdminCourseReview>(
+    `/v1/admin/course-reviews/${encodeURIComponent(id)}/hide`,
+    { method: "POST", body: "{}" },
+    "Could not hide the review.",
+  );
+  return toAdminCourseReview(w);
+}
+
+export async function unhideCourseReview(id: string): Promise<AdminCourseReview> {
+  const w = await call<WireAdminCourseReview>(
+    `/v1/admin/course-reviews/${encodeURIComponent(id)}/unhide`,
+    { method: "POST", body: "{}" },
+    "Could not restore the review.",
+  );
+  return toAdminCourseReview(w);
+}

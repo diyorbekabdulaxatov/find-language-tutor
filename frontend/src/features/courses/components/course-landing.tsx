@@ -24,6 +24,8 @@ import {
 } from "@/features/courses/api";
 import type { CourseCatalogDetail, CourseEnrollment } from "@/features/courses/types";
 import { PurchaseCoursePanel } from "./purchase-course-panel";
+import { CourseReviews } from "./course-reviews";
+import { Stars } from "@/features/reviews/components/star-rating";
 
 /**
  * The public course landing page. Fetches through `browserApi` (via
@@ -180,6 +182,18 @@ export function CourseLanding({ id }: { id: string }) {
               <p className="mt-1.5 text-muted-foreground">{course.subtitle}</p>
             )}
 
+            {course.reviewCount > 0 && (
+              <p className="mt-2.5 inline-flex items-center gap-2 text-sm">
+                <span className="font-semibold text-foreground">
+                  {course.rating.toFixed(1)}
+                </span>
+                <Stars value={course.rating} />
+                <span className="text-muted-foreground">
+                  {t("ratingCount", { count: course.reviewCount })}
+                </span>
+              </p>
+            )}
+
             <Link
               href={`/teachers/${course.teacher.slug}`}
               className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-primary hover:underline"
@@ -315,6 +329,16 @@ export function CourseLanding({ id }: { id: string }) {
               )}
             </ul>
           </section>
+
+          {/* Phase D2. `canReview` is the enrolled buyer only — the owner and
+              a browsing visitor get the list and the histogram, not the form. */}
+          <CourseReviews
+            courseId={course.id}
+            rating={course.rating}
+            reviewCount={course.reviewCount}
+            canReview={enrolled && !course.isOwner}
+            myReview={course.myReview}
+          />
         </div>
       </div>
     </div>

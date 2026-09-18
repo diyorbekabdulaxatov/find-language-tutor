@@ -358,6 +358,7 @@ func toCourse(row sqlc.Course) Course {
 		ID: row.ID, TeacherID: row.TeacherID, Title: row.Title, Subtitle: row.Subtitle, Description: row.Description,
 		PriceAmountMinor: row.PriceAmountMinor, PriceCurrency: string(row.PriceCurrency),
 		Status: Status(row.Status), EverPublished: row.EverPublished,
+		Rating: float64(row.Rating), ReviewCount: int(row.ReviewCount),
 		CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 	}
 	if row.CoverAssetID.Valid {
