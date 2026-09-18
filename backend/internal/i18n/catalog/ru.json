@@ -298,5 +298,7 @@
   "too many slots: %d (max %d)": "слишком много слотов: %d (максимум %d)",
   "trial_price_minor must be >= 0.": "trial_price_minor должен быть >= 0.",
   "unknown permission %q.": "неизвестное право %q.",
-  "weekday %d: slots %d–%d and %d–%d overlap": "день %d: слоты %d–%d и %d–%d пересекаются"
+  "weekday %d: slots %d–%d and %d–%d overlap": "день %d: слоты %d–%d и %d–%d пересекаются",
+  "The photo must be an image you've uploaded.": "Фото должно быть загруженным вами изображением.",
+  "The intro video must be a video you've uploaded.": "Вступительное видео должно быть загруженным вами видеофайлом."
 }

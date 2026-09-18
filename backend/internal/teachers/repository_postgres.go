@@ -211,6 +211,8 @@ func rowToTeacher(row sqlc.Teacher) Teacher {
 		MeetingURL:        row.MeetingUrl,
 		About:             row.About,
 		TeachingStyle:     row.TeachingStyle,
+		AvatarAssetID:     optUUID(row.AvatarAssetID),
+		IntroVideoAssetID: optUUID(row.IntroVideoAssetID),
 	}
 	if row.TrialPriceMinor.Valid {
 		t.TrialPrice = &Money{
@@ -299,6 +301,9 @@ func (r *repositoryPostgres) Create(ctx context.Context, ownerID uuid.UUID, slug
 		IntroVideoUrl:     in.IntroVideoURL,
 		About:             in.About,
 		TeachingStyle:     in.TeachingStyle,
+		MeetingUrl:        in.MeetingURL,
+		AvatarAssetID:     nullUUID(in.AvatarAssetID),
+		IntroVideoAssetID: nullUUID(in.IntroVideoAssetID),
 		UserID:            uuid.NullUUID{UUID: ownerID, Valid: true},
 		// New profiles are not public until an admin approves them, and the
 		// verified badge is never self-granted.
@@ -352,6 +357,8 @@ func (r *repositoryPostgres) Update(ctx context.Context, teacherID uuid.UUID, up
 		VideoThumbnailUrl: in.VideoThumbnailURL,
 		IntroVideoUrl:     in.IntroVideoURL,
 		MeetingUrl:        in.MeetingURL,
+		AvatarAssetID:     nullUUID(in.AvatarAssetID),
+		IntroVideoAssetID: nullUUID(in.IntroVideoAssetID),
 	}); err != nil {
 		return fmt.Errorf("update teacher: %w", err)
 	}
@@ -459,4 +466,19 @@ func nullKind(k Kind) sqlc.NullTeacherKind {
 		return sqlc.NullTeacherKind{}
 	}
 	return sqlc.NullTeacherKind{TeacherKind: sqlc.TeacherKind(k), Valid: true}
+}
+
+func nullUUID(id *uuid.UUID) uuid.NullUUID {
+	if id == nil {
+		return uuid.NullUUID{}
+	}
+	return uuid.NullUUID{UUID: *id, Valid: true}
+}
+
+func optUUID(n uuid.NullUUID) *uuid.UUID {
+	if !n.Valid {
+		return nil
+	}
+	id := n.UUID
+	return &id
 }

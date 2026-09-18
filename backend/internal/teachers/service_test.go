@@ -125,6 +125,8 @@ func (f *fakeRepo) Update(_ context.Context, teacherID uuid.UUID, upd ProfileUpd
 		t.DisplayName, t.Headline, t.Kind = in.DisplayName, in.Headline, in.Kind
 		t.Timezone = in.Timezone
 		t.PricePerHour = Money{in.PricePerHourMinor, in.Currency}
+		t.AvatarURL, t.IntroVideoURL = in.AvatarURL, in.IntroVideoURL
+		t.AvatarAssetID, t.IntroVideoAssetID = in.AvatarAssetID, in.IntroVideoAssetID
 		if upd.ReplaceLanguages {
 			t.Teaches, t.AlsoSpeaks = entriesToLanguages(in.Languages)
 		}

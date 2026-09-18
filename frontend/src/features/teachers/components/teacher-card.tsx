@@ -1,13 +1,12 @@
-import Image from "next/image";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { Play } from "lucide-react";
 import type { TeacherSummary } from "@/types/teacher";
 import { cn } from "@/lib/utils";
+import { TeacherPhoto } from "@/features/teachers/components/teacher-avatar";
 import { flagEmoji } from "@/lib/country";
 import { formatMoney } from "@/lib/format";
 import { languageName } from "@/lib/i18n";
-import { photoUrl } from "./teacher-avatar";
 import { Rating } from "./rating";
 import { VerifiedBadge } from "./verified-badge";
 
@@ -37,12 +36,12 @@ export function TeacherCard({
       )}
     >
       <div className="relative aspect-[5/4] overflow-hidden bg-muted">
-        <Image
-          src={photoUrl(teacher.avatarUrl, 640)}
-          alt={teacher.displayName}
-          fill
+        <TeacherPhoto
+          src={teacher.avatarUrl}
+          name={teacher.displayName}
+          size={640}
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 360px"
-          className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+          className="transition-transform duration-500 group-hover:scale-[1.04]"
         />
 
         <div className="absolute inset-x-0 top-0 flex items-start justify-between p-3">

@@ -72,9 +72,25 @@ test("signing up to teach lands on the profile form", async ({ page }) => {
   await page.getByLabel("Password").fill("password123");
   await page.getByRole("button", { name: "Sign up" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
-  // A fresh account is unverified: the form is there to fill in, but submit
-  // waits for the email link (the backend would 403 `email_not_verified`).
+  // A fresh account is unverified: the wizard is there to fill in, but the
+  // final submit waits for the email link (the backend would 403
+  // `email_not_verified`). Walk the three steps to get to it.
   await expect(page.getByText("Confirm your email to submit a profile")).toBeVisible();
+  await expect(page.getByLabel("Display name")).toHaveValue("E2E Teacher");
+  await page.getByLabel("Headline").fill("Conversation practice");
+  await page.getByLabel("City").fill("Tashkent");
+  // "Next" without a taught language stays on step 1 with a hint.
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByText("Add at least one language you teach.")).toBeVisible();
+  await page.getByRole("button", { name: "Add language" }).click();
+  await page.getByRole("button", { name: "Choose a language" }).click();
+  await page.getByPlaceholder("Search languages…").fill("Engl");
+  await page.getByRole("button", { name: /English/ }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByText("Step 2 of 3")).toBeVisible();
+  await page.getByLabel("Price per hour (so'm)").fill("90000");
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByText("Step 3 of 3")).toBeVisible();
   const submit = page.getByRole("button", { name: "Create profile" });
   await expect(submit).toBeVisible();
   await expect(submit).toBeDisabled();

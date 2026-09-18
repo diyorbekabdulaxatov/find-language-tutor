@@ -1,11 +1,10 @@
 import Link from "next/link";
-import Image from "next/image";
 import { getTranslations } from "next-intl/server";
 import { CalendarCheck, Video, Search, ShieldCheck, Star, Zap } from "lucide-react";
 import { listTeachers } from "@/features/teachers/api";
 import { TeacherCard } from "@/features/teachers/components/teacher-card";
 import { HeroSearch } from "@/features/teachers/components/hero-search";
-import { photoUrl } from "@/features/teachers/components/teacher-avatar";
+import { TeacherPhoto } from "@/features/teachers/components/teacher-avatar";
 import { greetingFor, languageName } from "@/lib/i18n";
 
 const TRUST = [
@@ -67,12 +66,12 @@ export default async function HomePage() {
                     i % 2 === 1 ? "translate-y-6" : ""
                   }`}
                 >
-                  <Image
-                    src={photoUrl(teacher.avatarUrl, 480)}
-                    alt={teacher.displayName}
-                    fill
+                  <TeacherPhoto
+                    src={teacher.avatarUrl}
+                    name={teacher.displayName}
+                    size={480}
                     sizes="260px"
-                    className="object-cover transition-transform duration-500 group-hover:scale-105"
+                    className="transition-transform duration-500 group-hover:scale-105"
                   />
                   <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3 text-sm font-medium text-white">
                     {teacher.displayName.split(" ")[0]} · {languageName(tLang, teacher.teaches[0])}

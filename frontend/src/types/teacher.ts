@@ -86,7 +86,11 @@ export type TeacherModerationStatus =
 
 /** Everything on a full profile page. Extends the summary with long-form content. */
 export interface TeacherProfile extends TeacherSummary {
+  /** "" when none; a `<video src>`-ready URL otherwise */
   introVideoUrl: string;
+  /** the uploads behind avatarUrl / introVideoUrl, null when pasted or unset */
+  avatarAssetId: string | null;
+  introVideoAssetId: string | null;
   /** long-form, plain text with paragraph breaks on \n\n */
   about: string;
   /** how the teacher runs a lesson */

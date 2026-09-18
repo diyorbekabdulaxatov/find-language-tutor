@@ -481,6 +481,8 @@ type Teacher struct {
 	ModerationNote    string
 	RatingBase        float32
 	ReviewCountBase   int32
+	AvatarAssetID     uuid.NullUUID
+	IntroVideoAssetID uuid.NullUUID
 }
 
 type TeacherAvailabilitySlot struct {
