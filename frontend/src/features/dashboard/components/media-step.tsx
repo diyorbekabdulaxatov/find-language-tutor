@@ -197,7 +197,7 @@ function MediaSlot({
         aria-label={hasSomething ? labels.replace : labels.choose}
         className={cn(
           "group relative overflow-hidden bg-muted ring-1 ring-border transition-shadow hover:ring-primary/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-progress",
-          isImage ? "size-44 rounded-full" : "aspect-video w-full rounded-2xl",
+          isImage ? "size-44 rounded-full" : "aspect-video w-full",
         )}
       >
         {preview ? (
