@@ -28,6 +28,8 @@ FROM teachers;
 SELECT
     count(*)                                                                                 AS total,
     count(*) FILTER (WHERE created_at >= now() - interval '7 days')                           AS this_week,
+    count(*) FILTER (WHERE status = 'pending_payment')                                        AS pending_payment,
+    count(*) FILTER (WHERE status = 'confirmed')                                              AS confirmed,
     count(*) FILTER (WHERE status = 'confirmed' AND start_at > now())                         AS upcoming,
     count(*) FILTER (WHERE status = 'completed')                                              AS completed,
     count(*) FILTER (WHERE status = 'cancelled')                                              AS cancelled,
@@ -258,3 +260,51 @@ JOIN users ru ON ru.id = d.raised_by
 LEFT JOIN users su ON su.id = d.resolved_by
 WHERE d.booking_id = $1
 ORDER BY d.created_at DESC, d.id;
+
+-- The activity chart (GET /v1/admin/metrics/activity) is two ranged reads. Days
+-- are UTC calendar days (the server's date), zero-filled so the series always
+-- has one point per day and the chart needs no gap handling.
+
+-- name: AdminDailyActivity :many
+SELECT
+    d::date                          AS day,
+    coalesce(b.bookings, 0)::bigint  AS bookings,
+    coalesce(b.gmv_minor, 0)::bigint AS gmv_minor,
+    coalesce(u.signups, 0)::bigint   AS signups
+FROM generate_series(
+        current_date - (sqlc.arg('days')::int - 1),
+        current_date,
+        interval '1 day'
+     ) AS d
+LEFT JOIN (
+    SELECT
+        created_at::date AS day,
+        count(*)         AS bookings,
+        coalesce(sum(price_minor) FILTER (WHERE status IN ('confirmed', 'completed')), 0) AS gmv_minor
+    FROM bookings
+    WHERE created_at >= current_date - (sqlc.arg('days')::int - 1)
+    GROUP BY 1
+) b ON b.day = d::date
+LEFT JOIN (
+    SELECT created_at::date AS day, count(*) AS signups
+    FROM users
+    WHERE created_at >= current_date - (sqlc.arg('days')::int - 1)
+    GROUP BY 1
+) u ON u.day = d::date
+ORDER BY d;
+
+-- name: AdminTopTeachers :many
+-- Who earned the platform the most over the window: booked money that reached
+-- confirmed or completed, by the day the booking was made.
+SELECT
+    t.slug,
+    t.display_name,
+    count(*)::bigint                        AS lessons,
+    coalesce(sum(b.price_minor), 0)::bigint AS gmv_minor
+FROM bookings b
+JOIN teachers t ON t.id = b.teacher_id
+WHERE b.status IN ('confirmed', 'completed')
+  AND b.created_at >= current_date - (sqlc.arg('days')::int - 1)
+GROUP BY t.slug, t.display_name
+ORDER BY gmv_minor DESC, lessons DESC
+LIMIT sqlc.arg('row_limit')::int;

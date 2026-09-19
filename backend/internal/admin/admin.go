@@ -73,6 +73,8 @@ type Metrics struct {
 	// Bookings
 	BookingsTotal     int64
 	BookingsThisWeek  int64 // created in the last 7 days
+	BookingsPending   int64 // awaiting payment
+	BookingsConfirmed int64 // paid for, whether or not it has happened yet
 	BookingsUpcoming  int64 // confirmed and not yet started
 	BookingsCompleted int64
 	BookingsCancelled int64
@@ -88,6 +90,32 @@ type Metrics struct {
 	ReviewsVisible int64
 	AverageRating  float64 // over visible reviews, one decimal; 0 when none
 	DisputesOpen   int64
+}
+
+// ActivityPoint is one UTC calendar day of the activity series. The series is
+// zero-filled, so every day in the window has a point.
+type ActivityPoint struct {
+	Day      time.Time // midnight UTC of that day
+	Bookings int64     // bookings created that day, any status
+	GMVMinor int64     // of those, the ones that reached confirmed / completed
+	Signups  int64     // accounts created that day
+}
+
+// TopTeacher is one row of the "who earned most" table beside the chart.
+type TopTeacher struct {
+	Slug        string
+	DisplayName string
+	Lessons     int64
+	GMVMinor    int64
+}
+
+// Activity is the answer to GET /v1/admin/metrics/activity: the daily series
+// over the requested window plus the teachers who earned the most in it.
+type Activity struct {
+	Currency string
+	Days     int // window length, already clamped to an allowed value
+	Points   []ActivityPoint
+	Top      []TopTeacher
 }
 
 // UserRow is one row of GET /v1/admin/users.

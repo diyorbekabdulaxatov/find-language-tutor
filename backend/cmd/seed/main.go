@@ -156,6 +156,14 @@ func main() {
 			log.Fatalf("create user for %s: %v", t.Slug, err)
 		}
 		userIDByFirstName[strings.ToLower(firstName(t.DisplayName))] = user.ID
+		// Spread the demo accounts back over the last two months so the admin
+		// dashboard's sign-ups series has a shape on a fresh database.
+		if err := q.SeedBackdateUser(ctx, sqlc.SeedBackdateUserParams{
+			ID:        user.ID,
+			CreatedAt: pgtype.Timestamptz{Time: signupDate(len(userIDByFirstName)), Valid: true},
+		}); err != nil {
+			log.Fatalf("backdate user for %s: %v", t.Slug, err)
+		}
 
 		status := t.Status
 		if status == "" {
@@ -315,7 +323,7 @@ func main() {
 	// Bookings whose earning is already disbursed. Collected here because the
 	// batch row they point at can only be written once its totals are known.
 	var paidOut []seedPayoutRow
-	for _, b := range seedBookings {
+	for i, b := range seedBookings {
 		teacherID, ok := teacherIDBySlug[b.TeacherSlug]
 		if !ok {
 			log.Fatalf("seedBookings has slug %q with no matching teacher", b.TeacherSlug)
@@ -338,6 +346,7 @@ func main() {
 			Status:          b.Status,
 			PriceMinor:      priceMinor,
 			Currency:        string(sqlc.CurrencyCodeUZS),
+			CreatedAt:       pgtype.Timestamptz{Time: bookedOn(start, i, now), Valid: true},
 		})
 		if err != nil {
 			log.Fatalf("seed booking %s/%s: %v", b.TeacherSlug, b.StudentFirstName, err)
@@ -496,4 +505,24 @@ func nullInt8(v *int64) pgtype.Int8 {
 		return pgtype.Int8{}
 	}
 	return pgtype.Int8{Int64: *v, Valid: true}
+}
+
+// signupDate spreads the demo accounts over the last two months, oldest first,
+// so the dashboard's sign-ups series has a shape instead of one spike on the
+// day the database was seeded. Deterministic in the account's ordinal.
+func signupDate(ordinal int) time.Time {
+	const spreadDays = 60
+	back := spreadDays - (ordinal*5)%spreadDays
+	return time.Now().UTC().Add(-time.Duration(back)*24*time.Hour).Truncate(time.Hour)
+}
+
+// bookedOn is when a seeded booking was made: a few days before the lesson,
+// varied per row and never in the future (a past lesson booked "tomorrow"
+// would make the activity chart lie).
+func bookedOn(start time.Time, ordinal int, now time.Time) time.Time {
+	made := start.Add(-time.Duration(3+(ordinal*7)%18) * 24 * time.Hour)
+	if made.After(now) {
+		return now
+	}
+	return made
 }

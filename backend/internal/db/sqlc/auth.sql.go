@@ -353,6 +353,22 @@ func (q *Queries) RevokeSession(ctx context.Context, arg RevokeSessionParams) er
 	return err
 }
 
+const seedBackdateUser = `-- name: SeedBackdateUser :exec
+UPDATE users SET created_at = $2 WHERE id = $1
+`
+
+type SeedBackdateUserParams struct {
+	ID        uuid.UUID
+	CreatedAt pgtype.Timestamptz
+}
+
+// Seed-only: spread the demo accounts over the past weeks so the admin
+// dashboard's sign-ups series has a shape instead of one spike on seed day.
+func (q *Queries) SeedBackdateUser(ctx context.Context, arg SeedBackdateUserParams) error {
+	_, err := q.db.Exec(ctx, seedBackdateUser, arg.ID, arg.CreatedAt)
+	return err
+}
+
 const seedMarkEmailVerified = `-- name: SeedMarkEmailVerified :exec
 UPDATE users SET email_verified_at = now() WHERE email_verified_at IS NULL
 `

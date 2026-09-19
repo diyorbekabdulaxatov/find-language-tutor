@@ -69,6 +69,56 @@ func TestMetrics_ShapeAndPermission(t *testing.T) {
 	}
 }
 
+func TestActivity_WindowClampAndShape(t *testing.T) {
+	day := time.Date(2026, 9, 18, 0, 0, 0, 0, time.UTC)
+	repo := &fakeRepo{activity: Activity{
+		Currency: "UZS",
+		Points: []ActivityPoint{
+			{Day: day, Bookings: 3, GMVMinor: 270_000_00, Signups: 2},
+			{Day: day.AddDate(0, 0, 1), Bookings: 0, GMVMinor: 0, Signups: 1},
+		},
+		Top: []TopTeacher{{Slug: "nodira-karimova", DisplayName: "Nodira", Lessons: 4, GMVMinor: 360_000_00}},
+	}}
+	r, h, full := newRouter(repo, fakeProfiles{})
+
+	w := req(r, http.MethodGet, "/v1/admin/metrics/activity?days=7", full, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d (%s)", w.Code, w.Body.String())
+	}
+	var a activityDTO
+	decode(t, w, &a)
+	if repo.activityDays != 7 {
+		t.Fatalf("repo asked for %d days, want 7", repo.activityDays)
+	}
+	if a.Days != 7 || a.Currency != "UZS" || len(a.Points) != 2 || len(a.Top) != 1 {
+		t.Fatalf("activity mapped wrong: %+v", a)
+	}
+	if a.Points[0].Day != "2026-09-18" || a.Points[0].Bookings != 3 || a.Points[0].GMVMinor != 270_000_00 {
+		t.Fatalf("first point mapped wrong: %+v", a.Points[0])
+	}
+	if a.Top[0].Slug != "nodira-karimova" || a.Top[0].Lessons != 4 {
+		t.Fatalf("top teacher mapped wrong: %+v", a.Top[0])
+	}
+
+	// An unsupported or unparseable window falls back to the default, it does
+	// not 400 — the window is a display choice.
+	for _, q := range []string{"", "?days=13", "?days=banana"} {
+		w = req(r, http.MethodGet, "/v1/admin/metrics/activity"+q, full, "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("days=%q status = %d, want 200", q, w.Code)
+		}
+		if repo.activityDays != ActivityDefaultDays {
+			t.Fatalf("days=%q asked for %d, want the %d-day default", q, repo.activityDays, ActivityDefaultDays)
+		}
+	}
+
+	// the same permission as the counters
+	w = req(r, http.MethodGet, "/v1/admin/metrics/activity", h.bearerWith(rbac.PermUsersView), "")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("scoped token status = %d, want 403", w.Code)
+	}
+}
+
 func TestListUsers_PaginationAndQ(t *testing.T) {
 	repo := &fakeRepo{users: []UserRow{
 		{ID: uuid.New(), Email: "ada@example.com", DisplayName: "Ada"},

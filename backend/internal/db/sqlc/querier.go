@@ -40,6 +40,10 @@ type Querier interface {
 	AdminCountReviews(ctx context.Context, arg AdminCountReviewsParams) (int64, error)
 	AdminCountTeachers(ctx context.Context, arg AdminCountTeachersParams) (int64, error)
 	AdminCountUsers(ctx context.Context, q_ pgtype.Text) (int64, error)
+	// The activity chart (GET /v1/admin/metrics/activity) is two ranged reads. Days
+	// are UTC calendar days (the server's date), zero-filled so the series always
+	// has one point per day and the chart needs no gap handling.
+	AdminDailyActivity(ctx context.Context, days int32) ([]AdminDailyActivityRow, error)
 	// One booking with everything the operator detail view shows: the list-row
 	// fields plus the lifecycle extras, the effective meeting link (the per-booking
 	// override if set, else the teacher's default), and the payment detail.
@@ -117,6 +121,9 @@ type Querier interface {
 	AdminSetTeacherStatus(ctx context.Context, arg AdminSetTeacherStatusParams) error
 	AdminSetTeacherVerified(ctx context.Context, arg AdminSetTeacherVerifiedParams) error
 	AdminTeacherStats(ctx context.Context) (AdminTeacherStatsRow, error)
+	// Who earned the platform the most over the window: booked money that reached
+	// confirmed or completed, by the day the booking was made.
+	AdminTopTeachers(ctx context.Context, arg AdminTopTeachersParams) ([]AdminTopTeachersRow, error)
 	// The user's payments as the paying student, bucketed by current payment state.
 	AdminUserPaymentsSummary(ctx context.Context, studentID uuid.UUID) (AdminUserPaymentsSummaryRow, error)
 	AdminUserRoles(ctx context.Context, userID uuid.UUID) ([]AdminUserRolesRow, error)
@@ -590,6 +597,9 @@ type Querier interface {
 	RevokeSession(ctx context.Context, arg RevokeSessionParams) error
 	RolesForUser(ctx context.Context, userID uuid.UUID) ([]RolesForUserRow, error)
 	SaveSubmissionAnswers(ctx context.Context, arg SaveSubmissionAnswersParams) (Submission, error)
+	// Seed-only: spread the demo accounts over the past weeks so the admin
+	// dashboard's sign-ups series has a shape instead of one spike on seed day.
+	SeedBackdateUser(ctx context.Context, arg SeedBackdateUserParams) error
 	// Seed-only: a booking in an explicit lifecycle state (the API path always
 	// starts at pending_payment). Used to give the admin / dispute demo data
 	// something to point at on a fresh database.

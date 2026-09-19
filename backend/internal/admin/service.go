@@ -15,6 +15,9 @@ import (
 // tables directly (internal/db/queries/admin.sql); tests use a fake.
 type Repository interface {
 	Metrics(ctx context.Context) (Metrics, error)
+	// Activity returns one zero-filled point per day for the last `days` days
+	// plus the `topN` teachers who booked the most money in that window.
+	Activity(ctx context.Context, days, topN int) (Activity, error)
 
 	ListUsers(ctx context.Context, q string, limit, offset int) (rows []UserRow, total int, err error)
 	// GetUserDetail returns ErrUserNotFound for an unknown id.
@@ -111,6 +114,32 @@ func (s *Service) log() *slog.Logger {
 // Metrics returns the dashboard counters.
 func (s *Service) Metrics(ctx context.Context) (Metrics, error) {
 	return s.repo.Metrics(ctx)
+}
+
+// ActivityWindows are the windows the chart offers, in days. Anything else is
+// clamped to ActivityDefaultDays rather than rejected: the window is a display
+// choice, not something a caller can get wrong in a way worth a 400.
+var ActivityWindows = []int{7, 30, 90}
+
+// ActivityDefaultDays is the window used when none is asked for.
+const ActivityDefaultDays = 30
+
+// activityTopN is how many teachers the "top earners" table holds.
+const activityTopN = 5
+
+// Activity returns the daily series for the dashboard chart. `days` is clamped
+// to one of ActivityWindows.
+func (s *Service) Activity(ctx context.Context, days int) (Activity, error) {
+	return s.repo.Activity(ctx, clampWindow(days), activityTopN)
+}
+
+func clampWindow(days int) int {
+	for _, w := range ActivityWindows {
+		if days == w {
+			return w
+		}
+	}
+	return ActivityDefaultDays
 }
 
 // ListUsers returns one page of the user directory. q matches email or

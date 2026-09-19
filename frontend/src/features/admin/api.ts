@@ -64,6 +64,8 @@ export interface AdminMetrics {
 
   bookingsTotal: number;
   bookingsThisWeek: number;
+  bookingsPending: number;
+  bookingsConfirmed: number;
   bookingsUpcoming: number;
   bookingsCompleted: number;
   bookingsCancelled: number;
@@ -96,6 +98,8 @@ export async function getMetrics(): Promise<AdminMetrics> {
     activeStudents: w.active_students,
     bookingsTotal: w.bookings_total,
     bookingsThisWeek: w.bookings_this_week,
+    bookingsPending: w.bookings_pending,
+    bookingsConfirmed: w.bookings_confirmed,
     bookingsUpcoming: w.bookings_upcoming,
     bookingsCompleted: w.bookings_completed,
     bookingsCancelled: w.bookings_cancelled,
@@ -107,6 +111,63 @@ export async function getMetrics(): Promise<AdminMetrics> {
     reviewsVisible: w.reviews_visible,
     averageRating: w.average_rating,
     disputesOpen: w.disputes_open,
+  };
+}
+
+/* ------------------------------- activity -------------------------------- */
+
+export interface ActivityPoint {
+  /** UTC calendar day, YYYY-MM-DD. */
+  day: string;
+  bookings: number;
+  gmv: Money;
+  signups: number;
+}
+
+export interface TopTeacher {
+  slug: string;
+  displayName: string;
+  lessons: number;
+  gmv: Money;
+}
+
+export interface AdminActivity {
+  currency: Money["currency"];
+  /** the window the server actually used, after clamping */
+  days: number;
+  points: ActivityPoint[];
+  topTeachers: TopTeacher[];
+}
+
+/** The windows the dashboard offers; anything else is clamped server-side. */
+export const ACTIVITY_WINDOWS = [7, 30, 90] as const;
+export type ActivityWindow = (typeof ACTIVITY_WINDOWS)[number];
+
+type WireActivity = components["schemas"]["AdminActivity"];
+
+export async function getActivity(days: ActivityWindow): Promise<AdminActivity> {
+  const w = await call<WireActivity>(
+    `/v1/admin/metrics/activity?days=${days}`,
+    {},
+    "Could not load the activity chart.",
+  );
+  const cur = w.currency as Money["currency"];
+  const money = (amountMinor: number): Money => ({ amountMinor, currency: cur });
+  return {
+    currency: cur,
+    days: w.days,
+    points: w.points.map((p) => ({
+      day: p.day,
+      bookings: p.bookings,
+      gmv: money(p.gmv_minor),
+      signups: p.signups,
+    })),
+    topTeachers: w.top_teachers.map((t) => ({
+      slug: t.slug,
+      displayName: t.display_name,
+      lessons: t.lessons,
+      gmv: money(t.gmv_minor),
+    })),
   };
 }
 

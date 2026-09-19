@@ -399,10 +399,10 @@ func (q *Queries) ListTeacherBookingIntervals(ctx context.Context, arg ListTeach
 const seedInsertBooking = `-- name: SeedInsertBooking :one
 INSERT INTO bookings (
     teacher_id, student_id, start_at, end_at,
-    duration_minutes, status, price_minor, currency, is_trial
+    duration_minutes, status, price_minor, currency, is_trial, created_at
 ) VALUES (
     $1, $2, $3, $4,
-    $5, $6, $7, $8, false
+    $5, $6, $7, $8, false, $9
 )
 RETURNING id
 `
@@ -416,6 +416,7 @@ type SeedInsertBookingParams struct {
 	Status          string
 	PriceMinor      int64
 	Currency        string
+	CreatedAt       pgtype.Timestamptz
 }
 
 // Seed-only: a booking in an explicit lifecycle state (the API path always
@@ -431,6 +432,7 @@ func (q *Queries) SeedInsertBooking(ctx context.Context, arg SeedInsertBookingPa
 		arg.Status,
 		arg.PriceMinor,
 		arg.Currency,
+		arg.CreatedAt,
 	)
 	var id uuid.UUID
 	err := row.Scan(&id)

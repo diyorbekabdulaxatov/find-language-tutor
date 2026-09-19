@@ -16,6 +16,8 @@ const adminBookingStats = `-- name: AdminBookingStats :one
 SELECT
     count(*)                                                                                 AS total,
     count(*) FILTER (WHERE created_at >= now() - interval '7 days')                           AS this_week,
+    count(*) FILTER (WHERE status = 'pending_payment')                                        AS pending_payment,
+    count(*) FILTER (WHERE status = 'confirmed')                                              AS confirmed,
     count(*) FILTER (WHERE status = 'confirmed' AND start_at > now())                         AS upcoming,
     count(*) FILTER (WHERE status = 'completed')                                              AS completed,
     count(*) FILTER (WHERE status = 'cancelled')                                              AS cancelled,
@@ -27,6 +29,8 @@ FROM bookings
 type AdminBookingStatsRow struct {
 	Total          int64
 	ThisWeek       int64
+	PendingPayment int64
+	Confirmed      int64
 	Upcoming       int64
 	Completed      int64
 	Cancelled      int64
@@ -43,6 +47,8 @@ func (q *Queries) AdminBookingStats(ctx context.Context) (AdminBookingStatsRow, 
 	err := row.Scan(
 		&i.Total,
 		&i.ThisWeek,
+		&i.PendingPayment,
+		&i.Confirmed,
 		&i.Upcoming,
 		&i.Completed,
 		&i.Cancelled,
@@ -119,6 +125,71 @@ func (q *Queries) AdminCountUsers(ctx context.Context, q_ pgtype.Text) (int64, e
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const adminDailyActivity = `-- name: AdminDailyActivity :many
+
+SELECT
+    d::date                          AS day,
+    coalesce(b.bookings, 0)::bigint  AS bookings,
+    coalesce(b.gmv_minor, 0)::bigint AS gmv_minor,
+    coalesce(u.signups, 0)::bigint   AS signups
+FROM generate_series(
+        current_date - ($1::int - 1),
+        current_date,
+        interval '1 day'
+     ) AS d
+LEFT JOIN (
+    SELECT
+        created_at::date AS day,
+        count(*)         AS bookings,
+        coalesce(sum(price_minor) FILTER (WHERE status IN ('confirmed', 'completed')), 0) AS gmv_minor
+    FROM bookings
+    WHERE created_at >= current_date - ($1::int - 1)
+    GROUP BY 1
+) b ON b.day = d::date
+LEFT JOIN (
+    SELECT created_at::date AS day, count(*) AS signups
+    FROM users
+    WHERE created_at >= current_date - ($1::int - 1)
+    GROUP BY 1
+) u ON u.day = d::date
+ORDER BY d
+`
+
+type AdminDailyActivityRow struct {
+	Day      pgtype.Date
+	Bookings int64
+	GmvMinor int64
+	Signups  int64
+}
+
+// The activity chart (GET /v1/admin/metrics/activity) is two ranged reads. Days
+// are UTC calendar days (the server's date), zero-filled so the series always
+// has one point per day and the chart needs no gap handling.
+func (q *Queries) AdminDailyActivity(ctx context.Context, days int32) ([]AdminDailyActivityRow, error) {
+	rows, err := q.db.Query(ctx, adminDailyActivity, days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminDailyActivityRow{}
+	for rows.Next() {
+		var i AdminDailyActivityRow
+		if err := rows.Scan(
+			&i.Day,
+			&i.Bookings,
+			&i.GmvMinor,
+			&i.Signups,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const adminGetBooking = `-- name: AdminGetBooking :one
@@ -761,6 +832,60 @@ func (q *Queries) AdminTeacherStats(ctx context.Context) (AdminTeacherStatsRow, 
 		&i.Verified,
 	)
 	return i, err
+}
+
+const adminTopTeachers = `-- name: AdminTopTeachers :many
+SELECT
+    t.slug,
+    t.display_name,
+    count(*)::bigint                        AS lessons,
+    coalesce(sum(b.price_minor), 0)::bigint AS gmv_minor
+FROM bookings b
+JOIN teachers t ON t.id = b.teacher_id
+WHERE b.status IN ('confirmed', 'completed')
+  AND b.created_at >= current_date - ($1::int - 1)
+GROUP BY t.slug, t.display_name
+ORDER BY gmv_minor DESC, lessons DESC
+LIMIT $2::int
+`
+
+type AdminTopTeachersParams struct {
+	Days     int32
+	RowLimit int32
+}
+
+type AdminTopTeachersRow struct {
+	Slug        string
+	DisplayName string
+	Lessons     int64
+	GmvMinor    int64
+}
+
+// Who earned the platform the most over the window: booked money that reached
+// confirmed or completed, by the day the booking was made.
+func (q *Queries) AdminTopTeachers(ctx context.Context, arg AdminTopTeachersParams) ([]AdminTopTeachersRow, error) {
+	rows, err := q.db.Query(ctx, adminTopTeachers, arg.Days, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminTopTeachersRow{}
+	for rows.Next() {
+		var i AdminTopTeachersRow
+		if err := rows.Scan(
+			&i.Slug,
+			&i.DisplayName,
+			&i.Lessons,
+			&i.GmvMinor,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const adminUserPaymentsSummary = `-- name: AdminUserPaymentsSummary :one

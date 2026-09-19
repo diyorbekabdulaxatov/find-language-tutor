@@ -1343,6 +1343,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/metrics/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Daily activity series
+         * @description Permission: `metrics.view`. One zero-filled point per UTC calendar day for the last `days` days (inclusive of today), plus the teachers who booked the most money in that window. An unsupported `days` falls back to 30 rather than failing — the window is a display choice.
+         */
+        get: operations["adminMetricsActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/users": {
         parameters: {
             query?: never;
@@ -3248,6 +3268,10 @@ export interface components {
             bookings_total: number;
             /** @description Created in the last 7 days. */
             bookings_this_week: number;
+            /** @description Awaiting payment. */
+            bookings_pending: number;
+            /** @description Paid for */
+            bookings_confirmed: number;
             /** @description Confirmed and not yet started. */
             bookings_upcoming: number;
             bookings_completed: number;
@@ -3283,6 +3307,41 @@ export interface components {
             average_rating: number;
             /** @description Disputes in the open state. */
             disputes_open: number;
+        };
+        /** @description One UTC calendar day of the activity series. */
+        AdminActivityPoint: {
+            /**
+             * Format: date
+             * @description The UTC calendar day, YYYY-MM-DD.
+             */
+            day: string;
+            /** @description Bookings created that day */
+            bookings: number;
+            /**
+             * Format: int64
+             * @description Of those, the ones that reached confirmed / completed.
+             */
+            gmv_minor: number;
+            /** @description Accounts created that day. */
+            signups: number;
+        };
+        /** @description One row of the window's top-earning teachers. */
+        AdminTopTeacher: {
+            slug: string;
+            display_name: string;
+            /** @description Confirmed or completed bookings made in the window. */
+            lessons: number;
+            /** Format: int64 */
+            gmv_minor: number;
+        };
+        /** @description The dashboard chart's data: a zero-filled daily series over the window plus its top-earning teachers. Money is integer minor units in `currency`. */
+        AdminActivity: {
+            /** @description UZS for the MVP. */
+            currency: string;
+            /** @description The window actually used */
+            days: number;
+            points: components["schemas"]["AdminActivityPoint"][];
+            top_teachers: components["schemas"]["AdminTopTeacher"][];
         };
         AdminUserRow: {
             /** Format: uuid */
@@ -6302,6 +6361,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminMetrics"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    adminMetricsActivity: {
+        parameters: {
+            query?: {
+                /** @description Window length. One of 7, 30, 90; anything else means 30. */
+                days?: 7 | 30 | 90;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The daily series and the window's top earners. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminActivity"];
                 };
             };
             401: components["responses"]["Unauthorized"];

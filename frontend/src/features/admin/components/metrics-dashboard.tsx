@@ -7,6 +7,7 @@ import { Star } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getMetrics, type AdminMetrics } from "@/features/admin/api";
+import { ActivityPanel } from "./activity-panel";
 
 export function MetricsDashboard() {
   const [data, setData] = useState<AdminMetrics | null>(null);
@@ -44,7 +45,7 @@ export function MetricsDashboard() {
 
   if (state === "error" || !data) {
     return (
-      <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+      <p className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
         {t("couldNotLoadMetrics")}
       </p>
     );
@@ -71,6 +72,8 @@ export function MetricsDashboard() {
         />
         <Tile label={t("paidToTeachers")} value={m(data.payoutsPaid)} />
       </Section>
+
+      <ActivityPanel metrics={data} />
 
       <Section title={t("bookings")}>
         <Tile label={t("total")} value={n(data.bookingsTotal)} />

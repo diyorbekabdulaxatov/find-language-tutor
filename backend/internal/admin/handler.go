@@ -35,6 +35,7 @@ func NewHandler(svc *Service, logger *slog.Logger) *Handler {
 // Each route carries its own RBAC permission check via the guard.
 func RegisterRoutes(rg *gin.RouterGroup, h *Handler, guard *rbac.Guard) {
 	rg.GET("/metrics", guard.Require(rbac.PermMetricsView), h.Metrics)
+	rg.GET("/metrics/activity", guard.Require(rbac.PermMetricsView), h.Activity)
 	rg.GET("/users", guard.Require(rbac.PermUsersView), h.ListUsers)
 	rg.GET("/users/:id", guard.Require(rbac.PermUsersView), h.GetUser)
 
@@ -57,6 +58,20 @@ func (h *Handler) Metrics(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, toMetricsDTO(m))
+}
+
+// Activity handles GET /v1/admin/metrics/activity?days. An unparseable or
+// unsupported `days` falls back to the default window — see Service.Activity.
+func (h *Handler) Activity(c *gin.Context) {
+	days, err := optionalInt(c.Query("days"))
+	if err != nil {
+		days = 0
+	}
+	a, err := h.svc.Activity(c.Request.Context(), days)
+	if h.rendered(c, err, "admin activity") {
+		return
+	}
+	c.JSON(http.StatusOK, toActivityDTO(a))
 }
 
 // ListUsers handles GET /v1/admin/users?q&page&page_size.

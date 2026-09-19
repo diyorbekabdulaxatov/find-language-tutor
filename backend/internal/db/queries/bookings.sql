@@ -122,10 +122,10 @@ WHERE id = $1;
 -- something to point at on a fresh database.
 INSERT INTO bookings (
     teacher_id, student_id, start_at, end_at,
-    duration_minutes, status, price_minor, currency, is_trial
+    duration_minutes, status, price_minor, currency, is_trial, created_at
 ) VALUES (
     $1, $2, $3, $4,
-    $5, $6, $7, $8, false
+    $5, $6, $7, $8, false, $9
 )
 RETURNING id;
 

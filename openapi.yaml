@@ -2445,6 +2445,31 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /v1/admin/metrics/activity:
+    get:
+      tags: [admin]
+      summary: Daily activity series
+      description: >
+        Permission: `metrics.view`. One zero-filled point per UTC calendar day
+        for the last `days` days (inclusive of today), plus the teachers who
+        booked the most money in that window. An unsupported `days` falls back
+        to 30 rather than failing — the window is a display choice.
+      operationId: adminMetricsActivity
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: days
+          in: query
+          description: Window length. One of 7, 30, 90; anything else means 30.
+          schema: { type: integer, enum: [7, 30, 90], default: 30 }
+      responses:
+        "200":
+          description: The daily series and the window's top earners.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminActivity" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /v1/admin/users:
     get:
       tags: [admin]
@@ -5028,6 +5053,8 @@ components:
         - active_students
         - bookings_total
         - bookings_this_week
+        - bookings_pending
+        - bookings_confirmed
         - bookings_upcoming
         - bookings_completed
         - bookings_cancelled
@@ -5050,6 +5077,8 @@ components:
         active_students: { type: integer, description: Distinct accounts that have booked at least once. }
         bookings_total: { type: integer }
         bookings_this_week: { type: integer, description: Created in the last 7 days. }
+        bookings_pending: { type: integer, description: Awaiting payment. }
+        bookings_confirmed: { type: integer, description: Paid for, whether or not the lesson has happened yet. }
         bookings_upcoming: { type: integer, description: Confirmed and not yet started. }
         bookings_completed: { type: integer }
         bookings_cancelled: { type: integer }
@@ -5061,6 +5090,42 @@ components:
         reviews_visible: { type: integer, description: Reviews currently shown on profiles (hidden ones excluded). }
         average_rating: { type: number, description: Mean of visible review ratings, one decimal; 0 when there are none. }
         disputes_open: { type: integer, description: Disputes in the open state. }
+
+    AdminActivityPoint:
+      description: One UTC calendar day of the activity series.
+      type: object
+      required: [day, bookings, gmv_minor, signups]
+      properties:
+        day: { type: string, format: date, description: "The UTC calendar day, YYYY-MM-DD." }
+        bookings: { type: integer, description: Bookings created that day, any status. }
+        gmv_minor: { type: integer, format: int64, description: "Of those, the ones that reached confirmed / completed." }
+        signups: { type: integer, description: Accounts created that day. }
+
+    AdminTopTeacher:
+      description: One row of the window's top-earning teachers.
+      type: object
+      required: [slug, display_name, lessons, gmv_minor]
+      properties:
+        slug: { type: string }
+        display_name: { type: string }
+        lessons: { type: integer, description: Confirmed or completed bookings made in the window. }
+        gmv_minor: { type: integer, format: int64 }
+
+    AdminActivity:
+      description: >
+        The dashboard chart's data: a zero-filled daily series over the window
+        plus its top-earning teachers. Money is integer minor units in `currency`.
+      type: object
+      required: [currency, days, points, top_teachers]
+      properties:
+        currency: { type: string, description: "UZS for the MVP." }
+        days: { type: integer, description: The window actually used, after clamping. }
+        points:
+          type: array
+          items: { $ref: "#/components/schemas/AdminActivityPoint" }
+        top_teachers:
+          type: array
+          items: { $ref: "#/components/schemas/AdminTopTeacher" }
 
     AdminUserRow:
       type: object

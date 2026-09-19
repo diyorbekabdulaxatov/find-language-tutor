@@ -71,6 +71,8 @@ func (r *repositoryPostgres) Metrics(ctx context.Context) (Metrics, error) {
 
 		BookingsTotal:     bs.Total,
 		BookingsThisWeek:  bs.ThisWeek,
+		BookingsPending:   bs.PendingPayment,
+		BookingsConfirmed: bs.Confirmed,
 		BookingsUpcoming:  bs.Upcoming,
 		BookingsCompleted: bs.Completed,
 		BookingsCancelled: bs.Cancelled,
@@ -372,4 +374,42 @@ func (r *repositoryPostgres) SetTeacherVerified(ctx context.Context, slug string
 		return fmt.Errorf("set teacher verified: %w", err)
 	}
 	return nil
+}
+
+func (r *repositoryPostgres) Activity(ctx context.Context, days, topN int) (Activity, error) {
+	rows, err := r.q.AdminDailyActivity(ctx, int32(days))
+	if err != nil {
+		return Activity{}, fmt.Errorf("daily activity: %w", err)
+	}
+	top, err := r.q.AdminTopTeachers(ctx, sqlc.AdminTopTeachersParams{
+		Days:     int32(days),
+		RowLimit: int32(topN),
+	})
+	if err != nil {
+		return Activity{}, fmt.Errorf("top teachers: %w", err)
+	}
+
+	a := Activity{
+		Currency: string(teachers.CurrencyUZS),
+		Days:     days,
+		Points:   make([]ActivityPoint, len(rows)),
+		Top:      make([]TopTeacher, len(top)),
+	}
+	for i, row := range rows {
+		a.Points[i] = ActivityPoint{
+			Day:      row.Day.Time.UTC(),
+			Bookings: row.Bookings,
+			GMVMinor: row.GmvMinor,
+			Signups:  row.Signups,
+		}
+	}
+	for i, t := range top {
+		a.Top[i] = TopTeacher{
+			Slug:        t.Slug,
+			DisplayName: t.DisplayName,
+			Lessons:     t.Lessons,
+			GMVMinor:    t.GmvMinor,
+		}
+	}
+	return a, nil
 }

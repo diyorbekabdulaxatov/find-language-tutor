@@ -108,3 +108,8 @@ WHERE id = sqlc.arg('id') AND revoked_at IS NULL;
 UPDATE sessions
 SET revoked_at = now()
 WHERE user_id = $1 AND revoked_at IS NULL;
+
+-- name: SeedBackdateUser :exec
+-- Seed-only: spread the demo accounts over the past weeks so the admin
+-- dashboard's sign-ups series has a shape instead of one spike on seed day.
+UPDATE users SET created_at = $2 WHERE id = $1;

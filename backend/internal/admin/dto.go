@@ -26,6 +26,8 @@ type metricsDTO struct {
 
 	BookingsTotal     int64 `json:"bookings_total"`
 	BookingsThisWeek  int64 `json:"bookings_this_week"`
+	BookingsPending   int64 `json:"bookings_pending"`
+	BookingsConfirmed int64 `json:"bookings_confirmed"`
 	BookingsUpcoming  int64 `json:"bookings_upcoming"`
 	BookingsCompleted int64 `json:"bookings_completed"`
 	BookingsCancelled int64 `json:"bookings_cancelled"`
@@ -55,6 +57,8 @@ func toMetricsDTO(m Metrics) metricsDTO {
 
 		BookingsTotal:     m.BookingsTotal,
 		BookingsThisWeek:  m.BookingsThisWeek,
+		BookingsPending:   m.BookingsPending,
+		BookingsConfirmed: m.BookingsConfirmed,
 		BookingsUpcoming:  m.BookingsUpcoming,
 		BookingsCompleted: m.BookingsCompleted,
 		BookingsCancelled: m.BookingsCancelled,
@@ -69,6 +73,57 @@ func toMetricsDTO(m Metrics) metricsDTO {
 		AverageRating:  m.AverageRating,
 		DisputesOpen:   m.DisputesOpen,
 	}
+}
+
+// --- activity ---
+
+// activityPointDTO is one day of the series. `day` is a plain calendar date
+// (YYYY-MM-DD) because the series is bucketed by UTC day, not by instant.
+type activityPointDTO struct {
+	Day      string `json:"day"`
+	Bookings int64  `json:"bookings"`
+	GMVMinor int64  `json:"gmv_minor"`
+	Signups  int64  `json:"signups"`
+}
+
+type topTeacherDTO struct {
+	Slug        string `json:"slug"`
+	DisplayName string `json:"display_name"`
+	Lessons     int64  `json:"lessons"`
+	GMVMinor    int64  `json:"gmv_minor"`
+}
+
+type activityDTO struct {
+	Currency string             `json:"currency"`
+	Days     int                `json:"days"`
+	Points   []activityPointDTO `json:"points"`
+	Top      []topTeacherDTO    `json:"top_teachers"`
+}
+
+func toActivityDTO(a Activity) activityDTO {
+	out := activityDTO{
+		Currency: a.Currency,
+		Days:     a.Days,
+		Points:   make([]activityPointDTO, len(a.Points)),
+		Top:      make([]topTeacherDTO, len(a.Top)),
+	}
+	for i, p := range a.Points {
+		out.Points[i] = activityPointDTO{
+			Day:      p.Day.Format(time.DateOnly),
+			Bookings: p.Bookings,
+			GMVMinor: p.GMVMinor,
+			Signups:  p.Signups,
+		}
+	}
+	for i, t := range a.Top {
+		out.Top[i] = topTeacherDTO{
+			Slug:        t.Slug,
+			DisplayName: t.DisplayName,
+			Lessons:     t.Lessons,
+			GMVMinor:    t.GMVMinor,
+		}
+	}
+	return out
 }
 
 // --- users ---

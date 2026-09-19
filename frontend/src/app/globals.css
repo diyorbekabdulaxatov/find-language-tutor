@@ -104,6 +104,22 @@
   --ink-foreground: #ffffff;
 
   --radius: 4px;
+
+  /*
+   * Chart marks. These are NOT the brand palette: they are steps from the
+   * dataviz reference palette, validated per mode with its checker (lightness
+   * band, chroma floor, CVD separation, >=3:1 on the surface they sit on —
+   * white here, --card in the dark block). Violet is the single-series hue
+   * (the documented slot nearest our purple); the lifecycle steps are one blue
+   * ramp, so a booking's progress reads as depth of colour, with the reserved
+   * critical red for cancelled.
+   */
+  --chart-series: #4a3aa7;
+  --chart-life-1: #86b6ef; /* pending payment */
+  --chart-life-2: #2a78d6; /* confirmed */
+  --chart-life-3: #104281; /* completed */
+  --chart-cancelled: #d03b3b;
+  --chart-grid: #e1e0d9;
 }
 
 .dark {
@@ -141,6 +157,15 @@
   --brand-tint: #2d2f31;
   --ink: #2d2f31;
   --ink-foreground: #f7f9fa;
+
+  /* Re-stepped for the dark surface, not flipped: the lifecycle ramp's anchor
+     inverts so "further along" is the lighter step. */
+  --chart-series: #9085e9;
+  --chart-life-1: #256abf;
+  --chart-life-2: #3987e5;
+  --chart-life-3: #86b6ef;
+  --chart-cancelled: #e66767;
+  --chart-grid: #3e4143;
 }
 
 @layer base {

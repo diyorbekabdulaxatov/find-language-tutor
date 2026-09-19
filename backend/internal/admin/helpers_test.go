@@ -29,6 +29,10 @@ type fakeRepo struct {
 	moderation map[string]Moderation
 	bookings   map[uuid.UUID]BookingDetail
 
+	activity     Activity
+	activityDays int // the window the service asked the repo for
+	activityTop  int
+
 	statusCalls []statusCall
 	verifyCalls []verifyCall
 	lastLimit   int
@@ -42,6 +46,13 @@ type verifyCall struct {
 }
 
 func (f *fakeRepo) Metrics(context.Context) (Metrics, error) { return f.metrics, nil }
+
+func (f *fakeRepo) Activity(_ context.Context, days, topN int) (Activity, error) {
+	f.activityDays, f.activityTop = days, topN
+	a := f.activity
+	a.Days = days
+	return a, nil
+}
 
 func (f *fakeRepo) ListUsers(_ context.Context, q string, limit, offset int) ([]UserRow, int, error) {
 	f.lastLimit, f.lastOffset = limit, offset
