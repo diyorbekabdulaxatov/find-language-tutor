@@ -203,7 +203,7 @@ export function ResourceEditor({
 
       {isQuizLike(type) && (
         <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium">{t("questions")}</span>
+          <span className="text-sm font-bold">{t("questions")}</span>
           <QuestionBuilder
             questions={content.questions ?? []}
             onChange={(questions) => setC({ questions })}

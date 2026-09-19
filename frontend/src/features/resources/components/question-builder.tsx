@@ -96,9 +96,9 @@ function QuestionCard({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
+    <div className="border border-border bg-card p-4">
       <div className="flex items-start gap-2">
-        <span className="mt-2 text-xs font-semibold text-muted-foreground">Q{index + 1}</span>
+        <span className="mt-2 text-xs font-bold text-muted-foreground">Q{index + 1}</span>
         <Input
           value={q.prompt}
           placeholder={t("questionPrompt")}

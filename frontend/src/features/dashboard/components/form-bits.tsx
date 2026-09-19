@@ -12,9 +12,9 @@ export function Section({
 }) {
   return (
     <section className="flex flex-col gap-4">
-      <div>
+      <div className="border-b border-border pb-2">
         <h2 className="font-display text-lg">{title}</h2>
-        {hint && <p className="text-sm text-muted-foreground">{hint}</p>}
+        {hint && <p className="mt-0.5 text-sm text-muted-foreground">{hint}</p>}
       </div>
       {children}
     </section>

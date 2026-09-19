@@ -34,13 +34,13 @@ export function EditResource({ id }: { id: string }) {
   }, [id]);
 
   if (state === "loading") {
-    return <div className="h-96 animate-pulse rounded-2xl bg-muted" />;
+    return <div className="h-96 animate-pulse bg-muted" />;
   }
   if (state === "error" || !resource) {
     return (
       <div className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
         {msg ?? t("couldNotLoadOne")}{" "}
-        <Link href="/resources" className="font-medium underline">
+        <Link href="/resources" className="font-bold text-link underline">
           {t("backToResources")}
         </Link>
       </div>

@@ -42,7 +42,7 @@ export function FileField({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-sm font-medium">{label}</span>
+      <span className="text-sm font-bold">{label}</span>
       {value ? (
         <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
           <Paperclip className="size-4 shrink-0 text-muted-foreground" />

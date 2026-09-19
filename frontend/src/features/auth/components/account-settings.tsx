@@ -37,12 +37,12 @@ export function AccountSettings() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
-      <h1 className="font-display text-3xl">{t("settingsTitle")}</h1>
+      <h1 className="font-display text-3xl sm:text-[2rem]">{t("settingsTitle")}</h1>
       <p className="mt-1 text-sm text-muted-foreground">{t("settingsIntro")}</p>
 
       <form
         onSubmit={handleSubmit}
-        className="mt-8 flex flex-col gap-5 rounded-2xl border border-border bg-card p-6 shadow-soft"
+        className="mt-8 flex flex-col gap-5 border border-border bg-card p-6"
       >
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="displayName">{t("name")}</Label>
@@ -66,7 +66,7 @@ export function AccountSettings() {
         {error && (
           <p
             role="alert"
-            className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
           >
             {error}
           </p>

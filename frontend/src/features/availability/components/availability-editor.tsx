@@ -109,18 +109,18 @@ export function AvailabilityEditor({ slug }: { slug: string }) {
   }
 
   if (loading) {
-    return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
+    return <div className="h-64 animate-pulse bg-muted" />;
   }
 
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-muted-foreground">
         {t.rich("intro", {
-          tz: () => (tz ? <span className="font-medium text-foreground"> ({tz})</span> : null),
+          tz: () => (tz ? <span className="font-bold text-foreground"> ({tz})</span> : null),
         })}
       </p>
 
-      <div className="flex flex-col divide-y divide-border rounded-2xl border border-border">
+      <div className="flex flex-col divide-y divide-border border border-border">
         {DAYS.map((key, day) => (
           <DayRow
             key={day}
@@ -139,7 +139,7 @@ export function AvailabilityEditor({ slug }: { slug: string }) {
       {error && (
         <p
           role="alert"
-          className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           {error}
         </p>
@@ -169,7 +169,7 @@ function DayRow({
   const t = useTranslations("availability");
   return (
     <div className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:gap-4">
-      <div className="w-28 shrink-0 pt-1.5 text-sm font-medium">{label}</div>
+      <div className="w-28 shrink-0 pt-1.5 text-sm font-bold">{label}</div>
       <div className="flex flex-1 flex-col gap-2">
         {ranges.length === 0 && (
           <span className="pt-1.5 text-sm text-muted-foreground">{t("unavailable")}</span>

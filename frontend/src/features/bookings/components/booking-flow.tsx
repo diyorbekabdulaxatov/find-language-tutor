@@ -303,7 +303,7 @@ function StepRail({ current }: { current: Step }) {
               className={cn(
                 "grid size-6 shrink-0 place-items-center rounded-full text-xs font-bold",
                 i < index
-                  ? "bg-ink text-ink-foreground"
+                  ? "bg-foreground text-background"
                   : i === index
                     ? "bg-primary text-primary-foreground"
                     : "border border-border text-muted-foreground",

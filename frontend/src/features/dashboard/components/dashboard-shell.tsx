@@ -48,18 +48,18 @@ export function DashboardShell() {
   if (!user) return null;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
+    <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
       <header className="mb-8">
-        <h1 className="font-display text-3xl">{t("title")}</h1>
+        <h1 className="font-display text-3xl sm:text-[2rem]">{t("title")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{t("signedInAs", { name: user.displayName })}</p>
       </header>
 
       {state === "loading" && (
-        <div className="h-96 animate-pulse rounded-2xl bg-muted" />
+        <div className="h-96 animate-pulse bg-muted" />
       )}
 
       {state === "error" && (
-        <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {t("couldNotLoad")}
         </p>
       )}
@@ -90,7 +90,7 @@ export function DashboardShell() {
             {profile ? (
               <AvailabilityEditor slug={profile.slug} />
             ) : (
-              <p className="rounded-xl bg-accent/60 px-4 py-3 text-sm text-accent-foreground">
+              <p className="border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
                 {t("needProfileAvailability")}
               </p>
             )}
@@ -100,7 +100,7 @@ export function DashboardShell() {
             {profile ? (
               <EarningsPanel />
             ) : (
-              <p className="rounded-xl bg-accent/60 px-4 py-3 text-sm text-accent-foreground">
+              <p className="border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
                 {t("needProfileEarnings")}
               </p>
             )}
@@ -119,7 +119,7 @@ function ModerationBanner({ profile }: { profile: TeacherProfile }) {
     pending: {
       title: t("pendingTitle"),
       body: t("pendingBody"),
-      tone: "bg-star/10 text-star",
+      tone: "border-star/40 bg-star/10 text-rating dark:text-star",
     },
     rejected: {
       title: t("rejectedTitle"),
@@ -127,20 +127,20 @@ function ModerationBanner({ profile }: { profile: TeacherProfile }) {
       body: profile.moderationNote
         ? `${profile.moderationNote} — ${t("rejectedBody")}`
         : t("rejectedBody"),
-      tone: "bg-destructive/10 text-destructive",
+      tone: "border-destructive/40 bg-destructive/10 text-destructive",
     },
     suspended: {
       title: t("suspendedTitle"),
       body: profile.moderationNote || t("suspendedBody"),
-      tone: "bg-destructive/10 text-destructive",
+      tone: "border-destructive/40 bg-destructive/10 text-destructive",
     },
   };
   const c = copy[profile.status];
   if (!c) return null;
 
   return (
-    <div className={`mb-6 rounded-xl px-4 py-3 text-sm ${c.tone}`}>
-      <div className="font-semibold">{c.title}</div>
+    <div className={`mb-6 rounded-md border px-4 py-3 text-sm ${c.tone}`}>
+      <div className="font-bold">{c.title}</div>
       <div className="mt-0.5 opacity-90">{c.body}</div>
     </div>
   );

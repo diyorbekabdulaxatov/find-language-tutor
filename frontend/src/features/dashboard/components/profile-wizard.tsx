@@ -146,7 +146,7 @@ export function ProfileWizard({
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-8">
       {isCreate && (
-        <p className="rounded-xl bg-accent/60 px-4 py-3 text-sm text-accent-foreground">
+        <p className="border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
           {t("noProfileYet")}
         </p>
       )}
@@ -166,12 +166,12 @@ export function ProfileWizard({
       )}
 
       {error && (
-        <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
 
-      <div className="sticky bottom-0 -mx-4 flex items-center gap-3 border-t border-border bg-background px-4 py-4 shadow-[0_-10px_20px_-12px_rgba(23,23,51,0.18)] sm:-mx-6 sm:px-6">
+      <div className="sticky bottom-0 -mx-4 flex items-center gap-3 border-t border-border bg-background px-4 py-4 sm:-mx-6 sm:px-6">
         {stepIndex > 0 && (
           <Button type="button" variant="outline" onClick={() => goTo(STEPS[stepIndex - 1])}>
             {t("back")}
@@ -222,17 +222,17 @@ function StepRail({ current, onSelect }: { current: Step; onSelect?: (s: Step) =
           <>
             <span
               className={cn(
-                "grid size-7 shrink-0 place-items-center rounded-full font-display text-sm",
+                "grid size-7 shrink-0 place-items-center rounded-full text-sm font-bold",
                 state === "current" && "bg-primary text-primary-foreground",
-                state === "done" && "bg-accent text-accent-foreground",
-                state === "todo" && "bg-muted text-muted-foreground",
+                state === "done" && "bg-foreground text-background",
+                state === "todo" && "border border-border text-muted-foreground",
               )}
             >
               {state === "done" ? <Check className="size-4" /> : i + 1}
             </span>
             <span
               className={cn(
-                "truncate text-sm font-medium",
+                "truncate text-sm font-bold",
                 state === "todo" && "text-muted-foreground",
               )}
             >
@@ -241,8 +241,8 @@ function StepRail({ current, onSelect }: { current: Step; onSelect?: (s: Step) =
           </>
         );
         const cls = cn(
-          "flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left",
-          state === "current" ? "border-primary/40 bg-card" : "border-border bg-card/60",
+          "flex items-center gap-2.5 border px-3 py-2.5 text-left",
+          state === "current" ? "border-foreground bg-card" : "border-border bg-card",
         );
         return (
           <li key={s} aria-current={state === "current" ? "step" : undefined}>
@@ -378,13 +378,13 @@ function KindCard({
       aria-checked={selected}
       onClick={onClick}
       className={cn(
-        "flex flex-col gap-1 rounded-xl border px-4 py-3 text-left transition-colors",
+        "flex flex-col gap-1 rounded-md border px-4 py-3 text-left transition-colors",
         selected
-          ? "border-primary bg-accent/50 ring-1 ring-primary"
-          : "border-border hover:bg-muted/60",
+          ? "border-foreground bg-accent"
+          : "border-border hover:bg-muted",
       )}
     >
-      <span className="font-medium">{title}</span>
+      <span className="font-bold">{title}</span>
       <span className="text-sm text-muted-foreground">{body}</span>
     </button>
   );
@@ -579,7 +579,7 @@ function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
       {...props}
-      className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
     />
   );
 }
@@ -609,18 +609,18 @@ function TagInput({
   }
 
   return (
-    <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-input px-2 py-1.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+    <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border border-input px-2 py-1.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
       {tags.map((tag) => (
         <span
           key={tag}
-          className="inline-flex items-center gap-1 rounded-full bg-accent px-2.5 py-0.5 text-sm text-accent-foreground"
+          className="inline-flex items-center gap-1 rounded-sm bg-accent px-2 py-0.5 text-sm font-bold text-accent-foreground"
         >
           {tag}
           <button
             type="button"
             aria-label={`${removeLabel}: ${tag}`}
             onClick={() => onChange(tags.filter((x) => x !== tag))}
-            className="rounded-full hover:bg-accent-foreground/10"
+            className="rounded-sm hover:bg-accent-foreground/10"
           >
             <X className="size-3.5" />
           </button>
@@ -735,11 +735,11 @@ function VerifyEmailNotice({ email }: { email: string }) {
   return (
     <div
       role="status"
-      className="flex items-start gap-3 rounded-xl border border-star/30 bg-star/10 px-4 py-3 text-sm text-star"
+      className="flex items-start gap-3 rounded-md border border-star/40 bg-star/10 px-4 py-3 text-sm text-rating dark:text-star"
     >
       <MailWarning className="mt-0.5 size-4 shrink-0" />
       <div className="flex-1">
-        <div className="font-semibold">{t("verifyFirstTitle")}</div>
+        <div className="font-bold">{t("verifyFirstTitle")}</div>
         <div className="mt-0.5 opacity-90">
           {sent ? t("verifySent") : t("verifyFirstBody", { email })}
         </div>
@@ -748,7 +748,7 @@ function VerifyEmailNotice({ email }: { email: string }) {
             type="button"
             disabled={busy}
             onClick={resend}
-            className="mt-1 font-semibold underline underline-offset-2 disabled:opacity-60"
+            className="mt-1 font-bold underline underline-offset-2 disabled:opacity-60"
           >
             {t("verifyResend")}
           </button>

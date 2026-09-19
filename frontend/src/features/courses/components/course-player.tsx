@@ -202,7 +202,7 @@ export function CoursePlayer({ id }: { id: string }) {
                           aria-hidden
                           className={cn(
                             "mt-0.5 grid size-4 shrink-0 place-items-center border border-foreground",
-                            completed && "bg-ink text-ink-foreground",
+                            completed && "bg-foreground text-background",
                           )}
                         >
                           {completed && <CheckCircle2 className="size-3" />}

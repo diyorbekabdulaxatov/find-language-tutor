@@ -186,7 +186,7 @@ function MediaSlot({
   return (
     <div className={cn("flex flex-col gap-3", isImage ? "items-center md:w-56" : "")}>
       <div className={cn("w-full", isImage && "text-center")}>
-        <div className="font-medium">{labels.title}</div>
+        <div className="font-bold">{labels.title}</div>
         <p className="text-xs text-muted-foreground">{labels.hint}</p>
       </div>
 

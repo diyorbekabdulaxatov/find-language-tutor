@@ -136,7 +136,7 @@ export function ResourcePlayer({
       {attachment.type === "article" && <ArticleView attachment={attachment} />}
 
       {previewOnly && hasSubmissionFlow(attachment.type) && (
-        <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
+        <p className="border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
           {t("previewOnly", { type: tType(attachment.type) })}
         </p>
       )}
@@ -144,10 +144,10 @@ export function ResourcePlayer({
       {needsSubmission && (
         <>
           {state === "loading" && (
-            <div className="h-40 animate-pulse rounded-xl bg-muted" />
+            <div className="h-40 animate-pulse bg-muted" />
           )}
           {state === "error" && (
-            <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
             </p>
           )}
@@ -188,8 +188,8 @@ export function ResourcePlayer({
               )}
 
               {submission.status === "graded" && submission.teacherFeedback && (
-                <div className="rounded-xl border border-border bg-muted/40 p-3 text-sm">
-                  <p className="font-medium">{t("teacherFeedback")}</p>
+                <div className="border border-border bg-muted p-3 text-sm">
+                  <p className="font-bold">{t("teacherFeedback")}</p>
                   <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
                     {submission.teacherFeedback}
                   </p>
@@ -197,7 +197,7 @@ export function ResourcePlayer({
               )}
 
               {error && (
-                <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
                   {error}
                 </p>
               )}
@@ -296,7 +296,7 @@ function AudioPlayer({ fileAssetId }: { fileAssetId: string }) {
     return <p className="text-sm text-destructive">{t("couldNotLoadAudio")}</p>;
   }
   if (!url) {
-    return <div className="h-10 animate-pulse rounded-lg bg-muted" />;
+    return <div className="h-10 animate-pulse bg-muted" />;
   }
   return (
     <audio controls className="w-full" src={url}>
@@ -308,7 +308,7 @@ function AudioPlayer({ fileAssetId }: { fileAssetId: string }) {
 function ArticleView({ attachment }: { attachment: AttachedResource }) {
   const t = useTranslations("player");
   return (
-    <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm whitespace-pre-wrap">
+    <div className="border border-border bg-muted p-4 text-sm whitespace-pre-wrap">
       {attachment.content.body || t("articleEmpty")}
     </div>
   );
@@ -333,15 +333,15 @@ function QuizForm({
         <AudioPlayer fileAssetId={content.audioAssetId} />
       )}
       {attachment.type === "reading" && content.passage && (
-        <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm whitespace-pre-wrap">
+        <div className="border border-border bg-muted p-4 text-sm whitespace-pre-wrap">
           {content.passage}
         </div>
       )}
       {(content.questions ?? []).map((q, i) => {
         const value = answers[q.id] ?? [];
         return (
-          <div key={q.id} className="rounded-xl border border-border bg-card p-4">
-            <p className="text-sm font-medium">
+          <div key={q.id} className="border border-border bg-card p-4">
+            <p className="text-sm font-bold">
               {i + 1}. {q.prompt}
             </p>
             {q.kind === "single" && (
@@ -387,7 +387,7 @@ function QuizForm({
             {q.kind === "text" && (
               <input
                 type="text"
-                className="mt-2 w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
+                className="mt-2 w-full rounded-md border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
                 value={value[0] ?? ""}
                 disabled={locked}
                 onChange={(e) => onChange({ ...answers, [q.id]: [e.target.value] })}
@@ -428,7 +428,7 @@ function WritingForm({
         disabled={locked}
         onChange={(e) => onChange({ ...answers, text: [e.target.value] })}
         placeholder={t("writeHere")}
-        className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
+        className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
       />
       <p className="text-xs text-muted-foreground">
         {t("wordCount", { count: wordCount })}

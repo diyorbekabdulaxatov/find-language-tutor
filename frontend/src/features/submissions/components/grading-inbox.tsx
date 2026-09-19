@@ -106,7 +106,7 @@ export function GradingInbox() {
 
   if (state === "no-teacher") {
     return (
-      <div className="rounded-2xl border border-border bg-card px-6 py-12 text-center">
+      <div className="border border-border bg-card px-6 py-16 text-center">
         <p className="text-sm text-muted-foreground">
           {t("needProfile")}
         </p>
@@ -130,8 +130,8 @@ export function GradingInbox() {
             key={f.value}
             onClick={() => setFilter(f.value)}
             className={cn(
-              "rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
-              filter === f.value ? "border-primary bg-accent" : "border-border hover:bg-muted",
+              "h-8 rounded-md border px-3 text-xs font-bold transition-colors",
+              filter === f.value ? "border-foreground bg-foreground text-background" : "border-border hover:bg-accent",
             )}
           >
             {t(f.label)}
@@ -140,13 +140,13 @@ export function GradingInbox() {
       </div>
 
       {state === "error" ? (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {t("couldNotLoad")}
         </p>
       ) : state === "loading" ? (
-        <div className="h-48 animate-pulse rounded-2xl bg-muted" />
+        <div className="h-48 animate-pulse bg-muted" />
       ) : items.length === 0 ? (
-        <p className="rounded-2xl border border-border bg-card px-4 py-12 text-center text-sm text-muted-foreground">
+        <p className="border border-border bg-card px-4 py-16 text-center text-sm text-muted-foreground">
           {t("nothingHere")}
         </p>
       ) : (
@@ -210,17 +210,17 @@ function GradingRow({
   }
 
   return (
-    <li className="rounded-2xl border border-border bg-card p-4">
+    <li className="border border-border bg-card p-4">
       <button
         onClick={onToggle}
         className="flex w-full items-center justify-between gap-3 text-left"
       >
         <div className="flex items-center gap-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+          <span className="grid size-9 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
             <PenLine className="size-4" />
           </span>
           <div>
-            <p className="text-sm font-medium">{title}</p>
+            <p className="text-sm font-bold">{title}</p>
             <p className="text-xs text-muted-foreground">
               {t(s.status === "graded" ? "gradedOn" : "submittedOn", {
                 date: fmtDate(s.submittedAt ?? s.gradedAt, locale),
@@ -263,10 +263,10 @@ function GradingRow({
       {expanded && (
         <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4">
           <div>
-            <p className="text-xs font-medium text-muted-foreground">
+            <p className="text-xs font-bold text-muted-foreground">
               {t("essayWords", { count: wordCount })}
             </p>
-            <div className="mt-1 max-h-72 overflow-y-auto rounded-xl border border-border bg-background/40 p-3 text-sm whitespace-pre-wrap">
+            <div className="mt-1 max-h-72 overflow-y-auto border border-border bg-background p-3 text-sm whitespace-pre-wrap">
               {essay || t("nothingWritten")}
             </div>
           </div>
@@ -274,8 +274,8 @@ function GradingRow({
           {s.status === "graded" ? (
             // The API only grades a `submitted` submission once — there is no
             // re-grade endpoint, so a graded row is a read-only record.
-            <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm">
-              <p className="font-medium">
+            <div className="border border-border bg-muted p-3 text-sm">
+              <p className="font-bold">
                 {s.teacherScore != null ? t("scoreLine", { score: s.teacherScore }) : t("gradedNoScore")}
               </p>
               {s.teacherFeedback && (
@@ -287,7 +287,7 @@ function GradingRow({
           ) : (
             <>
               <div className="flex flex-col gap-1.5">
-                <label htmlFor={`score-${s.id}`} className="text-sm font-medium">
+                <label htmlFor={`score-${s.id}`} className="text-sm font-bold">
                   {t("scoreOptional")}
                 </label>
                 <input
@@ -297,12 +297,12 @@ function GradingRow({
                   value={score}
                   onChange={(e) => setScore(e.target.value)}
                   placeholder={t("noScorePlaceholder")}
-                  className="w-32 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="w-32 rounded-md border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label htmlFor={`feedback-${s.id}`} className="text-sm font-medium">
+                <label htmlFor={`feedback-${s.id}`} className="text-sm font-bold">
                   {t("feedback")}
                 </label>
                 <textarea
@@ -311,12 +311,12 @@ function GradingRow({
                   value={feedback}
                   onChange={(e) => setFeedback(e.target.value)}
                   placeholder={t("feedbackPlaceholder")}
-                  className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 />
               </div>
 
               {error && (
-                <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
                   {error}
                 </p>
               )}

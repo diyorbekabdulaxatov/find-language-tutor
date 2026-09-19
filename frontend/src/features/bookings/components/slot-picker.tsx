@@ -97,7 +97,7 @@ export function SlotPicker({
                 className={cn(
                   "h-10 rounded-md border px-4 text-sm font-bold transition-colors",
                   duration === d
-                    ? "border-foreground bg-ink text-ink-foreground"
+                    ? "border-foreground bg-foreground text-background"
                     : "border-border text-foreground hover:bg-accent",
                 )}
               >
@@ -173,7 +173,7 @@ export function SlotPicker({
                     className={cn(
                       "h-11 rounded-md border text-sm font-bold transition-colors",
                       on
-                        ? "border-foreground bg-ink text-ink-foreground"
+                        ? "border-foreground bg-foreground text-background"
                         : "border-border text-foreground hover:bg-accent",
                     )}
                     title={
