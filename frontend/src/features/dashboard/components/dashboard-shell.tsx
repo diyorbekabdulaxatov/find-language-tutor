@@ -76,7 +76,7 @@ export function DashboardShell() {
 
       {state === "ready" && profile?.status !== "pending" && (
         <Tabs defaultValue="profile">
-          <TabsList>
+          <TabsList variant="line" className="h-auto w-full justify-start gap-6 border-b border-border p-0">
             <TabsTrigger value="profile">{t("tabProfile")}</TabsTrigger>
             <TabsTrigger value="availability">{t("tabAvailability")}</TabsTrigger>
             <TabsTrigger value="earnings">{t("tabEarnings")}</TabsTrigger>

@@ -52,8 +52,8 @@ export function LessonJoinCard({
   }, [ended]);
 
   return (
-    <div className="mt-5 rounded-xl bg-primary/8 p-4">
-      <div className="flex items-center gap-2 text-sm font-medium">
+    <div className="mt-5 border border-border bg-muted p-4">
+      <div className="flex items-center gap-2 text-sm font-bold">
         <Video className="size-4" /> {t("videoCall")}
       </div>
 

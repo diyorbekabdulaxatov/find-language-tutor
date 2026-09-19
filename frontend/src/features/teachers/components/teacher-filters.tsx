@@ -3,7 +3,7 @@
 import { useCallback, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { SlidersHorizontal, X } from "lucide-react";
+import { ChevronDown, SlidersHorizontal, X } from "lucide-react";
 import type { TeacherListResult, TeacherSort } from "@/features/teachers/api";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -13,21 +13,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { languageName } from "@/lib/i18n";
 
 const SORT_OPTIONS: { value: TeacherSort; label: SortKey }[] = [
   { value: "recommended", label: "sortRecommended" },
+  { value: "rating_desc", label: "sortRatingDesc" },
   { value: "price_asc", label: "sortPriceAsc" },
   { value: "price_desc", label: "sortPriceDesc" },
-  { value: "rating_desc", label: "sortRatingDesc" },
 ];
 type SortKey = "sortRecommended" | "sortPriceAsc" | "sortPriceDesc" | "sortRatingDesc";
 
@@ -42,17 +35,11 @@ const PRICE_MIN = 30_000;
 const PRICE_MAX = 150_000;
 const PRICE_STEP = 5_000;
 
-export function TeacherFilters({
-  facets,
-}: {
-  facets: TeacherListResult["facets"];
-}) {
+function useTeacherParams() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
   const [isPending, startTransition] = useTransition();
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const t = useTranslations("filters");
 
   const commit = useCallback(
     (mutate: (next: URLSearchParams) => void) => {
@@ -77,200 +64,58 @@ export function TeacherFilters({
     [commit],
   );
 
-  const lang = params.get("lang") ?? "";
-  const kind = params.get("kind") ?? "";
-  const sort = (params.get("sort") as TeacherSort) ?? "recommended";
-  const max = Number(params.get("max") ?? PRICE_MAX);
-  const priceActive = Boolean(params.get("max"));
-  const hasFilters = Boolean(lang || kind || priceActive);
-  const activeCount = [lang, kind, priceActive ? "1" : ""].filter(
-    Boolean,
-  ).length;
-
-  const controls = (
-    <FilterControls
-      facets={facets}
-      lang={lang}
-      kind={kind}
-      sort={sort}
-      max={max}
-      priceActive={priceActive}
-      hasFilters={hasFilters}
-      params={params}
-      pathname={pathname}
-      router={router}
-      commit={commit}
-      setParam={setParam}
-    />
-  );
-
-  return (
-    <>
-      {/* Mobile: a bar that opens the filters in a bottom sheet. */}
-      <div className="lg:hidden">
-        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetTrigger asChild>
-            <button
-              type="button"
-              className="flex w-full items-center justify-between rounded-2xl bg-card px-4 py-3 text-sm font-medium ring-1 ring-border shadow-soft"
-            >
-              <span className="inline-flex items-center gap-2">
-                <SlidersHorizontal className="size-4" />
-                {t("filtersSort")}
-              </span>
-              {activeCount > 0 && (
-                <span className="inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                  {activeCount}
-                </span>
-              )}
-            </button>
-          </SheetTrigger>
-          <SheetContent side="bottom">
-            <SheetHeader>
-              <SheetTitle>{t("filtersSort")}</SheetTitle>
-            </SheetHeader>
-            {controls}
-            <button
-              type="button"
-              onClick={() => setSheetOpen(false)}
-              className="mt-2 h-10 w-full rounded-lg bg-primary text-sm font-semibold text-primary-foreground"
-            >
-              {t("showResults")}
-            </button>
-          </SheetContent>
-        </Sheet>
-      </div>
-
-      {/* Desktop: the panel inline. */}
-      <div
-        className={cn(
-          "hidden rounded-2xl bg-card p-4 ring-1 ring-border shadow-soft transition-opacity sm:p-5 lg:block",
-          isPending && "opacity-60",
-        )}
-      >
-        {controls}
-      </div>
-    </>
-  );
+  return { params, pathname, router, commit, setParam, isPending };
 }
 
-type Commit = (mutate: (next: URLSearchParams) => void) => void;
-
-function FilterControls({
+/**
+ * Udemy's search-results chrome: a toolbar (Filter toggle on phones, sort,
+ * result count) above a two-column layout with an accordion sidebar of
+ * radio filters on the left and the result list on the right.
+ */
+export function TeacherFilters({
   facets,
-  lang,
-  kind,
-  sort,
-  max,
-  priceActive,
-  hasFilters,
-  params,
-  pathname,
-  router,
-  commit,
-  setParam,
+  total,
+  children,
 }: {
   facets: TeacherListResult["facets"];
-  lang: string;
-  kind: string;
-  sort: TeacherSort;
-  max: number;
-  priceActive: boolean;
-  hasFilters: boolean;
-  params: URLSearchParams;
-  pathname: string;
-  router: ReturnType<typeof useRouter>;
-  commit: Commit;
-  setParam: (key: string, value: string) => void;
+  total: number;
+  children: React.ReactNode;
 }) {
+  const { params, pathname, router, commit, setParam, isPending } = useTeacherParams();
+  const [open, setOpen] = useState(false);
   const t = useTranslations("filters");
   const tLang = useTranslations("languages");
   const tCommon = useTranslations("common");
   const locale = useLocale();
   const som = new Intl.NumberFormat(locale);
 
+  const lang = params.get("lang") ?? "";
+  const kind = params.get("kind") ?? "";
+  const sort = (params.get("sort") as TeacherSort) ?? "recommended";
+  const max = Number(params.get("max") ?? PRICE_MAX);
+  const priceActive = Boolean(params.get("max"));
+  const hasFilters = Boolean(lang || kind || priceActive);
+
   return (
-    <div>
-      {/* Language chips */}
-      <div className="flex flex-wrap gap-2">
-        <Chip active={!lang} onClick={() => setParam("lang", "")}>
-          {t("allLanguages")}
-        </Chip>
-        {facets.languages.map((l) => (
-          <Chip
-            key={l.code}
-            active={lang === l.code}
-            onClick={() => setParam("lang", lang === l.code ? "" : l.code)}
-          >
-            {languageName(tLang, l)}
-            <span
-              className={cn(
-                "ml-1",
-                lang === l.code
-                  ? "text-primary-foreground/70"
-                  : "text-muted-foreground",
-              )}
-            >
-              {l.count}
+    <div className={cn("transition-opacity", isPending && "opacity-60")}>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="inline-flex h-12 items-center gap-2 rounded-md border border-foreground bg-background px-4 text-sm font-bold text-foreground hover:bg-accent lg:hidden"
+        >
+          <SlidersHorizontal className="size-4" />
+          {t("filter")}
+        </button>
+
+        <Select value={sort} onValueChange={(v) => setParam("sort", v === "recommended" ? "" : v)}>
+          <SelectTrigger className="h-12 border-foreground font-bold sm:w-[220px]">
+            <span className="flex flex-col items-start leading-none">
+              <span className="text-[0.65rem] font-normal text-muted-foreground">{t("sortBy")}</span>
+              <SelectValue>
+                {t(SORT_OPTIONS.find((opt) => opt.value === sort)?.label ?? "sortRecommended")}
+              </SelectValue>
             </span>
-          </Chip>
-        ))}
-      </div>
-
-      <div className="mt-4 flex flex-col gap-4 border-t border-border pt-4 lg:flex-row lg:items-center lg:gap-6">
-        {/* Kind segmented control */}
-        <div className="inline-flex rounded-lg bg-secondary p-0.5">
-          {KIND_OPTIONS.map((opt) => (
-            <button
-              key={opt.value || "any"}
-              type="button"
-              onClick={() => setParam("kind", opt.value)}
-              className={cn(
-                "rounded-[calc(var(--radius)-6px)] px-3 py-1.5 text-sm font-medium transition-colors",
-                kind === opt.value
-                  ? "bg-card text-foreground shadow-soft"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {t(opt.label)}
-            </button>
-          ))}
-        </div>
-
-        {/* Price */}
-        <div className="flex min-w-[200px] flex-1 items-center gap-3">
-          <SlidersHorizontal className="size-4 shrink-0 text-muted-foreground" />
-          <div className="flex-1">
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{t("maxPrice")}</span>
-              <span className="font-medium text-foreground">
-                {priceActive ? `${som.format(max)} ${tCommon("som")}` : t("any")}
-              </span>
-            </div>
-            <Slider
-              min={PRICE_MIN}
-              max={PRICE_MAX}
-              step={PRICE_STEP}
-              value={[Math.min(Math.max(max, PRICE_MIN), PRICE_MAX)]}
-              onValueChange={([v]) => {
-                const next = new URLSearchParams(params.toString());
-                next.set("max", String(v));
-                router.replace(`${pathname}?${next}`, { scroll: false });
-              }}
-              onValueCommit={([v]) =>
-                setParam("max", v >= PRICE_MAX ? "" : String(v))
-              }
-              className="mt-1.5"
-            />
-          </div>
-        </div>
-
-        {/* Sort */}
-        <Select value={sort} onValueChange={(v) => setParam("sort", v)}>
-          <SelectTrigger className="h-9 lg:w-[190px]">
-            <SelectValue>
-              {t(SORT_OPTIONS.find((opt) => opt.value === sort)?.label ?? "sortRecommended")}
-            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {SORT_OPTIONS.map((opt) => (
@@ -291,39 +136,122 @@ function FilterControls({
                 next.delete("max");
               })
             }
-            className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+            className="inline-flex items-center gap-1 text-sm font-bold text-link hover:underline"
           >
             <X className="size-3.5" />
             {t("clear")}
           </button>
         )}
+
+        <p className="ml-auto text-sm font-bold text-muted-foreground">
+          {t("results", { count: total })}
+        </p>
+      </div>
+
+      <div className="mt-6 grid gap-8 lg:grid-cols-[260px_1fr]">
+        <aside className={cn("text-sm", open ? "block" : "hidden lg:block")}>
+          <FilterGroup title={t("language")}>
+            <RadioRow
+              name="lang"
+              checked={!lang}
+              onChange={() => setParam("lang", "")}
+              label={t("allLanguages")}
+            />
+            {facets.languages.map((l) => (
+              <RadioRow
+                key={l.code}
+                name="lang"
+                checked={lang === l.code}
+                onChange={() => setParam("lang", l.code)}
+                label={languageName(tLang, l)}
+                count={l.count}
+              />
+            ))}
+          </FilterGroup>
+
+          <FilterGroup title={t("teacherType")}>
+            {KIND_OPTIONS.map((opt) => (
+              <RadioRow
+                key={opt.value || "any"}
+                name="kind"
+                checked={kind === opt.value}
+                onChange={() => setParam("kind", opt.value)}
+                label={t(opt.label)}
+              />
+            ))}
+          </FilterGroup>
+
+          <FilterGroup title={t("maxPrice")}>
+            <div className="flex justify-between py-1 text-xs text-muted-foreground">
+              <span>{som.format(PRICE_MIN)}</span>
+              <span className="font-bold text-foreground">
+                {priceActive ? `${som.format(max)} ${tCommon("som")}` : t("any")}
+              </span>
+            </div>
+            <Slider
+              min={PRICE_MIN}
+              max={PRICE_MAX}
+              step={PRICE_STEP}
+              value={[Math.min(Math.max(max, PRICE_MIN), PRICE_MAX)]}
+              onValueChange={([v]) => {
+                const next = new URLSearchParams(params.toString());
+                next.set("max", String(v));
+                router.replace(`${pathname}?${next}`, { scroll: false });
+              }}
+              onValueCommit={([v]) => setParam("max", v >= PRICE_MAX ? "" : String(v))}
+              className="mt-1.5"
+            />
+          </FilterGroup>
+        </aside>
+
+        <div>{children}</div>
       </div>
     </div>
   );
 }
 
-function Chip({
-  active,
-  onClick,
-  children,
+function FilterGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="border-t border-border py-3">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between py-1 text-base font-bold text-foreground"
+      >
+        {title}
+        <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && <div className="mt-1 flex flex-col">{children}</div>}
+    </div>
+  );
+}
+
+function RadioRow({
+  name,
+  checked,
+  onChange,
+  label,
+  count,
 }: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
+  name: string;
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+  count?: number;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
-        active
-          ? "bg-primary text-primary-foreground"
-          : "bg-secondary text-secondary-foreground hover:bg-accent hover:text-accent-foreground",
-      )}
-    >
-      {children}
-    </button>
+    <label className="flex cursor-pointer items-center gap-3 py-1.5">
+      <input
+        type="radio"
+        name={name}
+        checked={checked}
+        onChange={onChange}
+        className="size-4 accent-ink"
+      />
+      <span className="flex-1">{label}</span>
+      {count != null && <span className="text-xs text-muted-foreground">({count})</span>}
+    </label>
   );
 }

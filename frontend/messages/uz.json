@@ -29,7 +29,13 @@
     "myCourses": "Mening kurslarim",
     "accountSettings": "Hisob sozlamalari",
     "admin": "Admin",
-    "signOut": "Chiqish"
+    "signOut": "Chiqish",
+    "explore": "Ko'rish",
+    "exploreLanguages": "Tillar",
+    "searchPlaceholder": "O'qituvchi yoki mavzu qidiring",
+    "teachOn": "FindTutor'da dars bering",
+    "signUp": "Ro'yxatdan o'tish",
+    "menu": "Menyu"
   },
   "footer": {
     "tagline": "O'zingiz tanlagan o'qituvchilar bilan, istalgan vaqt mintaqasida sizga qulay jadval bo'yicha yakka til darslari.",
@@ -43,12 +49,13 @@
     "company": "Kompaniya",
     "about": "Biz haqimizda",
     "contact": "Aloqa",
-    "copyright": "© {year} FindTutor. Portfolio loyihasi."
+    "copyright": "© {year} FindTutor. Portfolio loyihasi.",
+    "findCourse": "Kurs topish"
   },
   "home": {
     "greetings": "Salom · Hello · Привет · 안녕하세요 · Merhaba",
-    "heroTitle": "Sizni gapirtiradigan til o'qituvchisini toping",
-    "heroBody": "O'zbekiston va undan tashqaridagi o'qituvchilar bilan ingliz, rus va boshqa tillar bo'yicha yakka video darslar. Har bir dars uchun so'mda to'lang.",
+    "heroTitle": "Tilni haqiqiy o'qituvchi bilan o'rganing",
+    "heroBody": "O'zbekiston bo'ylab o'qituvchilar bilan ingliz, rus va boshqa tillar bo'yicha yakkama-yakka video darslar. Har bir dars uchun so'mda to'lang.",
     "trustVerified": "Tasdiqlangan o'qituvchilar",
     "trustRating": "O'rtacha baho 4,8",
     "trustReplies": "Ko'pchilik bir necha soatda javob beradi",
@@ -64,9 +71,18 @@
     "step2Body": "O'qituvchi taqvimidan vaqt tanlang. Vaqt sizning mintaqangizda ko'rsatiladi — hisoblash shart emas.",
     "step3Title": "Video orqali uchrashing",
     "step3Body": "Sizga video havola va eslatma keladi. Dars tasdiqlangandan keyin so'mda to'laysiz, oldin emas.",
-    "teachTitle": "FindTutor'da dars bering",
-    "teachBody": "Narx va soatlarni o'zingiz belgilang. Jadval, to'lovlar va kartangizga so'mda pul o'tkazishni biz hal qilamiz.",
-    "applyToTeach": "Ariza berish"
+    "teachTitle": "O'qituvchi bo'ling",
+    "teachBody": "O'zbekiston bo'ylab o'qituvchilar darslarini FindTutor'da o'tkazadi. Narx va jadvalni o'zingiz belgilaysiz; yozilish, to'lov va kartangizga so'mda to'lovlarni biz hal qilamiz.",
+    "applyToTeach": "Bugun dars berishni boshlang",
+    "heroCtaTeachers": "O'qituvchi topish",
+    "heroCtaCourses": "Kurslarni ko'rish",
+    "languagesBody": "Tilni tanlang — kim dars berishini, narxini va o'quvchilar fikrini ko'ring.",
+    "tabTitle": "{language} tilini yakkama-yakka o'rganing",
+    "tabBody": "{count, plural, one {# o'qituvchi} other {# o'qituvchi}} {language} tilidan dars beradi — imtihonga tayyorgarlikdan kundalik suhbatgacha. Tanishuv videolarini ko'ring va qulay vaqtni tanlang.",
+    "exploreLanguage": "{language} o'qituvchilarini ko'rish",
+    "featuredCourses": "Tanlangan kurslar",
+    "viewAllCourses": "Barcha kurslar",
+    "topLanguages": "Mashhur tillar"
   },
   "heroSearch": {
     "placeholder": "Nimani o'rganmoqchisiz? Masalan, IELTS, biznes ingliz tili",
@@ -96,7 +112,8 @@
     "priceFrom": "<strong>{price}</strong> / soatdan",
     "viewProfile": "Profil",
     "professional": "Professional",
-    "community": "Ona tili egasi"
+    "community": "Ona tili egasi",
+    "perHour": "/ soat"
   },
   "teachersPage": {
     "metaTitle": "O'qituvchi topish",
@@ -105,7 +122,8 @@
     "intro": "Bu yerdagi har bir o'qituvchi pullik yakka video darslar beradi. Bir nechta tanishuvni ko'ring, sinov darsiga yoziling va o'zingizga mosini tanlang.",
     "available": "{count, plural, other {<b>#</b> o'qituvchi mavjud}}",
     "noMatchTitle": "Bu filtrlarga mos o'qituvchi yo'q",
-    "noMatchBody": "Narx oralig'ini kengaytirib yoki boshqa til tanlab ko'ring."
+    "noMatchBody": "Narx oralig'ini kengaytirib yoki boshqa til tanlab ko'ring.",
+    "resultsFor": "“{q}” bo'yicha natijalar"
   },
   "filters": {
     "filtersSort": "Filtr va saralash",
@@ -120,7 +138,12 @@
     "sortRecommended": "Tavsiya etilgan",
     "sortPriceAsc": "Narx: arzondan qimmatga",
     "sortPriceDesc": "Narx: qimmatdan arzonga",
-    "sortRatingDesc": "Eng yuqori baho"
+    "sortRatingDesc": "Eng yuqori baho",
+    "filter": "Filtr",
+    "sortBy": "Saralash",
+    "results": "{count, plural, one {# natija} other {# natija}}",
+    "language": "Til",
+    "teacherType": "O'qituvchi turi"
   },
   "profile": {
     "allTeachers": "Barcha o'qituvchilar",
@@ -143,7 +166,10 @@
     "localTime": "{city}da {time}",
     "sameTime": "siz bilan bir xil vaqt",
     "hoursAhead": "{count, plural, other {sizdan # soat oldinda}}",
-    "hoursBehind": "{count, plural, other {sizdan # soat orqada}}"
+    "hoursBehind": "{count, plural, other {sizdan # soat orqada}}",
+    "activeStudentsLabel": "Faol o'quvchilar",
+    "reviewsLabel": "Sharhlar",
+    "ratingLabel": "Reyting"
   },
   "bookingPanel": {
     "per60": "/ 60 daqiqa",
@@ -271,6 +297,15 @@
     "lessonsTaking": "Men o'qiyman",
     "lessonsTeaching": "Men dars beraman",
     "couldNotLoad": "Darslaringizni yuklab bo'lmadi.",
+    "listIntro": "Siz olayotgan va siz o'tayotgan darslar.",
+    "findTeacher": "O'qituvchi topish",
+    "stepTime": "Vaqtni tanlang",
+    "stepReview": "Tekshirish",
+    "stepPayment": "To'lov",
+    "orderSummary": "Xulosa",
+    "lesson": "Dars",
+    "pickTimeFirst": "Hali tanlanmagan",
+    "total": "Jami",
     "noneStudent": "Hali dars yozilmagan. Boshlash uchun o'qituvchi toping.",
     "noneTeacher": "Sizga hali hech kim yozilmagan.",
     "upcoming": "Kelgusi",
@@ -836,7 +871,43 @@
     "submitReview": "Sharhni yuborish",
     "reviewPlaceholder": "Bu kurs haqida nima deb o'ylaysiz? (ixtiyoriy)",
     "pickARating": "Avval bahoni tanlang.",
-    "sortRating": "Yuqori baholi"
+    "sortRating": "Yuqori baholi",
+    "filter": "Filtr",
+    "sortBy": "Saralash",
+    "results": "{count, plural, one {# natija} other {# natija}}",
+    "priceFilter": "Narx",
+    "priceAll": "Hammasi",
+    "priceFree": "Bepul",
+    "priceUnder100": "100 000 so'mgacha",
+    "priceUnder300": "300 000 so'mgacha",
+    "lectures": "{count, plural, one {# ma'ruza} other {# ma'ruza}}",
+    "totalHours": "jami {hours} soat",
+    "totalMinutes": "jami {minutes} daqiqa",
+    "totalLength": "umumiy davomiylik {length}",
+    "previewThisCourse": "Kursni oldindan ko'rish",
+    "thisCourseIncludes": "Kurs tarkibi:",
+    "hoursOnDemandVideo": "{length} video",
+    "videoLectures": "{count, plural, one {# video ma'ruza} other {# video ma'ruza}}",
+    "practiceResources": "{count, plural, one {# amaliy topshiriq} other {# amaliy topshiriq}}",
+    "accessOnMobile": "Telefon va kompyuterdan kirish",
+    "fullLifetimeAccess": "Umrbod to'liq kirish",
+    "noRatingsShort": "Yangi kurs — hali baholanmagan",
+    "createdBy": "Muallif:",
+    "selfPaced": "O'z tezligingizda · istalgan vaqtda",
+    "courseContent": "Kurs mazmuni",
+    "expandAll": "Barcha bo'limlarni ochish",
+    "collapseAll": "Barcha bo'limlarni yopish",
+    "descriptionHeading": "Tavsif",
+    "showMore": "Ko'proq ko'rsatish",
+    "showLess": "Kamroq ko'rsatish",
+    "instructor": "O'qituvchi",
+    "instructorBlurb": "FindTutor'da jonli yakkama-yakka darslar ham beradi — yozilish uchun profilni oching.",
+    "studentFeedback": "O'quvchilar fikri",
+    "courseRating": "Kurs reytingi",
+    "sectionN": "{n}-bo'lim: {title}",
+    "overview": "Umumiy",
+    "startCourse": "Kursni boshlash",
+    "percentComplete": "{pct}% bajarildi"
   },
   "admin": {
     "meta": "Admin",

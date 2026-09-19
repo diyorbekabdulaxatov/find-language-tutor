@@ -8,9 +8,10 @@ import {
   type Review,
 } from "@/features/reviews/api";
 import { Stars } from "./star-rating";
+import { intlLocale } from "@/lib/i18n";
 
 function formatDate(iso: string, locale: string): string {
-  return new Intl.DateTimeFormat(locale, {
+  return new Intl.DateTimeFormat(intlLocale(locale), {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -63,8 +64,8 @@ export function ReviewsSection({
   if (state === "error") return null;
 
   return (
-    <section className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-soft">
-      <h2 className="font-display text-xl">
+    <section>
+      <h2 className="font-display text-2xl">
         {t("title")}{" "}
         <span className="text-muted-foreground">
           ({reviewCount.toLocaleString(locale)})
@@ -84,21 +85,29 @@ export function ReviewsSection({
       )}
 
       {reviews.length > 0 && (
-        <ul className="mt-4 flex flex-col divide-y divide-border">
+        <ul className="mt-4 divide-y divide-border border-t border-border">
           {reviews.map((r) => (
-            <li key={r.id} className="py-4 first:pt-0">
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium">{r.studentDisplayName}</span>
-                <span className="text-xs text-muted-foreground">
-                  {formatDate(r.createdAt, locale)}
-                </span>
+            <li key={r.id} className="flex gap-4 py-5">
+              <span className="grid size-12 shrink-0 place-items-center rounded-full bg-ink text-base font-bold text-ink-foreground">
+                {r.studentDisplayName
+                  .split(/\s+/)
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .map((p) => p[0]?.toUpperCase() ?? "")
+                  .join("")}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-bold">{r.studentDisplayName}</p>
+                <div className="mt-0.5 flex items-center gap-2">
+                  <Stars value={r.rating} className="[&_svg]:size-3.5" />
+                  <span className="text-xs text-muted-foreground">
+                    {formatDate(r.createdAt, locale)}
+                  </span>
+                </div>
+                {r.comment && (
+                  <p className="mt-2 text-sm leading-relaxed text-foreground/90">{r.comment}</p>
+                )}
               </div>
-              <Stars value={r.rating} className="mt-1" />
-              {r.comment && (
-                <p className="mt-2 text-sm leading-relaxed text-foreground/90">
-                  {r.comment}
-                </p>
-              )}
             </li>
           ))}
         </ul>
@@ -108,7 +117,7 @@ export function ReviewsSection({
         <button
           type="button"
           onClick={() => setPage((p) => p + 1)}
-          className="mt-4 text-sm font-medium text-primary hover:underline"
+          className="mt-4 inline-flex h-10 items-center rounded-md border border-foreground bg-background px-3 text-sm font-bold text-foreground hover:bg-accent"
         >
           {t("showMore")}
         </button>

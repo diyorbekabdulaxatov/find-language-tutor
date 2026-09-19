@@ -191,6 +191,8 @@ export interface CourseLearnItem {
   kind: CourseItemKind;
   title: string;
   position: number;
+  /** Video length in seconds; 0 when unknown or for a resource. */
+  durationSeconds: number;
   videoAssetId: string | null;
   resource: CourseResourceView | null;
   progress: CourseItemProgress;

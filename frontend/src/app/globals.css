@@ -5,16 +5,19 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Design tokens — "bold modern marketplace", green-forward.
+ * Design tokens — Udemy look-alike.
  *
- * Colour does the work: a fresh, light emerald green for primary actions, links,
- * and surfaces; a warm coral for trial CTAs and energy; a brighter mint for
- * "online / verified" signals; amber for stars. White cards on a faintly green
- * ground, generous radii, soft layered shadows.
+ * Udemy's language: white pages, near-black (#1c1d1f) text and dark bands,
+ * one saturated purple (#a435f0) for the primary action, a deep purple
+ * (#5624d0) for links and focus, amber stars with a brown rating number,
+ * 4px radii, 1px #d1d7dc hairlines instead of shadows, and one bold sans
+ * for everything. Buttons are tall (40/48px) with bold labels.
  *
  *  1. Raw values on :root / .dark.
  *  2. `@theme inline` maps them to Tailwind names (bg-background, text-coral,
- *     shadow-card, font-display, …).
+ *     shadow-card, font-display, …). The old semantic names (coral, mint,
+ *     brand-tint, shadow-soft/card/lift) are kept so every component keeps
+ *     compiling; they now resolve to the Udemy palette.
  */
 @theme inline {
   --color-background: var(--background);
@@ -36,97 +39,108 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  --color-link: var(--primary);
+  --color-link: var(--link);
   --color-coral: var(--coral);
   --color-coral-foreground: var(--coral-foreground);
   --color-mint: var(--mint);
   --color-mint-foreground: var(--mint-foreground);
   --color-star: var(--star);
+  --color-rating: var(--rating);
   --color-brand-tint: var(--brand-tint);
+  --color-ink: var(--ink);
+  --color-ink-foreground: var(--ink-foreground);
 
   --font-sans: var(--font-sans);
-  --font-display: var(--font-display);
-  --font-heading: var(--font-display);
+  --font-display: var(--font-sans);
+  --font-heading: var(--font-sans);
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: 2px;
+  --radius-md: var(--radius);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 16px);
+  --radius-2xl: calc(var(--radius) + 4px);
+  --radius-3xl: calc(var(--radius) + 8px);
 
-  --shadow-soft: 0 1px 2px rgba(23, 23, 51, 0.04), 0 4px 12px -2px rgba(23, 23, 51, 0.07);
-  --shadow-card: 0 1px 2px rgba(23, 23, 51, 0.04), 0 12px 32px -12px rgba(23, 23, 51, 0.14);
-  --shadow-lift: 0 2px 6px rgba(23, 23, 51, 0.06), 0 24px 48px -14px rgba(23, 23, 51, 0.22);
+  --shadow-soft: 0 1px 2px rgba(28, 29, 31, 0.08);
+  --shadow-card: 0 2px 4px rgba(28, 29, 31, 0.08), 0 4px 12px rgba(28, 29, 31, 0.08);
+  --shadow-lift: 0 4px 16px rgba(28, 29, 31, 0.16);
 }
 
 :root {
-  --background: #f5f8f6;
-  --foreground: #16211c;
+  --background: #ffffff;
+  --foreground: #1c1d1f;
 
   --card: #ffffff;
-  --card-foreground: #16211c;
+  --card-foreground: #1c1d1f;
   --popover: #ffffff;
-  --popover-foreground: #16211c;
+  --popover-foreground: #1c1d1f;
 
-  --primary: #18b184;
+  --primary: #a435f0;
   --primary-foreground: #ffffff;
 
-  --secondary: #e7f1ec;
-  --secondary-foreground: #1c3a2e;
-  --muted: #eef3f0;
-  --muted-foreground: #5f7169;
-  --accent: #dff2e9;
-  --accent-foreground: #0a6b4b;
+  --secondary: #f7f9fa;
+  --secondary-foreground: #1c1d1f;
+  --muted: #f7f9fa;
+  --muted-foreground: #6a6f73;
+  --accent: #f3eefa;
+  --accent-foreground: #5624d0;
 
-  --destructive: #dc2b3d;
+  --destructive: #b32d2e;
 
-  --border: #e0e9e4;
-  --input: #d8e5df;
-  --ring: #18b184;
+  --border: #d1d7dc;
+  --input: #1c1d1f;
+  --ring: #5624d0;
 
-  --coral: #ff6b57;
+  --link: #5624d0;
+  --coral: #5624d0;
   --coral-foreground: #ffffff;
-  --mint: #24c088;
-  --mint-foreground: #06231a;
-  --star: #f5a524;
-  --brand-tint: #dff2e9;
+  --mint: #1e6055;
+  --mint-foreground: #ffffff;
+  --star: #e59819;
+  --rating: #4d3105;
+  --brand-tint: #f7f9fa;
+  --ink: #1c1d1f;
+  --ink-foreground: #ffffff;
 
-  --radius: 0.875rem;
+  --radius: 4px;
 }
 
 .dark {
-  --background: #16231e;
-  --foreground: #eef4f0;
+  --background: #1c1d1f;
+  --foreground: #f7f9fa;
 
-  --card: #21302a;
-  --card-foreground: #eef4f0;
-  --popover: #21302a;
-  --popover-foreground: #eef4f0;
+  --card: #2d2f31;
+  --card-foreground: #f7f9fa;
+  --popover: #2d2f31;
+  --popover-foreground: #f7f9fa;
 
-  --primary: #4bd8a4;
-  --primary-foreground: #04241a;
+  --primary: #a435f0;
+  --primary-foreground: #ffffff;
 
-  --secondary: #2c3d35;
-  --secondary-foreground: #eef4f0;
-  --muted: #273730;
-  --muted-foreground: #a9bcb2;
-  --accent: #2b4839;
-  --accent-foreground: #9cedcb;
+  --secondary: #3e4143;
+  --secondary-foreground: #f7f9fa;
+  --muted: #3e4143;
+  --muted-foreground: #9da3a7;
+  --accent: #3b2a52;
+  --accent-foreground: #d0b3f7;
 
-  --destructive: #f2586a;
+  --destructive: #f26b6c;
 
-  --border: #3a4c43;
-  --input: #43564c;
-  --ring: #4bd8a4;
+  --border: #3e4143;
+  --input: #6a6f73;
+  --ring: #c4a1f5;
 
-  --coral: #ff8977;
-  --coral-foreground: #2a0f0a;
-  --mint: #46e0a8;
-  --mint-foreground: #04241a;
-  --star: #f7b23b;
-  --brand-tint: #1c3a2c;
+  --link: #c4a1f5;
+  --coral: #8f5cf0;
+  --coral-foreground: #ffffff;
+  --mint: #5ec6b0;
+  --mint-foreground: #0d2f29;
+  --star: #e59819;
+  --rating: #f3ca8c;
+  --brand-tint: #2d2f31;
+  --ink: #2d2f31;
+  --ink-foreground: #f7f9fa;
 }
 
 @layer base {
@@ -140,8 +154,7 @@
   }
 
   .font-display {
-    font-optical-sizing: auto;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.01em;
     font-weight: 700;
   }
 

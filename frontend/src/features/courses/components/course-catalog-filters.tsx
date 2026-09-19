@@ -3,7 +3,7 @@
 import { useCallback, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Search } from "lucide-react";
+import { ChevronDown, Search, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -18,24 +18,25 @@ const SORT_OPTIONS: {
   value: CourseSort;
   label: "sortNewest" | "sortPriceAsc" | "sortPriceDesc" | "sortRating";
 }[] = [
-  { value: "newest", label: "sortNewest" },
   { value: "rating", label: "sortRating" },
+  { value: "newest", label: "sortNewest" },
   { value: "price_asc", label: "sortPriceAsc" },
   { value: "price_desc", label: "sortPriceDesc" },
 ];
 
-/**
- * Search + sort bar for the public course catalog. Mirrors `TeacherFilters`'
- * URL-driven-state approach, scaled down — no facets endpoint exists for
- * courses, so this is just `q` and `sort`.
- */
-export function CourseCatalogFilters() {
+/** Price ceilings in UZS minor units (tiyin). "" = no ceiling. */
+const PRICE_OPTIONS: { value: string; label: "priceAll" | "priceFree" | "priceUnder100" | "priceUnder300" }[] = [
+  { value: "", label: "priceAll" },
+  { value: "0", label: "priceFree" },
+  { value: "10000000", label: "priceUnder100" },
+  { value: "30000000", label: "priceUnder300" },
+];
+
+function useCatalogParams() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
   const [isPending, startTransition] = useTransition();
-  const [q, setQ] = useState(params.get("q") ?? "");
-  const t = useTranslations("courses");
 
   const setParam = useCallback(
     (key: string, value: string) => {
@@ -50,37 +51,52 @@ export function CourseCatalogFilters() {
     },
     [params, pathname, router],
   );
+  return { params, setParam, isPending };
+}
 
-  const sort = (params.get("sort") as CourseSort) ?? "newest";
+/**
+ * Udemy's results toolbar: a "Filter" toggle (phones — the sidebar is always
+ * open on desktop), the sort select, the search field, and the result count
+ * on the right.
+ */
+export function CourseCatalogToolbar({
+  total,
+  onToggleFilters,
+}: {
+  total: number;
+  onToggleFilters?: () => void;
+}) {
+  const { params, setParam, isPending } = useCatalogParams();
+  const [q, setQ] = useState(params.get("q") ?? "");
+  const t = useTranslations("courses");
+  const sort = (params.get("sort") as CourseSort) ?? "rating";
 
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 rounded-2xl bg-card p-4 ring-1 ring-border shadow-soft transition-opacity sm:flex-row sm:items-center sm:p-5",
+        "flex flex-col gap-3 transition-opacity sm:flex-row sm:items-center",
         isPending && "opacity-60",
       )}
     >
-      <form
-        className="relative flex-1"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setParam("q", q.trim());
-        }}
-      >
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onBlur={() => setParam("q", q.trim())}
-          type="search"
-          placeholder={t("searchPlaceholder")}
-          className="h-10 w-full rounded-lg border border-input bg-transparent pl-9 pr-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-        />
-      </form>
+      {onToggleFilters && (
+        <button
+          type="button"
+          onClick={onToggleFilters}
+          className="inline-flex h-12 items-center gap-2 rounded-md border border-foreground bg-background px-4 text-sm font-bold text-foreground hover:bg-accent lg:hidden"
+        >
+          <SlidersHorizontal className="size-4" />
+          {t("filter")}
+        </button>
+      )}
 
-      <Select value={sort} onValueChange={(v) => setParam("sort", v === "newest" ? "" : v)}>
-        <SelectTrigger className="h-10 sm:w-[190px]">
-          <SelectValue>{t(SORT_OPTIONS.find((opt) => opt.value === sort)?.label ?? "sortNewest")}</SelectValue>
+      <Select value={sort} onValueChange={(v) => setParam("sort", v === "rating" ? "" : v)}>
+        <SelectTrigger className="h-12 border-foreground font-bold sm:w-[220px]">
+          <span className="flex flex-col items-start leading-none">
+            <span className="text-[0.65rem] font-normal text-muted-foreground">{t("sortBy")}</span>
+            <SelectValue>
+              {t(SORT_OPTIONS.find((opt) => opt.value === sort)?.label ?? "sortRating")}
+            </SelectValue>
+          </span>
         </SelectTrigger>
         <SelectContent>
           {SORT_OPTIONS.map((opt) => (
@@ -90,6 +106,93 @@ export function CourseCatalogFilters() {
           ))}
         </SelectContent>
       </Select>
+
+      <form
+        className="relative flex-1"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setParam("q", q.trim());
+        }}
+      >
+        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onBlur={() => setParam("q", q.trim())}
+          type="search"
+          placeholder={t("searchPlaceholder")}
+          className="h-12 w-full rounded-md border border-foreground bg-background pr-3 pl-9 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+        />
+      </form>
+
+      <p className="text-sm font-bold text-muted-foreground sm:ml-auto">
+        {t("results", { count: total })}
+      </p>
+    </div>
+  );
+}
+
+/** Udemy's left sidebar: accordion groups of radio filters. */
+export function CourseCatalogSidebar({ className }: { className?: string }) {
+  const { params, setParam } = useCatalogParams();
+  const t = useTranslations("courses");
+  const price = params.get("max_price") ?? "";
+
+  return (
+    <aside className={cn("text-sm", className)}>
+      <FilterGroup title={t("priceFilter")}>
+        {PRICE_OPTIONS.map((opt) => (
+          <label key={opt.value} className="flex cursor-pointer items-center gap-3 py-1.5">
+            <input
+              type="radio"
+              name="price"
+              value={opt.value}
+              checked={price === opt.value}
+              onChange={() => setParam("max_price", opt.value)}
+              className="size-4 accent-ink"
+            />
+            <span>{t(opt.label)}</span>
+          </label>
+        ))}
+      </FilterGroup>
+    </aside>
+  );
+}
+
+function FilterGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="border-t border-border py-3">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between py-1 text-base font-bold text-foreground"
+      >
+        {title}
+        <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && <div className="mt-1 flex flex-col">{children}</div>}
+    </div>
+  );
+}
+
+/** Wraps sidebar + results so the phone "Filter" toggle can show/hide the sidebar. */
+export function CourseCatalogLayout({
+  total,
+  children,
+}: {
+  total: number;
+  children: React.ReactNode;
+}) {
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  return (
+    <div>
+      <CourseCatalogToolbar total={total} onToggleFilters={() => setFiltersOpen((o) => !o)} />
+      <div className="mt-6 grid gap-8 lg:grid-cols-[260px_1fr]">
+        <CourseCatalogSidebar className={cn(filtersOpen ? "block" : "hidden lg:block")} />
+        <div>{children}</div>
+      </div>
     </div>
   );
 }

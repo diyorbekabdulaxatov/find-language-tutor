@@ -3101,6 +3101,8 @@ export interface components {
             kind: components["schemas"]["CourseItemKind"];
             title: string;
             position: number;
+            /** @description Video length in seconds, 0 when unknown or for a `resource` item. Same figure the catalog outline carries, so the player can show it next to each lecture. */
+            duration_seconds: number;
             /**
              * Format: uuid
              * @description Set for a `video` item; fetch bytes via GET /v1/files/{id}.

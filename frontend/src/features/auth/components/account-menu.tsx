@@ -49,7 +49,7 @@ export function AccountMenu() {
   const t = useTranslations("nav");
 
   if (status === "loading") {
-    return <div className="size-8 rounded-full bg-muted" aria-hidden />;
+    return <div className="size-9 rounded-full bg-muted" aria-hidden />;
   }
 
   if (status === "unauthenticated" || !user) {
@@ -57,15 +57,15 @@ export function AccountMenu() {
       <>
         <Link
           href="/login"
-          className="hidden rounded-lg px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary sm:inline-flex"
+          className="hidden h-10 items-center rounded-md border border-foreground bg-background px-3 text-sm font-bold text-foreground transition-colors hover:bg-accent sm:inline-flex dark:border-foreground/60"
         >
           {t("login")}
         </Link>
         <Link
           href="/signup"
-          className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+          className="inline-flex h-10 items-center rounded-md bg-ink px-3 text-sm font-bold text-ink-foreground transition-colors hover:bg-ink/85"
         >
-          {t("getStarted")}
+          {t("signUp")}
         </Link>
       </>
     );
@@ -78,12 +78,20 @@ export function AccountMenu() {
 
   return (
     <DropdownMenu>
+      <Link
+        href="/learn"
+        className="hidden rounded-md px-3 py-2 text-sm text-foreground transition-colors hover:text-link lg:inline-flex"
+      >
+        {t("myLearning")}
+      </Link>
       <DropdownMenuTrigger
         aria-label={t("accountMenu")}
-        className="rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
       >
-        <Avatar>
-          <AvatarFallback>{initials(user.displayName)}</AvatarFallback>
+        <Avatar className="size-9">
+          <AvatarFallback className="bg-ink text-sm font-bold text-ink-foreground">
+            {initials(user.displayName)}
+          </AvatarFallback>
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-56">

@@ -29,7 +29,13 @@
     "myCourses": "My courses",
     "accountSettings": "Account settings",
     "admin": "Admin",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "explore": "Explore",
+    "exploreLanguages": "Languages",
+    "searchPlaceholder": "Search for a teacher or a topic",
+    "teachOn": "Teach on FindTutor",
+    "signUp": "Sign up",
+    "menu": "Menu"
   },
   "footer": {
     "tagline": "One-on-one language lessons with teachers you choose, on a schedule that works across timezones.",
@@ -43,12 +49,13 @@
     "company": "Company",
     "about": "About",
     "contact": "Contact",
-    "copyright": "© {year} FindTutor. A portfolio project."
+    "copyright": "© {year} FindTutor. A portfolio project.",
+    "findCourse": "Find a course"
   },
   "home": {
     "greetings": "Salom · Hello · Привет · 안녕하세요 · Merhaba",
-    "heroTitle": "Find a language teacher who gets you talking",
-    "heroBody": "One-on-one video lessons with English, Russian, and more, from teachers across Uzbekistan and beyond. Pay per lesson in so'm.",
+    "heroTitle": "Learn a language with a real teacher",
+    "heroBody": "One-on-one video lessons in English, Russian and more, from teachers across Uzbekistan. Pay per lesson in so'm.",
     "trustVerified": "Verified teachers",
     "trustRating": "4.8 average rating",
     "trustReplies": "Most reply within hours",
@@ -64,9 +71,18 @@
     "step2Body": "Pick a slot from the teacher's calendar. Times show in your timezone — no maths to do.",
     "step3Title": "Meet on video",
     "step3Body": "You get a video link and a reminder. Pay in so'm after the lesson is confirmed, not before.",
-    "teachTitle": "Teach on FindTutor",
-    "teachBody": "Set your own rates and hours. We handle scheduling, payments, and payouts to your card in so'm.",
-    "applyToTeach": "Apply to teach"
+    "teachTitle": "Become a teacher",
+    "teachBody": "Teachers from across Uzbekistan run their lessons on FindTutor. Set your own rates and hours; we handle scheduling, payments and payouts to your card in so'm.",
+    "applyToTeach": "Start teaching today",
+    "heroCtaTeachers": "Find a teacher",
+    "heroCtaCourses": "Browse courses",
+    "languagesBody": "Pick a language to see who teaches it, what they charge, and what their students say.",
+    "tabTitle": "Learn {language} one-on-one",
+    "tabBody": "{count, plural, one {# teacher} other {# teachers}} offer {language} lessons — from exam prep to everyday conversation. Watch their intro videos, then book a time that suits you.",
+    "exploreLanguage": "Explore {language} teachers",
+    "featuredCourses": "Featured courses",
+    "viewAllCourses": "View all courses",
+    "topLanguages": "Top languages"
   },
   "heroSearch": {
     "placeholder": "What do you want to learn? e.g. IELTS, business English",
@@ -96,7 +112,8 @@
     "priceFrom": "from <strong>{price}</strong> / hr",
     "viewProfile": "View profile",
     "professional": "Professional",
-    "community": "Community"
+    "community": "Community",
+    "perHour": "/ hr"
   },
   "teachersPage": {
     "metaTitle": "Find a teacher",
@@ -105,7 +122,8 @@
     "intro": "Every teacher here gives paid one-on-one video lessons. Watch a few intros, book a trial, keep the one you click with.",
     "available": "{count, plural, one {<b>#</b> teacher available} other {<b>#</b> teachers available}}",
     "noMatchTitle": "No teachers match those filters",
-    "noMatchBody": "Try widening the price range or choosing a different language."
+    "noMatchBody": "Try widening the price range or choosing a different language.",
+    "resultsFor": "Results for “{q}”"
   },
   "filters": {
     "filtersSort": "Filters & sort",
@@ -120,7 +138,12 @@
     "sortRecommended": "Recommended",
     "sortPriceAsc": "Price: low to high",
     "sortPriceDesc": "Price: high to low",
-    "sortRatingDesc": "Highest rated"
+    "sortRatingDesc": "Highest rated",
+    "filter": "Filter",
+    "sortBy": "Sort by",
+    "results": "{count, plural, one {# result} other {# results}}",
+    "language": "Language",
+    "teacherType": "Teacher type"
   },
   "profile": {
     "allTeachers": "All teachers",
@@ -143,7 +166,10 @@
     "localTime": "{time} in {city}",
     "sameTime": "same time as you",
     "hoursAhead": "{count, plural, one {# hour ahead of you} other {# hours ahead of you}}",
-    "hoursBehind": "{count, plural, one {# hour behind you} other {# hours behind you}}"
+    "hoursBehind": "{count, plural, one {# hour behind you} other {# hours behind you}}",
+    "activeStudentsLabel": "Active students",
+    "reviewsLabel": "Reviews",
+    "ratingLabel": "Rating"
   },
   "bookingPanel": {
     "per60": "/ 60 min",
@@ -271,6 +297,15 @@
     "lessonsTaking": "Lessons I'm taking",
     "lessonsTeaching": "Lessons I'm teaching",
     "couldNotLoad": "Could not load your bookings.",
+    "listIntro": "Lessons you're taking and lessons you teach.",
+    "findTeacher": "Find a teacher",
+    "stepTime": "Choose a time",
+    "stepReview": "Review",
+    "stepPayment": "Payment",
+    "orderSummary": "Summary",
+    "lesson": "Lesson",
+    "pickTimeFirst": "Not picked yet",
+    "total": "Total",
     "noneStudent": "No lessons booked yet. Find a teacher to get started.",
     "noneTeacher": "No lessons booked with you yet.",
     "upcoming": "Upcoming",
@@ -836,7 +871,43 @@
     "submitReview": "Submit review",
     "reviewPlaceholder": "What did you think of this course? (optional)",
     "pickARating": "Pick a star rating first.",
-    "sortRating": "Highest rated"
+    "sortRating": "Highest rated",
+    "filter": "Filter",
+    "sortBy": "Sort by",
+    "results": "{count, plural, one {# result} other {# results}}",
+    "priceFilter": "Price",
+    "priceAll": "All",
+    "priceFree": "Free",
+    "priceUnder100": "Under 100,000 so'm",
+    "priceUnder300": "Under 300,000 so'm",
+    "lectures": "{count, plural, one {# lecture} other {# lectures}}",
+    "totalHours": "{hours} total hours",
+    "totalMinutes": "{minutes} total minutes",
+    "totalLength": "{length} total length",
+    "previewThisCourse": "Preview this course",
+    "thisCourseIncludes": "This course includes:",
+    "hoursOnDemandVideo": "{length} of on-demand video",
+    "videoLectures": "{count, plural, one {# video lecture} other {# video lectures}}",
+    "practiceResources": "{count, plural, one {# practice resource} other {# practice resources}}",
+    "accessOnMobile": "Access on mobile and desktop",
+    "fullLifetimeAccess": "Full lifetime access",
+    "noRatingsShort": "New course — no ratings yet",
+    "createdBy": "Created by",
+    "selfPaced": "Self-paced · watch anytime",
+    "courseContent": "Course content",
+    "expandAll": "Expand all sections",
+    "collapseAll": "Collapse all sections",
+    "descriptionHeading": "Description",
+    "showMore": "Show more",
+    "showLess": "Show less",
+    "instructor": "Instructor",
+    "instructorBlurb": "Teaches live 1-on-1 lessons on FindTutor as well — open the profile to book one.",
+    "studentFeedback": "Student feedback",
+    "courseRating": "Course rating",
+    "sectionN": "Section {n}: {title}",
+    "overview": "Overview",
+    "startCourse": "Start course",
+    "percentComplete": "{pct}% complete"
   },
   "admin": {
     "meta": "Admin",

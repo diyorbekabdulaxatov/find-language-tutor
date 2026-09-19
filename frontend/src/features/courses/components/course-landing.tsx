@@ -4,15 +4,18 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import {
-  ArrowLeft,
   CheckCircle2,
-  Clock,
+  ChevronDown,
+  ChevronRight,
   FileText,
   Film,
-  GraduationCap,
-  Layers,
+  Globe,
+  Infinity as InfinityIcon,
+  MonitorSmartphone,
   PlayCircle,
+  PlaySquare,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { courseLengthParts, formatLectureLength, formatMoney } from "@/lib/format";
 import { useAuth } from "@/features/auth/auth-context";
@@ -53,6 +56,8 @@ export function CourseLanding({ id }: { id: string }) {
   // Which free preview lecture is playing in the hero, if any. Clearing it
   // puts the cover image back.
   const [previewItemId, setPreviewItemId] = useState<string | null>(null);
+  const [expandedAll, setExpandedAll] = useState(false);
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
   const t = useTranslations("courses");
   const locale = useLocale();
 
@@ -82,10 +87,10 @@ export function CourseLanding({ id }: { id: string }) {
 
   if (state === "loading") {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:py-10">
-        <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-          <div className="h-80 animate-pulse rounded-2xl bg-muted lg:col-start-1" />
-          <div className="h-64 animate-pulse rounded-2xl bg-muted lg:col-start-2" />
+      <div>
+        <div className="h-64 bg-ink" />
+        <div className="mx-auto max-w-[1340px] px-4 py-8 sm:px-6">
+          <div className="h-96 max-w-[700px] animate-pulse bg-muted" />
         </div>
       </div>
     );
@@ -114,202 +119,260 @@ export function CourseLanding({ id }: { id: string }) {
   }
 
   const free = course.price.amountMinor === 0;
-  const totalItems = course.sections.reduce((n, s) => n + s.items.length, 0);
+  const allItems = course.sections.flatMap((s) => s.items);
+  const totalItems = allItems.length;
+  const videoCount = allItems.filter((i) => i.kind === "video").length;
+  const resourceCount = totalItems - videoCount;
   const length = courseLengthParts(course.totalDurationSeconds);
-  // The first free lecture in curriculum order — what the hero's play button
-  // starts with. null when the teacher has not marked any.
-  const firstPreview =
-    course.sections.flatMap((s) => s.items).find((i) => i.isPreview) ?? null;
+  const lengthLabel = length
+    ? length.hours > 0
+      ? t("totalHours", { hours: length.hours + (length.minutes >= 30 ? 0.5 : 0) })
+      : t("totalMinutes", { minutes: length.minutes })
+    : null;
+  // The first free lecture in curriculum order — what the sidebar's play
+  // button starts with. null when the teacher has not marked any.
+  const firstPreview = allItems.find((i) => i.isPreview) ?? null;
   const enrolled = course.isEnrolled || justEnrolled !== null;
 
-  return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:py-10">
-      <Link
-        href="/courses/catalog"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" />
-        {t("allCourses")}
-      </Link>
+  const cover = (
+    <div className="relative aspect-video bg-muted">
+      {previewItemId ? (
+        <video
+          key={previewItemId}
+          controls
+          autoPlay
+          src={coursePreviewUrl(course.id, previewItemId)}
+          className="size-full bg-black object-contain"
+        />
+      ) : course.coverAssetId ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={courseCoverUrl(course.id)} alt="" className="size-full object-cover" />
+      ) : (
+        <div className="grid size-full place-items-center text-muted-foreground">
+          <Film className="size-10" />
+        </div>
+      )}
+      {/* The cover doubles as the play surface when a free sample exists —
+          the "try before you buy" affordance shoppers look for first. */}
+      {!previewItemId && firstPreview && (
+        <button
+          type="button"
+          onClick={() => setPreviewItemId(firstPreview.id)}
+          className="absolute inset-0 grid place-items-center bg-gradient-to-t from-black/70 to-black/10 text-white outline-none focus-visible:ring-3 focus-visible:ring-ring/60"
+        >
+          <span className="grid size-16 place-items-center rounded-full bg-white text-ink shadow-lift">
+            <PlayCircle className="size-8" />
+          </span>
+          <span className="absolute inset-x-0 bottom-3 text-center text-base font-bold">
+            {t("previewThisCourse")}
+          </span>
+        </button>
+      )}
+    </div>
+  );
 
-      <div className="mt-5 grid gap-6 lg:grid-cols-[1fr_340px]">
-        {/* Header card */}
-        <div className="overflow-hidden rounded-2xl bg-card ring-1 ring-border shadow-card lg:col-start-1 lg:row-start-1">
-          <div className="relative aspect-[16/7] bg-muted">
-            {previewItemId ? (
-              <video
-                key={previewItemId}
-                controls
-                autoPlay
-                src={coursePreviewUrl(course.id, previewItemId)}
-                className="size-full bg-black object-contain"
-              />
-            ) : course.coverAssetId ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={courseCoverUrl(course.id)}
-                alt=""
-                className="size-full object-cover"
-              />
-            ) : (
-              <div className="grid size-full place-items-center text-muted-foreground">
-                <Film className="size-10" />
-              </div>
-            )}
+  const buyCard = (
+    <div className="bg-card text-card-foreground shadow-card lg:border lg:border-border">
+      <div className="hidden lg:block">{cover}</div>
+      <div className="p-6">
+        <p className="font-display text-[2rem] leading-none text-foreground">
+          {free ? t("free") : formatMoney(course.price, locale)}
+        </p>
 
-            {/* The cover doubles as the play surface when a free sample
-                exists — the "try before you buy" affordance shoppers look
-                for before they read anything else. */}
-            {!previewItemId && firstPreview && (
-              <button
-                type="button"
-                onClick={() => setPreviewItemId(firstPreview.id)}
-                className="absolute inset-0 grid place-items-center bg-foreground/25 transition-colors hover:bg-foreground/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-              >
-                <span className="inline-flex items-center gap-2 rounded-full bg-background/95 px-4 py-2.5 text-sm font-semibold text-foreground shadow-lift backdrop-blur">
-                  <PlayCircle className="size-5" />
-                  {t("watchFreePreview")}
-                </span>
-              </button>
-            )}
-          </div>
-
-          <div className="p-5 sm:p-6">
-            <h1 className="font-display text-3xl tracking-tight sm:text-[2rem]">
-              {course.title}
-            </h1>
-            {course.subtitle && (
-              <p className="mt-1.5 text-muted-foreground">{course.subtitle}</p>
-            )}
-
-            {course.reviewCount > 0 && (
-              <p className="mt-2.5 inline-flex items-center gap-2 text-sm">
-                <span className="font-semibold text-foreground">
-                  {course.rating.toFixed(1)}
-                </span>
-                <Stars value={course.rating} />
-                <span className="text-muted-foreground">
-                  {t("ratingCount", { count: course.reviewCount })}
-                </span>
-              </p>
-            )}
-
-            <Link
-              href={`/teachers/${course.teacher.slug}`}
-              className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-primary hover:underline"
-            >
-              <GraduationCap className="size-4 text-muted-foreground" />
-              {course.teacher.displayName}
-            </Link>
-
-            <p className="mt-2 inline-flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
-              <Layers className="size-4" />
-              {t("sections", { count: course.sections.length })} · {t("lessons", { count: totalItems })}
-              {length && (
-                <>
-                  <span aria-hidden>·</span>
-                  <Clock className="size-4" />
-                  {length.hours > 0
-                    ? t("courseLengthHm", { hours: length.hours, minutes: length.minutes })
-                    : t("courseLengthM", { minutes: length.minutes })}
-                </>
+        <div className="mt-4">
+          {course.isOwner ? (
+            <Button asChild size="lg" className="w-full">
+              <Link href={`/courses/${course.id}/edit`}>{t("editCourse")}</Link>
+            </Button>
+          ) : enrolled ? (
+            <div className="flex flex-col gap-3">
+              {justEnrolled && (
+                <p className="inline-flex items-center gap-2 bg-accent px-3 py-2 text-sm font-bold text-accent-foreground">
+                  <CheckCircle2 className="size-4" />
+                  {t("youreEnrolled")}
+                </p>
               )}
-            </p>
-          </div>
+              <Button asChild size="lg" className="w-full">
+                <Link href={`/learn/${course.id}`}>{t("continueLearning")}</Link>
+              </Button>
+            </div>
+          ) : (
+            <PurchaseCoursePanel
+              courseId={course.id}
+              price={course.price}
+              onPurchased={setJustEnrolled}
+            />
+          )}
         </div>
 
-        {/* CTA panel — sticky on desktop */}
-        <aside className="lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start">
-          <div className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-card">
-            <div className="flex items-end gap-1.5">
-              <span className="font-display text-3xl text-foreground">
-                {free ? t("free") : formatMoney(course.price, locale)}
-              </span>
-            </div>
+        {!course.isOwner && (
+          <p className="mt-3 text-center text-xs text-muted-foreground">{t("lifetimeAccess")}</p>
+        )}
 
-            <div className="mt-5">
-              {course.isOwner ? (
-                <Button asChild size="lg" className="w-full">
-                  <Link href={`/courses/${course.id}/edit`}>{t("editCourse")}</Link>
-                </Button>
-              ) : enrolled ? (
-                <div className="flex flex-col gap-3">
-                  {justEnrolled && (
-                    <p className="inline-flex items-center gap-2 rounded-lg bg-mint/12 px-3 py-2 text-sm font-medium text-mint">
-                      <CheckCircle2 className="size-4" />
-                      {t("youreEnrolled")}
-                    </p>
-                  )}
-                  <Button asChild size="lg" className="w-full">
-                    <Link href={`/learn/${course.id}`}>{t("continueLearning")}</Link>
-                  </Button>
-                </div>
-              ) : (
-                <PurchaseCoursePanel
-                  courseId={course.id}
-                  price={course.price}
-                  onPurchased={setJustEnrolled}
-                />
-              )}
-            </div>
+        <div className="mt-6">
+          <p className="text-base font-bold">{t("thisCourseIncludes")}</p>
+          <ul className="mt-2 space-y-1.5 text-sm text-foreground/90">
+            {lengthLabel && (
+              <li className="flex items-center gap-3">
+                <PlaySquare className="size-4 shrink-0 text-muted-foreground" />
+                {t("hoursOnDemandVideo", { length: lengthLabel })}
+              </li>
+            )}
+            {videoCount > 0 && !lengthLabel && (
+              <li className="flex items-center gap-3">
+                <PlaySquare className="size-4 shrink-0 text-muted-foreground" />
+                {t("videoLectures", { count: videoCount })}
+              </li>
+            )}
+            {resourceCount > 0 && (
+              <li className="flex items-center gap-3">
+                <FileText className="size-4 shrink-0 text-muted-foreground" />
+                {t("practiceResources", { count: resourceCount })}
+              </li>
+            )}
+            <li className="flex items-center gap-3">
+              <MonitorSmartphone className="size-4 shrink-0 text-muted-foreground" />
+              {t("accessOnMobile")}
+            </li>
+            <li className="flex items-center gap-3">
+              <InfinityIcon className="size-4 shrink-0 text-muted-foreground" />
+              {t("fullLifetimeAccess")}
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
 
-            {!course.isOwner && (
-              <p className="mt-5 rounded-xl bg-primary/8 p-3 text-xs text-muted-foreground">
-                {t("lifetimeAccess")}
-              </p>
+  return (
+    // Outer grid: [gutter | 1340px content | gutter] × [hero row | body row].
+    // The dark band is a full-width item in the hero row, so its height
+    // follows the hero text; the content column is a row-subgrid so the
+    // sticky buy card can start inside the band and run down the body.
+    <div className="grid grid-cols-[minmax(1rem,1fr)_minmax(0,1340px)_minmax(1rem,1fr)] grid-rows-[auto_1fr] sm:grid-cols-[minmax(1.5rem,1fr)_minmax(0,1340px)_minmax(1.5rem,1fr)]">
+      <div aria-hidden className="col-span-full row-start-1 bg-ink" />
+
+      <div className="col-start-2 row-span-2 row-start-1 grid grid-rows-subgrid gap-x-12 lg:grid-cols-[minmax(0,1fr)_340px]">
+        {/* Hero text — white on the band. */}
+        <div className="col-start-1 row-start-1 max-w-[700px] py-8 text-ink-foreground">
+          <nav className="flex items-center gap-1 text-sm font-bold text-[#cec0fc]">
+            <Link href="/courses/catalog" className="hover:underline">
+              {t("allCourses")}
+            </Link>
+            <ChevronRight className="size-3.5" aria-hidden />
+            <Link href={`/teachers/${course.teacher.slug}`} className="hover:underline">
+              {course.teacher.displayName}
+            </Link>
+          </nav>
+
+          <div className="mt-4 lg:hidden">{cover}</div>
+
+          <h1 className="mt-4 font-display text-[1.75rem] leading-tight sm:text-[2rem]">
+            {course.title}
+          </h1>
+          {course.subtitle && <p className="mt-2 text-lg text-white/90">{course.subtitle}</p>}
+
+          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+            {course.reviewCount > 0 ? (
+              <>
+                <span className="font-bold text-[#f69c08]">{course.rating.toFixed(1)}</span>
+                <Stars value={course.rating} className="[&_svg]:size-3.5" />
+                <a href="#reviews" className="text-[#cec0fc] underline underline-offset-2">
+                  {t("ratingCount", { count: course.reviewCount })}
+                </a>
+              </>
+            ) : (
+              <span className="text-white/70">{t("noRatingsShort")}</span>
             )}
           </div>
-        </aside>
 
-        {/* Long-form content */}
-        <div className="space-y-6 lg:col-start-1 lg:row-start-2">
-          {course.description && (
-            <section className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-soft">
-              <h2 className="font-display text-xl">{t("aboutCourse")}</h2>
-              <div className="mt-3 max-w-[64ch] space-y-4 text-sm leading-relaxed text-foreground/90">
-                {course.description.split("\n\n").map((para, i) => (
-                  <p key={i}>{para}</p>
-                ))}
+          <p className="mt-2 text-sm">
+            {t("createdBy")}{" "}
+            <Link
+              href={`/teachers/${course.teacher.slug}`}
+              className="font-bold text-[#cec0fc] underline underline-offset-2"
+            >
+              {course.teacher.displayName}
+            </Link>
+          </p>
+
+          <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-white/80">
+            <Globe className="size-4" aria-hidden />
+            {t("selfPaced")}
+          </p>
+        </div>
+
+        {/* Body. */}
+        <div className="col-start-1 row-start-2 max-w-[700px] py-8">
+          {/* Buy card on phones sits right under the hero. */}
+          <div className="mb-8 lg:hidden">{buyCard}</div>
+
+            <section>
+              <h2 className="font-display text-2xl">{t("courseContent")}</h2>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
+                <p className="text-foreground/90">
+                  {[
+                    t("sections", { count: course.sections.length }),
+                    t("lectures", { count: totalItems }),
+                    lengthLabel ? t("totalLength", { length: lengthLabel }) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" • ")}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setExpandedAll((v) => !v)}
+                  className="font-bold text-link hover:underline"
+                >
+                  {expandedAll ? t("collapseAll") : t("expandAll")}
+                </button>
               </div>
-            </section>
-          )}
 
-          <section className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-soft">
-            <h2 className="font-display text-xl">{t("curriculum")}</h2>
-            <ul className="mt-4 flex flex-col gap-4">
-              {course.sections.map((section) => (
-                <li key={section.id}>
-                  <p className="font-medium text-foreground">{section.title}</p>
-                  <ul className="mt-2 flex flex-col gap-1.5 border-l border-border pl-4">
+              <div className="mt-4 border border-border">
+                {course.sections.map((section, i) => (
+                  <CurriculumSection
+                    key={`${section.id}-${expandedAll}`}
+                    title={section.title}
+                    defaultOpen={expandedAll || i === 0}
+                    meta={[
+                      t("lectures", { count: section.items.length }),
+                      (() => {
+                        const secs = section.items.reduce((n, it) => n + it.durationSeconds, 0);
+                        return formatLectureLength(secs);
+                      })(),
+                    ]
+                      .filter(Boolean)
+                      .join(" • ")}
+                  >
                     {section.items.map((item) => {
                       const itemLength = formatLectureLength(item.durationSeconds);
                       return (
                         <li
                           key={item.id}
-                          className="flex items-center gap-2 text-sm text-muted-foreground"
+                          className="flex items-center gap-3 px-4 py-2 text-sm text-foreground/90"
                         >
                           {item.kind === "video" ? (
-                            <Film className="size-3.5 shrink-0" />
+                            <PlaySquare className="size-4 shrink-0 text-muted-foreground" />
                           ) : (
-                            <FileText className="size-3.5 shrink-0" />
+                            <FileText className="size-4 shrink-0 text-muted-foreground" />
                           )}
                           <span className="min-w-0 flex-1 truncate">
                             {item.title || (item.kind === "video" ? t("video") : t("resource"))}
                           </span>
-
                           {item.isPreview && (
                             <button
                               type="button"
-                              onClick={() => setPreviewItemId(item.id)}
-                              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
+                              onClick={() => {
+                                setPreviewItemId(item.id);
+                                window.scrollTo({ top: 0, behavior: "smooth" });
+                              }}
+                              className="shrink-0 font-bold text-link underline underline-offset-2"
                             >
-                              <PlayCircle className="size-3.5" />
                               {t("previewLesson")}
                             </button>
                           )}
-
                           {itemLength && (
-                            <span className="shrink-0 font-mono text-xs tabular-nums">
+                            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                               {itemLength}
                             </span>
                           )}
@@ -317,30 +380,105 @@ export function CourseLanding({ id }: { id: string }) {
                       );
                     })}
                     {section.items.length === 0 && (
-                      <li className="text-sm text-muted-foreground/70">{t("nothingHereYet")}</li>
+                      <li className="px-4 py-2 text-sm text-muted-foreground">{t("nothingHereYet")}</li>
                     )}
-                  </ul>
-                </li>
-              ))}
-              {course.sections.length === 0 && (
-                <li className="text-sm text-muted-foreground">
-                  {t("curriculumNotPublished")}
-                </li>
-              )}
-            </ul>
-          </section>
+                  </CurriculumSection>
+                ))}
+                {course.sections.length === 0 && (
+                  <p className="px-4 py-3 text-sm text-muted-foreground">
+                    {t("curriculumNotPublished")}
+                  </p>
+                )}
+              </div>
+            </section>
 
-          {/* Phase D2. `canReview` is the enrolled buyer only — the owner and
-              a browsing visitor get the list and the histogram, not the form. */}
-          <CourseReviews
-            courseId={course.id}
-            rating={course.rating}
-            reviewCount={course.reviewCount}
-            canReview={enrolled && !course.isOwner}
-            myReview={course.myReview}
-          />
+            {course.description && (
+              <section className="mt-10">
+                <h2 className="font-display text-2xl">{t("descriptionHeading")}</h2>
+                <div
+                  className={cn(
+                    "relative mt-3 space-y-4 text-sm leading-relaxed text-foreground/90",
+                    !descriptionOpen && "max-h-56 overflow-hidden",
+                  )}
+                >
+                  {course.description.split("\n\n").map((para, i) => (
+                    <p key={i}>{para}</p>
+                  ))}
+                  {!descriptionOpen && course.description.length > 600 && (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent" />
+                  )}
+                </div>
+                {course.description.length > 600 && (
+                  <button
+                    type="button"
+                    onClick={() => setDescriptionOpen((v) => !v)}
+                    className="mt-2 inline-flex items-center gap-1 text-sm font-bold text-link hover:underline"
+                  >
+                    {descriptionOpen ? t("showLess") : t("showMore")}
+                    <ChevronDown className={cn("size-4", descriptionOpen && "rotate-180")} />
+                  </button>
+                )}
+              </section>
+            )}
+
+            <section className="mt-10">
+              <h2 className="font-display text-2xl">{t("instructor")}</h2>
+              <Link
+                href={`/teachers/${course.teacher.slug}`}
+                className="mt-3 inline-block text-lg font-bold text-link underline underline-offset-2"
+              >
+                {course.teacher.displayName}
+              </Link>
+              <p className="mt-1 text-sm text-muted-foreground">{t("instructorBlurb")}</p>
+            </section>
+
+            {/* Phase D2. `canReview` is the enrolled buyer only — the owner and
+                a browsing visitor get the list and the histogram, not the form. */}
+            <div id="reviews" className="mt-10">
+              <CourseReviews
+                courseId={course.id}
+                rating={course.rating}
+                reviewCount={course.reviewCount}
+                canReview={enrolled && !course.isOwner}
+                myReview={course.myReview}
+              />
+            </div>
         </div>
+
+        {/* Sticky buy card, starting inside the dark band on desktop. */}
+        <aside className="hidden lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:block lg:pt-8">
+          <div className="sticky top-[88px] mb-8">{buyCard}</div>
+        </aside>
       </div>
+    </div>
+  );
+}
+
+function CurriculumSection({
+  title,
+  meta,
+  defaultOpen,
+  children,
+}: {
+  title: string;
+  meta: string;
+  defaultOpen: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-border last:border-b-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 bg-muted px-4 py-3 text-left"
+      >
+        <ChevronDown className={cn("size-4 shrink-0 transition-transform", open && "rotate-180")} />
+        <span className="min-w-0 flex-1 truncate text-base font-bold text-foreground">{title}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{meta}</span>
+      </button>
+      {open && <ul className="py-1">{children}</ul>}
     </div>
   );
 }

@@ -16,7 +16,6 @@ import {
   groupByDay,
   viewerTimezone,
 } from "@/features/bookings/datetime";
-import { Button } from "@/components/ui/button";
 
 const TRIAL_DURATION = 30;
 
@@ -31,11 +30,14 @@ export function SlotPicker({
   teacherTimezone,
   isTrial,
   onPick,
+  onPreview,
 }: {
   slug: string;
   teacherTimezone: string;
   isTrial: boolean;
   onPick: (sel: SlotSelection) => void;
+  /** fires as soon as a time is highlighted, so the summary can follow along */
+  onPreview?: (sel: SlotSelection | null) => void;
 }) {
   const viewerTz = useMemo(() => viewerTimezone(), []);
   const t = useTranslations("bookings");
@@ -82,18 +84,21 @@ export function SlotPicker({
     <div className="flex flex-col gap-6">
       {!isTrial && (
         <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium">{t("lessonLength")}</span>
+          <span className="text-sm font-bold">{t("lessonLength")}</span>
           <div className="flex flex-wrap gap-2">
             {DURATION_OPTIONS.map((d) => (
               <button
                 key={d}
                 type="button"
-                onClick={() => setDuration(d)}
+                onClick={() => {
+                  setDuration(d);
+                  onPreview?.(null);
+                }}
                 className={cn(
-                  "rounded-lg border px-3 py-1.5 text-sm transition-colors",
+                  "h-10 rounded-md border px-4 text-sm font-bold transition-colors",
                   duration === d
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border hover:bg-muted",
+                    ? "border-foreground bg-ink text-ink-foreground"
+                    : "border-border text-foreground hover:bg-accent",
                 )}
               >
                 {t("min", { count: d })}
@@ -105,46 +110,49 @@ export function SlotPicker({
 
       <div>
         <div className="flex items-baseline justify-between">
-          <span className="text-sm font-medium">{t("pickTime")}</span>
+          <span className="text-sm font-bold">{t("pickTime")}</span>
           <span className="text-xs text-muted-foreground">{t("shownInYourTime", { tz: viewerTz })}</span>
         </div>
 
         {loading && (
-          <div className="mt-3 h-48 animate-pulse rounded-xl bg-muted" />
+          <div className="mt-3 h-48 animate-pulse bg-muted" />
         )}
 
         {error && (
-          <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {error}
           </p>
         )}
 
         {!loading && !error && days.length === 0 && (
-          <p className="mt-3 rounded-lg bg-muted px-3 py-6 text-center text-sm text-muted-foreground">
+          <p className="mt-3 border border-border px-3 py-10 text-center text-sm text-muted-foreground">
             {t("noOpenTimes")}
           </p>
         )}
 
         {!loading && !error && currentDay && (
           <div className="mt-3 flex flex-col gap-4">
-            <div className="flex gap-2 overflow-x-auto pb-1">
+            <div role="tablist" className="flex gap-6 overflow-x-auto border-b border-border">
               {days.map((d) => (
                 <button
                   key={d.key}
                   type="button"
+                  role="tab"
+                  aria-selected={currentDay.key === d.key}
                   onClick={() => {
                     setActiveDay(d.key);
                     setSelected(null);
+                    onPreview?.(null);
                   }}
                   className={cn(
-                    "shrink-0 rounded-lg border px-3 py-2 text-sm transition-colors",
+                    "-mb-px shrink-0 border-b-2 pb-2 text-sm font-bold whitespace-nowrap transition-colors",
                     currentDay.key === d.key
-                      ? "border-primary bg-accent"
-                      : "border-border hover:bg-muted",
+                      ? "border-foreground text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  <span className="font-medium">{d.label}</span>
-                  <span className="ml-1.5 text-xs text-muted-foreground">
+                  {d.label}
+                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
                     {d.slots.length}
                   </span>
                 </button>
@@ -158,12 +166,15 @@ export function SlotPicker({
                   <button
                     key={s.startAt}
                     type="button"
-                    onClick={() => setSelected(s)}
+                    onClick={() => {
+                      setSelected(s);
+                      onPreview?.({ slot: s, durationMinutes: duration, isTrial });
+                    }}
                     className={cn(
-                      "rounded-lg border py-2 text-sm transition-colors",
+                      "h-11 rounded-md border text-sm font-bold transition-colors",
                       on
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border hover:bg-muted",
+                        ? "border-foreground bg-ink text-ink-foreground"
+                        : "border-border text-foreground hover:bg-accent",
                     )}
                     title={
                       sameZone
@@ -181,9 +192,9 @@ export function SlotPicker({
       </div>
 
       {selected && (
-        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+        <div className="flex flex-col gap-3 border border-border bg-card p-4 shadow-card">
           <div className="text-sm">
-            <div className="font-medium">
+            <div className="font-bold">
               {t("yourTime", {
                 start: formatTime(selected.startAt, viewerTz, locale),
                 end: formatTime(selected.endAt, viewerTz, locale),
@@ -207,13 +218,15 @@ export function SlotPicker({
               {formatMoney(selected.price, locale)}
             </span>
           </div>
-          <Button
+          <button
+            type="button"
             onClick={() =>
               onPick({ slot: selected, durationMinutes: duration, isTrial })
             }
+            className="flex h-12 w-full items-center justify-center rounded-md bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-[#8710d8]"
           >
             {t("continue")}
-          </Button>
+          </button>
         </div>
       )}
     </div>

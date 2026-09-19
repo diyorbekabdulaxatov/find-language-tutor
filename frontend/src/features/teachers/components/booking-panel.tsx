@@ -21,33 +21,33 @@ export function BookingPanel({ teacher }: { teacher: TeacherProfile }) {
         : t("days", { count: Math.round(hours / 24) });
 
   return (
-    <div className="rounded-2xl bg-card p-6 ring-1 ring-border shadow-card">
+    <div className="bg-card p-6 text-card-foreground shadow-card lg:border lg:border-border">
       <div className="flex items-end gap-1.5">
-        <span className="font-display text-3xl text-foreground">
+        <span className="font-display text-[2rem] leading-none text-foreground">
           {formatMoney(teacher.pricePerHour, locale)}
         </span>
-        <span className="pb-1 text-sm text-muted-foreground">{t("per60")}</span>
+        <span className="pb-0.5 text-sm text-muted-foreground">{t("per60")}</span>
       </div>
 
       {teacher.trialPrice && (
-        <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-coral/10 px-2.5 py-1 text-xs font-semibold text-coral">
+        <p className="mt-2 text-sm text-muted-foreground">
           {t("trial", { price: formatMoney(teacher.trialPrice, locale) })}
         </p>
       )}
 
-      <div className="mt-5 space-y-2.5">
+      <div className="mt-4 space-y-2">
         {teacher.acceptingStudents ? (
           <>
             <Link
               href={`/teachers/${teacher.slug}/book`}
-              className="flex h-12 w-full items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              className="flex h-12 w-full items-center justify-center rounded-md bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-[#8710d8]"
             >
               {t("bookLesson")}
             </Link>
             {teacher.trialPrice && (
               <Link
                 href={`/teachers/${teacher.slug}/book?trial=1`}
-                className="flex h-12 w-full items-center justify-center rounded-xl bg-coral/12 text-sm font-semibold text-coral transition-colors hover:bg-coral/20"
+                className="flex h-12 w-full items-center justify-center rounded-md border border-foreground bg-background text-base font-bold text-foreground transition-colors hover:bg-accent"
               >
                 {t("bookTrial")}
               </Link>
@@ -56,14 +56,16 @@ export function BookingPanel({ teacher }: { teacher: TeacherProfile }) {
         ) : (
           <button
             disabled
-            className="h-12 w-full cursor-not-allowed rounded-xl bg-secondary text-sm font-semibold text-muted-foreground"
+            className="h-12 w-full cursor-not-allowed rounded-md bg-muted text-base font-bold text-muted-foreground"
           >
             {t("notTaking")}
           </button>
         )}
       </div>
 
-      <dl className="mt-6 space-y-3 border-t border-border pt-5 text-sm">
+      <p className="mt-3 text-center text-xs text-muted-foreground">{t("chargedNote")}</p>
+
+      <dl className="mt-5 space-y-2 border-t border-border pt-4 text-sm">
         <Row icon={Clock} label={t("repliesIn")}>
           {responseTime}
         </Row>
@@ -74,10 +76,6 @@ export function BookingPanel({ teacher }: { teacher: TeacherProfile }) {
           {teacher.studentCount}
         </Row>
       </dl>
-
-      <p className="mt-5 rounded-xl bg-primary/8 p-3 text-xs text-muted-foreground">
-        {t("chargedNote")}
-      </p>
     </div>
   );
 }
@@ -97,7 +95,7 @@ function Row({
         <Icon className="size-4" />
         {label}
       </dt>
-      <dd className="font-medium text-foreground">{children}</dd>
+      <dd className="font-bold text-foreground">{children}</dd>
     </div>
   );
 }

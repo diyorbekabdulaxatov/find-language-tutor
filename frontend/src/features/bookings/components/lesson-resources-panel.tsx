@@ -125,7 +125,7 @@ export function LessonResourcesPanel({
   return (
     <div className="mt-4 rounded-2xl border border-border bg-card p-6">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="inline-flex items-center gap-2 font-display text-lg">
+        <h2 className="flex items-center gap-2 font-display text-lg">
           <BookOpen className="size-4 text-primary" /> {t("lessonResources")}
         </h2>
         {isTeacher && (

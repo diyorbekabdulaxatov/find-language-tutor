@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import { listTeachers, type TeacherListParams, type TeacherSort } from "@/features/teachers/api";
 import { TeacherFilters } from "@/features/teachers/components/teacher-filters";
-import { TeacherCard } from "@/features/teachers/components/teacher-card";
+import { TeacherRow } from "@/features/teachers/components/teacher-card";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations("teachersPage");
@@ -27,35 +27,28 @@ export default async function TeachersPage({
   ]);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:py-14">
-      <header className="max-w-2xl">
-        <h1 className="font-display text-3xl tracking-tight sm:text-4xl">{t("title")}</h1>
-        <p className="mt-3 text-muted-foreground">{t("intro")}</p>
-      </header>
+    <div className="mx-auto max-w-[1340px] px-4 py-8 sm:px-6 lg:py-10">
+      <h1 className="font-display text-3xl sm:text-[2rem]">
+        {sp.q ? t("resultsFor", { q: String(sp.q) }) : t("title")}
+      </h1>
+      <p className="mt-2 max-w-2xl text-base text-muted-foreground">{t("intro")}</p>
 
       <div className="mt-8">
-        <TeacherFilters facets={facets} />
+        <TeacherFilters facets={facets} total={total}>
+          {teachers.length === 0 ? (
+            <div className="border border-border px-6 py-16 text-center">
+              <p className="text-xl font-bold">{t("noMatchTitle")}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{t("noMatchBody")}</p>
+            </div>
+          ) : (
+            <div className="border-t border-border">
+              {teachers.map((teacher) => (
+                <TeacherRow key={teacher.id} teacher={teacher} />
+              ))}
+            </div>
+          )}
+        </TeacherFilters>
       </div>
-
-      <p className="mt-6 text-sm text-muted-foreground">
-        {t.rich("available", {
-          count: total,
-          b: (chunks) => <span className="font-semibold text-foreground">{chunks}</span>,
-        })}
-      </p>
-
-      {teachers.length === 0 ? (
-        <div className="mt-6 rounded-2xl border border-dashed border-border bg-card p-12 text-center">
-          <p className="font-display text-xl">{t("noMatchTitle")}</p>
-          <p className="mt-2 text-sm text-muted-foreground">{t("noMatchBody")}</p>
-        </div>
-      ) : (
-        <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {teachers.map((teacher) => (
-            <TeacherCard key={teacher.id} teacher={teacher} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
