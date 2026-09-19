@@ -3,8 +3,8 @@ import { cn } from "@/lib/utils";
 import type { BookingStatus } from "@/features/bookings/api";
 
 const STYLES: Record<BookingStatus, string> = {
-  pending_payment: "bg-star/15 text-star",
-  confirmed: "bg-primary/15 text-primary",
+  pending_payment: "bg-star/20 text-rating dark:text-star",
+  confirmed: "bg-accent text-accent-foreground",
   completed: "bg-muted text-muted-foreground",
   cancelled: "bg-destructive/10 text-destructive",
 };
@@ -14,7 +14,7 @@ export function BookingStatusBadge({ status }: { status: BookingStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
+        "inline-flex items-center rounded-sm px-2 py-0.5 text-xs font-bold",
         STYLES[status],
       )}
     >

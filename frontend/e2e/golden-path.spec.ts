@@ -27,14 +27,15 @@ test("a new student can sign up, book a lesson and pay for it", async ({ page })
   await expect(page.getByRole("heading", { name: "Book a lesson" })).toBeVisible();
 
   // First open day, first slot. The seed teacher has weekly hours, so the
-  // next two weeks always contain at least one.
-  const slotButtons = page.locator("div.grid button");
+  // next two weeks always contain at least one. A time button is named by the
+  // time it holds ("11:00"), which the duration chips ("60 min") never match.
+  const slotButtons = page.getByRole("button", { name: /^\d{1,2}:\d{2}$/ });
   await expect(slotButtons.first()).toBeVisible();
   await slotButtons.first().click();
   await page.getByRole("button", { name: "Continue" }).click();
 
   await expect(page.getByRole("heading", { name: "Confirm your lesson" })).toBeVisible();
-  await expect(page.getByText("Nodira Karimova", { exact: true })).toBeVisible();
+  await expect(page.getByText("Nodira Karimova", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "Continue to payment" }).click();
 
   // --- pay with the fake provider's succeeding card ---

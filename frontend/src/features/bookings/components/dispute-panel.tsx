@@ -101,9 +101,9 @@ export function DisputePanel({
       : [];
 
   return (
-    <div className="mt-4 rounded-2xl border border-border bg-card p-6">
-      <h2 className="inline-flex items-center gap-2 font-display text-lg">
-        <ShieldAlert className="size-4 text-coral" /> {t("problemWithLesson")}
+    <div className="mt-4 border border-border bg-card p-6">
+      <h2 className="flex items-center gap-2 font-display text-lg">
+        <ShieldAlert className="size-4 text-link" /> {t("problemWithLesson")}
       </h2>
 
       {entries.length > 0 && (
@@ -111,14 +111,14 @@ export function DisputePanel({
           {entries.map((d) => (
             <li
               key={d.id}
-              className="rounded-xl border border-border bg-background/40 p-3 text-sm"
+              className="border border-border bg-background p-3 text-sm"
             >
               <div className="flex items-center justify-between gap-2">
                 <span
                   className={
                     d.status === "open"
-                      ? "font-medium text-coral"
-                      : "font-medium text-muted-foreground"
+                      ? "font-bold text-link"
+                      : "font-bold text-muted-foreground"
                   }
                 >
                   {t(STATUS_LABEL[d.status])}
@@ -129,8 +129,8 @@ export function DisputePanel({
               </div>
               <p className="mt-1 whitespace-pre-wrap">{d.reason}</p>
               {d.resolution && (
-                <p className="mt-2 rounded-lg bg-muted px-2.5 py-1.5 text-xs">
-                  <span className="font-medium">{t("moderator")}</span> {d.resolution}
+                <p className="mt-2 bg-muted px-2.5 py-1.5 text-xs">
+                  <span className="font-bold">{t("moderator")}</span> {d.resolution}
                 </p>
               )}
             </li>
@@ -150,7 +150,7 @@ export function DisputePanel({
 
       {composing && (
         <div className="mt-3 flex flex-col gap-2">
-          <label htmlFor="dispute-reason" className="text-sm font-medium">
+          <label htmlFor="dispute-reason" className="text-sm font-bold">
             {t("whatWentWrong")}
           </label>
           <textarea
@@ -160,7 +160,7 @@ export function DisputePanel({
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder={t("describeProblem")}
-            className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
           <div className="flex gap-2">
             <Button disabled={busy || reason.trim() === ""} onClick={submit}>
@@ -181,7 +181,7 @@ export function DisputePanel({
       )}
 
       {err && (
-        <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {err}
         </p>
       )}

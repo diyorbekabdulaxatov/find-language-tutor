@@ -13,7 +13,6 @@ import {
   type Booking,
   type MethodToken,
 } from "@/features/bookings/api";
-import { Button } from "@/components/ui/button";
 
 /**
  * The simulated payment step. There is no real PSP yet — the backend's fake
@@ -49,7 +48,7 @@ export function PaymentForm({
   }
 
   return (
-    <div className="flex flex-col gap-5 rounded-2xl border border-border bg-card p-6">
+    <div className="flex flex-col gap-5 border border-border bg-card p-6">
       <div className="flex items-center justify-between">
         <h2 className="font-display text-xl">{t("payment")}</h2>
         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
@@ -57,21 +56,21 @@ export function PaymentForm({
         </span>
       </div>
 
-      <div className="flex items-baseline justify-between rounded-xl bg-muted/60 px-4 py-3">
+      <div className="flex items-baseline justify-between border-y border-border py-3">
         <span className="text-sm text-muted-foreground">{t("amountDue")}</span>
         <span className="font-display text-2xl">{formatMoney(amount, locale)}</span>
       </div>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 text-sm font-medium">{t("paymentMethod")}</legend>
+        <legend className="mb-1 text-sm font-bold">{t("paymentMethod")}</legend>
         {TEST_METHODS.map((m) => (
           <label
             key={m.token}
             className={cn(
-              "flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm transition-colors",
+              "flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 text-sm transition-colors",
               method === m.token
-                ? "border-primary bg-accent/50"
-                : "border-border hover:bg-muted/50",
+                ? "border-foreground bg-accent"
+                : "border-border hover:bg-muted",
             )}
           >
             <input
@@ -86,7 +85,7 @@ export function PaymentForm({
               className="accent-primary"
             />
             <CreditCard className="size-4 text-muted-foreground" />
-            <span className="font-medium">{t(METHOD_LABEL[m.token])}</span>
+            <span className="font-bold">{t(METHOD_LABEL[m.token])}</span>
             <span className="ml-auto text-muted-foreground">{m.hint}</span>
           </label>
         ))}
@@ -95,15 +94,20 @@ export function PaymentForm({
       {error && (
         <p
           role="alert"
-          className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           {error}
         </p>
       )}
 
-      <Button size="lg" className="w-full" onClick={handlePay} disabled={paying}>
+      <button
+        type="button"
+        onClick={handlePay}
+        disabled={paying}
+        className="flex h-12 w-full items-center justify-center rounded-md bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-[#8710d8] disabled:opacity-60"
+      >
         {paying ? t("processing") : t("pay", { amount: formatMoney(amount, locale) })}
-      </Button>
+      </button>
       <p className="text-center text-xs text-muted-foreground">{t("teacherPaidAfter")}</p>
     </div>
   );

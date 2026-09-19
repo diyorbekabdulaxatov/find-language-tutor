@@ -18,8 +18,10 @@ const buttonVariants = cva(
           "bg-ink text-ink-foreground hover:bg-ink/85 aria-expanded:bg-ink aria-expanded:text-ink-foreground",
         ghost:
           "text-foreground hover:bg-accent hover:text-accent-foreground aria-expanded:bg-accent aria-expanded:text-accent-foreground",
+        // Udemy has no red fill — a destructive action is an outline button
+        // in the destructive colour.
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+          "border-destructive bg-background text-destructive hover:bg-destructive/10 focus-visible:border-destructive focus-visible:ring-destructive/30",
         link: "text-link underline-offset-4 hover:underline",
       },
       size: {

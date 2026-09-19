@@ -28,22 +28,26 @@ export default async function BookPage({
   const isTrial = sp.trial === "1" && teacher.trialPrice != null;
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-[1340px] px-4 py-8 sm:px-6">
       <Link
         href={`/teachers/${slug}`}
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+        className="inline-flex items-center gap-1.5 text-sm font-bold text-link hover:underline"
       >
         <ArrowLeft className="size-4" />
         {t("backTo", { name: teacher.displayName })}
       </Link>
 
-      <h1 className="mt-4 font-display text-3xl">{t(isTrial ? "bookTrial" : "bookLesson")}</h1>
+      <h1 className="mt-3 font-display text-[1.75rem] sm:text-[2rem]">
+        {t(isTrial ? "bookTrial" : "bookLesson")}
+      </h1>
 
       <div className="mt-6">
         <BookingFlow
           slug={slug}
           teacherName={teacher.displayName}
+          teacherAvatarUrl={teacher.avatarUrl}
           teacherTimezone={teacher.timezone}
+          listPrice={isTrial && teacher.trialPrice ? teacher.trialPrice : teacher.pricePerHour}
           isTrial={isTrial}
         />
       </div>
