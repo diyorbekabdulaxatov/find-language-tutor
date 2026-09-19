@@ -90,12 +90,12 @@ export function BookingModeration({ id }: { id: string }) {
   }
 
   if (state === "loading") {
-    return <div className="h-96 animate-pulse rounded-2xl bg-muted" />;
+    return <div className="h-96 animate-pulse bg-muted" />;
   }
   if (state === "error" || !data) {
     return (
       <div>
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {errMsg}
         </p>
         <Back />
@@ -110,7 +110,7 @@ export function BookingModeration({ id }: { id: string }) {
     <div className="flex flex-col gap-6">
       <Back />
 
-      <div className="rounded-2xl border border-border bg-card p-6">
+      <div className="border border-border bg-card p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-display text-2xl">
             {data.teacher.displayName}{" "}
@@ -170,7 +170,7 @@ export function BookingModeration({ id }: { id: string }) {
       </div>
 
       {/* Dispute thread */}
-      <div className="rounded-2xl border border-border bg-card p-6">
+      <div className="border border-border bg-card p-6">
         <h3 className="font-display text-lg">
           {t("disputes")}{" "}
           <span className="text-muted-foreground">
@@ -187,7 +187,7 @@ export function BookingModeration({ id }: { id: string }) {
                 className="rounded-xl border border-border bg-background/40 p-3 text-sm"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">
+                  <span className="font-bold">
                     {t("raisedBy", { status: t(DISPUTE_LABEL[d.status]), name: d.raisedBy.displayName })}
                   </span>
                   <span className="text-xs text-muted-foreground">
@@ -197,7 +197,7 @@ export function BookingModeration({ id }: { id: string }) {
                 <p className="mt-1 whitespace-pre-wrap">{d.reason}</p>
                 {d.resolution && (
                   <p className="mt-2 rounded-lg bg-muted px-2.5 py-1.5 text-xs">
-                    <span className="font-medium">
+                    <span className="font-bold">
                       {d.resolvedBy?.displayName ?? t("moderator")}:
                     </span>{" "}
                     {d.resolution}
@@ -221,13 +221,13 @@ export function BookingModeration({ id }: { id: string }) {
       </div>
 
       {errMsg && (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {errMsg}
         </p>
       )}
 
       {canForceCancel && cancellable && (
-        <div className="rounded-2xl border border-border bg-card p-6">
+        <div className="border border-border bg-card p-6">
           <h3 className="font-display text-lg">{t("forceCancel")}</h3>
           <p className="mt-1 text-sm text-muted-foreground">{t("forceCancelIntro")}</p>
           {confirming ? (
@@ -237,7 +237,7 @@ export function BookingModeration({ id }: { id: string }) {
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder={t("forceCancelReason")}
-                className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               />
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -287,7 +287,7 @@ function Back() {
   return (
     <Link
       href="/admin/bookings"
-      className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+      className="inline-flex items-center gap-1.5 text-sm font-bold text-link hover:underline"
     >
       <ArrowLeft className="size-4" /> {t("allBookings")}
     </Link>
@@ -298,7 +298,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex flex-col">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="font-medium break-words">{children}</dd>
+      <dd className="font-bold break-words">{children}</dd>
     </div>
   );
 }

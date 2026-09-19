@@ -61,14 +61,14 @@ export function PayoutBatchDetail({ id }: { id: string }) {
       </Link>
 
       {state === "loading" ? (
-        <div className="h-64 animate-pulse rounded-2xl bg-muted" />
+        <div className="h-64 animate-pulse bg-muted" />
       ) : state === "error" || !data ? (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {errMsg}
         </p>
       ) : (
         <>
-          <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="border border-border bg-card p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="font-display text-2xl">
@@ -98,13 +98,13 @@ export function PayoutBatchDetail({ id }: { id: string }) {
             </dl>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-border">
+          <div className="overflow-hidden border border-border">
             <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
+              <thead className="bg-muted text-left text-xs text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-2 font-medium">{t("colTeacher")}</th>
-                  <th className="px-4 py-2 font-medium">{t("colLessons")}</th>
-                  <th className="px-4 py-2 text-right font-medium">{t("colAmount")}</th>
+                  <th className="px-4 py-2.5 font-bold">{t("colTeacher")}</th>
+                  <th className="px-4 py-2.5 font-bold">{t("colLessons")}</th>
+                  <th className="px-4 py-2.5 text-right font-bold">{t("colAmount")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -113,7 +113,7 @@ export function PayoutBatchDetail({ id }: { id: string }) {
                     <td className="px-4 py-3">
                       <Link
                         href={`/admin/teachers/${l.teacher.slug}`}
-                        className="font-medium text-primary hover:underline"
+                        className="font-bold text-link hover:underline"
                       >
                         {l.teacher.displayName}
                       </Link>
@@ -121,7 +121,7 @@ export function PayoutBatchDetail({ id }: { id: string }) {
                     <td className="px-4 py-3 text-muted-foreground">
                       {l.lessonCount}
                     </td>
-                    <td className="px-4 py-3 text-right font-medium">
+                    <td className="px-4 py-3 text-right font-bold">
                       {formatMoney(l.amount, locale)}
                     </td>
                   </tr>

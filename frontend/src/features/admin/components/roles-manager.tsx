@@ -51,11 +51,11 @@ export function RolesManager() {
   }, []);
 
   if (state === "loading") {
-    return <div className="h-72 animate-pulse rounded-2xl bg-muted" />;
+    return <div className="h-72 animate-pulse bg-muted" />;
   }
   if (state === "error" || !roles) {
     return (
-      <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+      <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
         {t("couldNotLoadRoles")}
       </p>
     );
@@ -151,7 +151,7 @@ function RoleCard({
   }
 
   return (
-    <li className="rounded-2xl border border-border bg-card">
+    <li className="border border-border bg-card">
       <button
         type="button"
         aria-expanded={open}
@@ -160,9 +160,9 @@ function RoleCard({
       >
         <span className="flex-1">
           <span className="flex items-center gap-2">
-            <span className="font-medium">{role.name}</span>
+            <span className="font-bold">{role.name}</span>
             {role.isSystem && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1 rounded-sm bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                 <Lock className="size-3" /> {t("system")}
               </span>
             )}
@@ -184,7 +184,7 @@ function RoleCard({
 
       {open && (
         <div className="border-t border-border px-5 py-4">
-          <label className="text-xs font-medium text-muted-foreground">
+          <label className="text-xs font-bold text-muted-foreground">
             {t("description")}
           </label>
           <Input
@@ -193,7 +193,7 @@ function RoleCard({
             className="mt-1"
           />
 
-          <p className="mt-4 text-xs font-medium text-muted-foreground">
+          <p className="mt-4 text-xs font-bold text-muted-foreground">
             {role.isSystem ? t("permissionsLocked") : t("permissions")}
           </p>
           <PermissionChecklist
@@ -210,7 +210,7 @@ function RoleCard({
           />
 
           {err && (
-            <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {err}
             </p>
           )}
@@ -268,11 +268,11 @@ function RoleCreateForm({
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5">
+    <div className="border border-border bg-card p-5">
       <h3 className="font-display text-lg">{t("newRole")}</h3>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="text-xs font-medium text-muted-foreground">{t("name")}</label>
+          <label className="text-xs font-bold text-muted-foreground">{t("name")}</label>
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -281,7 +281,7 @@ function RoleCreateForm({
           />
         </div>
         <div>
-          <label className="text-xs font-medium text-muted-foreground">
+          <label className="text-xs font-bold text-muted-foreground">
             {t("description")}
           </label>
           <Input
@@ -292,7 +292,7 @@ function RoleCreateForm({
         </div>
       </div>
 
-      <p className="mt-4 text-xs font-medium text-muted-foreground">{t("permissions")}</p>
+      <p className="mt-4 text-xs font-bold text-muted-foreground">{t("permissions")}</p>
       <PermissionChecklist
         catalog={catalog}
         selected={perms}
@@ -304,7 +304,7 @@ function RoleCreateForm({
       />
 
       {err && (
-        <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {err}
         </p>
       )}
@@ -346,9 +346,9 @@ function PermissionChecklist({
           <label
             key={p.key}
             className={cn(
-              "flex items-start gap-2 rounded-lg border border-border px-3 py-2 text-sm",
-              disabled ? "opacity-60" : "cursor-pointer hover:bg-muted/50",
-              on && "border-primary/40 bg-primary/5",
+              "flex items-start gap-2 rounded-md border border-border px-3 py-2 text-sm",
+              disabled ? "opacity-60" : "cursor-pointer hover:bg-muted",
+              on && "border-foreground bg-accent",
             )}
           >
             <input

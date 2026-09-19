@@ -93,10 +93,10 @@ export function CourseModeration() {
               setStatus(f.value);
             }}
             className={cn(
-              "rounded-lg border px-3 py-1.5 text-sm transition-colors",
+              "h-9 rounded-md border px-3 text-sm font-bold transition-colors",
               status === f.value
-                ? "border-primary bg-accent"
-                : "border-border hover:bg-muted",
+                ? "border-foreground bg-foreground text-background"
+                : "border-border hover:bg-accent",
             )}
           >
             {t(f.label)}
@@ -121,7 +121,7 @@ export function CourseModeration() {
             value={teacher}
             onChange={(e) => setTeacher(e.target.value)}
             placeholder={t("teacherSlug")}
-            className="w-44 rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="w-44 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
           <Button type="submit" size="sm" variant="outline">
             {t("filter")}
@@ -132,7 +132,7 @@ export function CourseModeration() {
       {teacherQuery && (
         <p className="text-xs text-muted-foreground">
           {t("filteredTo")}{" "}
-          <span className="font-medium text-foreground">{teacherQuery}</span> ·{" "}
+          <span className="font-bold text-foreground">{teacherQuery}</span> ·{" "}
           <button
             className="underline hover:text-foreground"
             onClick={() => {
@@ -146,13 +146,13 @@ export function CourseModeration() {
       )}
 
       {state === "error" ? (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {t("couldNotLoadCourses")}
         </p>
       ) : state === "loading" ? (
-        <div className="h-64 animate-pulse rounded-2xl bg-muted" />
+        <div className="h-64 animate-pulse bg-muted" />
       ) : rows.length === 0 ? (
-        <p className="rounded-2xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
+        <p className="border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
           {t("noCoursesMatch")}
         </p>
       ) : (
@@ -221,17 +221,17 @@ function CourseCard({
   return (
     <li
       className={cn(
-        "rounded-2xl border bg-card p-5",
+        "border bg-card p-5",
         c.suspended ? "border-dashed border-destructive/40" : "border-border",
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
-            <span className="font-medium">{c.title}</span>
+            <span className="font-bold">{c.title}</span>
             <span
               className={cn(
-                "rounded-full px-2 py-0.5 text-xs font-semibold",
+                "rounded-sm px-2 py-0.5 text-xs font-bold",
                 c.status === "published"
                   ? "bg-mint/20 text-mint-foreground"
                   : "bg-muted text-muted-foreground",
@@ -240,12 +240,12 @@ function CourseCard({
               {tCourse(c.status)}
             </span>
             {c.archived && (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+              <span className="rounded-sm bg-muted px-2 py-0.5 text-xs font-bold text-muted-foreground">
                 {t("archived")}
               </span>
             )}
             {c.suspended && (
-              <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-semibold text-destructive">
+              <span className="rounded-sm bg-destructive/10 px-2 py-0.5 text-xs font-bold text-destructive">
                 {t("suspended")}
               </span>
             )}
@@ -253,7 +253,7 @@ function CourseCard({
           <p className="mt-1 text-sm">
             <Link
               href={`/admin/teachers/${c.teacher.slug}`}
-              className="font-medium text-primary hover:underline"
+              className="font-bold text-link hover:underline"
             >
               {c.teacher.displayName}
             </Link>{" "}
@@ -283,7 +283,7 @@ function CourseCard({
       </div>
 
       {err && (
-        <p className="mt-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {err}
         </p>
       )}

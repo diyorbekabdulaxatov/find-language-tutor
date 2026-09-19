@@ -68,18 +68,18 @@ export function UsersTable() {
       />
 
       {state === "error" ? (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {t("couldNotLoadUsers")}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-border">
+        <div className="overflow-x-auto border border-border">
           <table className="w-full min-w-[36rem] text-sm">
-            <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
+            <thead className="bg-muted text-left text-xs text-muted-foreground">
               <tr>
-                <th className="px-4 py-2 font-medium">{t("colUser")}</th>
-                <th className="px-4 py-2 font-medium">{t("colTeacher")}</th>
-                <th className="px-4 py-2 text-right font-medium">{t("colBookings")}</th>
-                <th className="px-4 py-2 text-right font-medium">{t("colJoined")}</th>
+                <th className="px-4 py-2.5 font-bold">{t("colUser")}</th>
+                <th className="px-4 py-2.5 font-bold">{t("colTeacher")}</th>
+                <th className="px-4 py-2.5 text-right font-bold">{t("colBookings")}</th>
+                <th className="px-4 py-2.5 text-right font-bold">{t("colJoined")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -100,11 +100,11 @@ export function UsersTable() {
               )}
               {state === "ready" &&
                 rows.map((u) => (
-                  <tr key={u.id} className="hover:bg-muted/40">
+                  <tr key={u.id} className="hover:bg-muted">
                     <td className="px-4 py-3">
                       <Link
                         href={`/admin/users/${u.id}`}
-                        className="font-medium hover:underline"
+                        className="font-bold text-link hover:underline"
                       >
                         {u.displayName}
                       </Link>

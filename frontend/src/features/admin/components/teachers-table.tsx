@@ -98,10 +98,10 @@ export function TeachersTable() {
             key={f.value || "all"}
             onClick={() => setStatus(f.value)}
             className={cn(
-              "rounded-lg border px-3 py-1.5 text-sm transition-colors",
+              "h-9 rounded-md border px-3 text-sm font-bold transition-colors",
               statusParam === f.value
-                ? "border-primary bg-accent"
-                : "border-border hover:bg-muted",
+                ? "border-foreground bg-foreground text-background"
+                : "border-border hover:bg-accent",
             )}
           >
             {t(f.label)}
@@ -117,18 +117,18 @@ export function TeachersTable() {
       />
 
       {state === "error" ? (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {t("couldNotLoadTeachers")}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-border">
+        <div className="overflow-x-auto border border-border">
           <table className="w-full min-w-[40rem] text-sm">
-            <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
+            <thead className="bg-muted text-left text-xs text-muted-foreground">
               <tr>
-                <th className="px-4 py-2 font-medium">{t("colTeacher")}</th>
-                <th className="px-4 py-2 font-medium">{t("colStatus")}</th>
-                <th className="px-4 py-2 font-medium">{t("colOwner")}</th>
-                <th className="px-4 py-2 text-right font-medium">{t("colCreated")}</th>
+                <th className="px-4 py-2.5 font-bold">{t("colTeacher")}</th>
+                <th className="px-4 py-2.5 font-bold">{t("colStatus")}</th>
+                <th className="px-4 py-2.5 font-bold">{t("colOwner")}</th>
+                <th className="px-4 py-2.5 text-right font-bold">{t("colCreated")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -149,11 +149,11 @@ export function TeachersTable() {
               )}
               {state === "ready" &&
                 rows.map((row) => (
-                  <tr key={row.slug} className="hover:bg-muted/40">
+                  <tr key={row.slug} className="hover:bg-muted">
                     <td className="px-4 py-3">
                       <Link
                         href={`/admin/teachers/${row.slug}`}
-                        className="inline-flex items-center gap-1 font-medium hover:underline"
+                        className="inline-flex items-center gap-1 font-bold text-link hover:underline"
                       >
                         {row.displayName}
                         {row.verified && (

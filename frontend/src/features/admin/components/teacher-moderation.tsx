@@ -67,12 +67,12 @@ export function TeacherModeration({ slug }: { slug: string }) {
   }
 
   if (state === "loading") {
-    return <div className="h-96 animate-pulse rounded-2xl bg-muted" />;
+    return <div className="h-96 animate-pulse bg-muted" />;
   }
   if (state === "error" || !data) {
     return (
       <div>
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {errMsg}
         </p>
         <Back />
@@ -91,7 +91,7 @@ export function TeacherModeration({ slug }: { slug: string }) {
     <div className="flex flex-col gap-6">
       <Back />
 
-      <div className="rounded-2xl border border-border bg-card p-6">
+      <div className="border border-border bg-card p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="inline-flex items-center gap-2 font-display text-2xl">
             {data.displayName}
@@ -134,13 +134,13 @@ export function TeacherModeration({ slug }: { slug: string }) {
 
         {data.moderationNote && (
           <p className="mt-4 rounded-lg bg-muted px-3 py-2 text-sm">
-            <span className="font-medium">{t("noteToTeacher")}</span>{" "}
+            <span className="font-bold">{t("noteToTeacher")}</span>{" "}
             {data.moderationNote}
           </p>
         )}
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-6">
+      <div className="border border-border bg-card p-6">
         <h3 className="font-display text-lg">{t("about")}</h3>
         <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
           {data.about || "—"}
@@ -152,14 +152,14 @@ export function TeacherModeration({ slug }: { slug: string }) {
       </div>
 
       {errMsg && (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {errMsg}
         </p>
       )}
 
       {noteMode ? (
-        <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-6">
-          <label htmlFor="note" className="text-sm font-medium">
+        <div className="flex flex-col gap-3 border border-border bg-card p-6">
+          <label htmlFor="note" className="text-sm font-bold">
             {t("reasonShown", { action: t(noteMode === "reject" ? "actionReject" : "actionSuspend") })}
           </label>
           <textarea
@@ -167,7 +167,7 @@ export function TeacherModeration({ slug }: { slug: string }) {
             rows={3}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
           <div className="flex gap-2">
             <Button
@@ -245,7 +245,7 @@ function Back() {
   return (
     <Link
       href="/admin/teachers"
-      className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+      className="inline-flex items-center gap-1.5 text-sm font-bold text-link hover:underline"
     >
       <ArrowLeft className="size-4" /> {t("allTeachers")}
     </Link>
@@ -256,7 +256,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex flex-col">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="font-medium">{children}</dd>
+      <dd className="font-bold">{children}</dd>
     </div>
   );
 }

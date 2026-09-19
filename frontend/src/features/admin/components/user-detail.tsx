@@ -45,12 +45,12 @@ export function UserDetail({ id }: { id: string }) {
   }, [reload]);
 
   if (state === "loading") {
-    return <div className="h-96 animate-pulse rounded-2xl bg-muted" />;
+    return <div className="h-96 animate-pulse bg-muted" />;
   }
   if (state === "error" || !data) {
     return (
       <div>
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {errMsg}
         </p>
         <Back />
@@ -64,7 +64,7 @@ export function UserDetail({ id }: { id: string }) {
     <div className="flex flex-col gap-6">
       <Back />
 
-      <div className="rounded-2xl border border-border bg-card p-6">
+      <div className="border border-border bg-card p-6">
         <h2 className="font-display text-2xl">{user.displayName}</h2>
         <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
           <Row label={t("email")}>{user.email}</Row>
@@ -77,13 +77,13 @@ export function UserDetail({ id }: { id: string }) {
 
       <UserRolesCard userId={user.id} roles={roles} onChanged={reload} />
 
-      <div className="rounded-2xl border border-border bg-card p-6">
+      <div className="border border-border bg-card p-6">
         <h3 className="font-display text-lg">{t("teacherProfile")}</h3>
         {teacherProfile ? (
           <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
             <Link
               href={`/admin/teachers/${teacherProfile.slug}`}
-              className="font-medium text-primary hover:underline"
+              className="font-bold text-link hover:underline"
             >
               {teacherProfile.slug}
             </Link>
@@ -97,7 +97,7 @@ export function UserDetail({ id }: { id: string }) {
         )}
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-6">
+      <div className="border border-border bg-card p-6">
         <h3 className="font-display text-lg">{t("payments")}</h3>
         <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
           <Row label={t("authorized")}>
@@ -121,20 +121,20 @@ export function UserDetail({ id }: { id: string }) {
         </dl>
       </div>
 
-      <div className="rounded-2xl border border-border">
+      <div className="border border-border">
         <h3 className="px-6 pt-5 font-display text-lg">
           {t("bookings")}{" "}
           <span className="text-muted-foreground">({bookings.length})</span>
         </h3>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[32rem] text-sm">
-            <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
+            <thead className="bg-muted text-left text-xs text-muted-foreground">
               <tr>
-                <th className="px-6 py-2 font-medium">{t("colWhen")}</th>
-                <th className="px-4 py-2 font-medium">{t("colAs")}</th>
-                <th className="px-4 py-2 font-medium">{t("colWith")}</th>
-                <th className="px-4 py-2 font-medium">{t("colStatus")}</th>
-                <th className="px-6 py-2 text-right font-medium">{t("colPrice")}</th>
+                <th className="px-6 py-2.5 font-bold">{t("colWhen")}</th>
+                <th className="px-4 py-2.5 font-bold">{t("colAs")}</th>
+                <th className="px-4 py-2.5 font-bold">{t("colWith")}</th>
+                <th className="px-4 py-2.5 font-bold">{t("colStatus")}</th>
+                <th className="px-6 py-2.5 text-right font-bold">{t("colPrice")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -178,7 +178,7 @@ function Back() {
   return (
     <Link
       href="/admin/users"
-      className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+      className="inline-flex items-center gap-1.5 text-sm font-bold text-link hover:underline"
     >
       <ArrowLeft className="size-4" /> {t("allUsers")}
     </Link>
@@ -189,7 +189,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex flex-col">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="font-medium">{children}</dd>
+      <dd className="font-bold">{children}</dd>
     </div>
   );
 }

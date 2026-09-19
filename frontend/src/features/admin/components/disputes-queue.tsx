@@ -76,10 +76,10 @@ export function DisputesQueue() {
               setStatus(f.value);
             }}
             className={cn(
-              "rounded-lg border px-3 py-1.5 text-sm transition-colors",
+              "h-9 rounded-md border px-3 text-sm font-bold transition-colors",
               status === f.value
-                ? "border-primary bg-accent"
-                : "border-border hover:bg-muted",
+                ? "border-foreground bg-foreground text-background"
+                : "border-border hover:bg-accent",
             )}
           >
             {t(f.label)}
@@ -88,13 +88,13 @@ export function DisputesQueue() {
       </div>
 
       {state === "error" ? (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {t("couldNotLoadDisputes")}
         </p>
       ) : state === "loading" ? (
-        <div className="h-64 animate-pulse rounded-2xl bg-muted" />
+        <div className="h-64 animate-pulse bg-muted" />
       ) : rows.length === 0 ? (
-        <p className="rounded-2xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
+        <p className="border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
           {t("nothingHere")}
         </p>
       ) : (
@@ -171,13 +171,13 @@ function DisputeCard({
   }
 
   return (
-    <li className="rounded-2xl border border-border bg-card p-5">
+    <li className="border border-border bg-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-sm">
             <Link
               href={`/admin/bookings/${d.booking.id}`}
-              className="font-medium text-primary hover:underline"
+              className="font-bold text-link hover:underline"
             >
               {d.booking.teacher.displayName} × {d.booking.student.displayName}
             </Link>{" "}
@@ -191,9 +191,9 @@ function DisputeCard({
         </div>
         <span
           className={cn(
-            "rounded-full px-2.5 py-1 text-xs font-semibold",
+            "rounded-sm px-2 py-0.5 text-xs font-bold",
             d.status === "open"
-              ? "bg-coral/15 text-coral"
+              ? "bg-accent text-accent-foreground"
               : "bg-muted text-muted-foreground",
           )}
         >
@@ -205,7 +205,7 @@ function DisputeCard({
 
       {d.resolution && (
         <p className="mt-3 rounded-lg bg-muted px-3 py-2 text-sm">
-          <span className="font-medium">
+          <span className="font-bold">
             {d.resolvedBy?.displayName ?? t("moderator")}:
           </span>{" "}
           {d.resolution}
@@ -229,14 +229,14 @@ function DisputeCard({
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-medium text-muted-foreground">
+              <label className="text-xs font-bold text-muted-foreground">
                 {t("closingNote", { outcome: t(outcome === "resolved" ? "outcomeResolved" : "outcomeRejected") })}
               </label>
               <textarea
                 rows={2}
                 value={resolution}
                 onChange={(e) => setResolution(e.target.value)}
-                className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               />
               {outcome === "resolved" && (
                 <label className="flex items-center gap-2 text-sm">
@@ -273,7 +273,7 @@ function DisputeCard({
             </div>
           )}
           {err && (
-            <p className="mt-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {err}
             </p>
           )}

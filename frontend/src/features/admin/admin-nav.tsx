@@ -41,24 +41,67 @@ type NavKey =
   | "navDashboard" | "navTeachers" | "navBookings" | "navDisputes" | "navPayouts"
   | "navReviews" | "navCourses" | "navCourseReviews" | "navUsers" | "navRoles";
 
-export function AdminNav() {
+function useLinks() {
   const pathname = usePathname();
   const { can } = useCan();
-  const t = useTranslations("admin");
   const links = LINKS.filter((l) => can(l.perm));
+  const isActive = (href: string, exact?: boolean) =>
+    exact ? pathname === href : pathname.startsWith(href);
+  return { links, isActive };
+}
+
+/**
+ * Udemy's instructor console keeps its sections in a dark rail down the left
+ * edge; ten of them don't fit a tab row anyway. Below `lg` the rail would eat
+ * the page, so there it falls back to the scrolling tab row (`AdminTabs`).
+ */
+export function AdminSidebar() {
+  const { links, isActive } = useLinks();
+  const t = useTranslations("admin");
 
   return (
-    <nav className="flex gap-0.5 overflow-x-auto border-b border-border">
+    <nav className="sticky top-[72px] hidden h-[calc(100vh-72px)] overflow-y-auto bg-ink py-4 text-ink-foreground lg:block">
       {links.map(({ href, label, icon: Icon, exact }) => {
-        const active = exact ? pathname === href : pathname.startsWith(href);
+        const active = isActive(href, exact);
         return (
           <Link
             key={href}
             href={href}
+            aria-current={active ? "page" : undefined}
             className={cn(
-              "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-sm font-medium transition-colors",
+              "flex items-center gap-3 border-l-4 px-5 py-3 text-sm font-bold transition-colors",
               active
-                ? "border-primary text-foreground"
+                ? "border-primary bg-white/10 text-white"
+                : "border-transparent text-white/70 hover:bg-white/5 hover:text-white",
+            )}
+          >
+            <Icon className="size-4 shrink-0" />
+            {t(label)}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** The same sections as a scrolling tab row, for narrow screens. */
+export function AdminTabs() {
+  const { links, isActive } = useLinks();
+  const t = useTranslations("admin");
+
+  return (
+    <nav className="flex gap-4 overflow-x-auto border-b border-border lg:hidden">
+      {links.map(({ href, label, icon: Icon, exact }) => {
+        const active = isActive(href, exact);
+        return (
+          <Link
+            key={href}
+            href={href}
+            aria-current={active ? "page" : undefined}
+            className={cn(
+              "-mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 py-3 text-sm font-bold whitespace-nowrap transition-colors",
+              active
+                ? "border-foreground text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >

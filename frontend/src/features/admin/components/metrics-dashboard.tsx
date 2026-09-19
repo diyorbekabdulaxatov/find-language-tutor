@@ -36,7 +36,7 @@ export function MetricsDashboard() {
     return (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="h-24 animate-pulse rounded-2xl bg-muted" />
+          <div key={i} className="h-24 animate-pulse bg-muted" />
         ))}
       </div>
     );
@@ -117,7 +117,7 @@ export function MetricsDashboard() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-display text-xl">{title}</h2>
+      <h2 className="border-b border-border pb-2 font-display text-xl">{title}</h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
     </section>
   );
@@ -144,13 +144,13 @@ function Tile({
   const inner = (
     <div
       className={cn(
-        "h-full rounded-2xl border p-4 transition-colors",
+        "h-full border p-4 transition-colors",
         accent
-          ? "border-primary/30 bg-primary/5"
+          ? "border-foreground bg-accent"
           : warn
-            ? "border-star/40 bg-star/5"
+            ? "border-star/50 bg-star/10"
             : "border-border bg-card",
-        href && "hover:border-primary/50",
+        href && "hover:bg-muted",
       )}
     >
       <div className="text-xs text-muted-foreground">{label}</div>
@@ -159,7 +159,7 @@ function Tile({
         {value}
       </div>
       {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
-      {href && <div className="mt-1 text-xs font-medium text-primary">{t("view")}</div>}
+      {href && <div className="mt-1 text-xs font-bold text-link">{t("view")}</div>}
     </div>
   );
   return href ? (

@@ -80,7 +80,7 @@ export function UserRolesCard({
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-6">
+    <div className="border border-border bg-card p-6">
       <h3 className="font-display text-lg">{t("roles")}</h3>
 
       {roles.length === 0 ? (
@@ -92,7 +92,7 @@ export function UserRolesCard({
           {roles.map((r) => (
             <li
               key={r.id}
-              className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 py-1 pl-3 pr-1.5 text-xs font-semibold text-primary"
+              className="inline-flex items-center gap-1.5 rounded-sm bg-accent py-1 pl-3 pr-1.5 text-xs font-bold text-accent-foreground"
             >
               {r.name}
               {manage && (
@@ -103,7 +103,7 @@ export function UserRolesCard({
                   onClick={() =>
                     run(`rm:${r.id}`, () => unassignRole(userId, r.id))
                   }
-                  className="rounded-full p-0.5 hover:bg-primary/20 disabled:opacity-50"
+                  className="rounded-sm p-0.5 hover:bg-accent-foreground/10 disabled:opacity-50"
                 >
                   <X className="size-3" />
                 </button>
@@ -143,7 +143,7 @@ export function UserRolesCard({
       )}
 
       {err && (
-        <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {err}
         </p>
       )}

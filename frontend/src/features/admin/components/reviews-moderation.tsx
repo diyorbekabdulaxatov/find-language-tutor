@@ -92,10 +92,10 @@ export function ReviewsModeration() {
               setVisibility(f.value);
             }}
             className={cn(
-              "rounded-lg border px-3 py-1.5 text-sm transition-colors",
+              "h-9 rounded-md border px-3 text-sm font-bold transition-colors",
               visibility === f.value
-                ? "border-primary bg-accent"
-                : "border-border hover:bg-muted",
+                ? "border-foreground bg-foreground text-background"
+                : "border-border hover:bg-accent",
             )}
           >
             {t(f.label)}
@@ -120,7 +120,7 @@ export function ReviewsModeration() {
             value={teacher}
             onChange={(e) => setTeacher(e.target.value)}
             placeholder={t("teacherSlug")}
-            className="w-44 rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="w-44 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
           <Button type="submit" size="sm" variant="outline">
             {t("filter")}
@@ -131,7 +131,7 @@ export function ReviewsModeration() {
       {teacherQuery && (
         <p className="text-xs text-muted-foreground">
           {t("filteredTo")}{" "}
-          <span className="font-medium text-foreground">{teacherQuery}</span> ·{" "}
+          <span className="font-bold text-foreground">{teacherQuery}</span> ·{" "}
           <button
             className="underline hover:text-foreground"
             onClick={() => {
@@ -145,13 +145,13 @@ export function ReviewsModeration() {
       )}
 
       {state === "error" ? (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {t("couldNotLoadReviews")}
         </p>
       ) : state === "loading" ? (
-        <div className="h-64 animate-pulse rounded-2xl bg-muted" />
+        <div className="h-64 animate-pulse bg-muted" />
       ) : rows.length === 0 ? (
-        <p className="rounded-2xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
+        <p className="border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
           {t("noReviewsMatch")}
         </p>
       ) : (
@@ -220,7 +220,7 @@ function ReviewCard({
   return (
     <li
       className={cn(
-        "rounded-2xl border bg-card p-5",
+        "border bg-card p-5",
         r.hidden ? "border-dashed border-muted-foreground/40" : "border-border",
       )}
     >
@@ -229,12 +229,12 @@ function ReviewCard({
           <div className="flex items-center gap-2">
             <Stars value={r.rating} />
             {r.hidden && (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+              <span className="rounded-sm bg-muted px-2 py-0.5 text-xs font-bold text-muted-foreground">
                 {t("hidden")}
               </span>
             )}
             {r.sample && (
-              <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+              <span className="rounded-sm bg-accent px-2 py-0.5 text-xs font-bold text-muted-foreground">
                 {t("sample")}
               </span>
             )}
@@ -242,7 +242,7 @@ function ReviewCard({
           <p className="mt-1 text-sm">
             <Link
               href={`/admin/teachers/${r.teacher.slug}`}
-              className="font-medium text-primary hover:underline"
+              className="font-bold text-link hover:underline"
             >
               {r.teacher.displayName}
             </Link>{" "}
@@ -304,7 +304,7 @@ function ReviewCard({
       </div>
 
       {err && (
-        <p className="mt-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {err}
         </p>
       )}

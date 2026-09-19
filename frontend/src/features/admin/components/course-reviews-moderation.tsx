@@ -92,10 +92,10 @@ export function CourseReviewsModeration() {
               setVisibility(f.value);
             }}
             className={cn(
-              "rounded-lg border px-3 py-1.5 text-sm transition-colors",
+              "h-9 rounded-md border px-3 text-sm font-bold transition-colors",
               visibility === f.value
-                ? "border-primary bg-accent"
-                : "border-border hover:bg-muted",
+                ? "border-foreground bg-foreground text-background"
+                : "border-border hover:bg-accent",
             )}
           >
             {t(f.label)}
@@ -117,13 +117,13 @@ export function CourseReviewsModeration() {
       </div>
 
       {state === "error" ? (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {t("couldNotLoadReviews")}
         </p>
       ) : state === "loading" ? (
-        <div className="h-64 animate-pulse rounded-2xl bg-muted" />
+        <div className="h-64 animate-pulse bg-muted" />
       ) : rows.length === 0 ? (
-        <p className="rounded-2xl border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
+        <p className="border border-border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
           {t("noReviewsMatch")}
         </p>
       ) : (
@@ -192,7 +192,7 @@ function CourseReviewCard({
   return (
     <li
       className={cn(
-        "rounded-2xl border border-border bg-card p-4",
+        "border border-border bg-card p-4",
         r.hidden && "opacity-70",
       )}
     >
@@ -200,14 +200,14 @@ function CourseReviewCard({
         <Stars value={r.rating} />
         <Link
           href={`/courses/catalog/${r.courseId}`}
-          className="text-sm font-medium text-foreground hover:text-primary hover:underline"
+          className="text-sm font-bold text-foreground hover:text-link hover:underline"
         >
           {r.courseTitle}
         </Link>
         <span className="text-sm text-muted-foreground">· {r.studentName}</span>
         <span className="text-xs text-muted-foreground">{fmt(r.createdAt, locale)}</span>
         {r.hidden && (
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+          <span className="rounded-sm bg-muted px-2 py-0.5 text-xs font-bold text-muted-foreground">
             {t("hidden")}
           </span>
         )}

@@ -3,8 +3,8 @@ import { cn } from "@/lib/utils";
 import type { TeacherStatus } from "@/features/admin/api";
 
 const STYLES: Record<TeacherStatus, string> = {
-  pending: "bg-star/15 text-star",
-  approved: "bg-primary/15 text-primary",
+  pending: "bg-star/20 text-rating dark:text-star",
+  approved: "bg-accent text-accent-foreground",
   rejected: "bg-destructive/10 text-destructive",
   suspended: "bg-destructive/10 text-destructive",
 };
@@ -14,7 +14,7 @@ export function TeacherStatusBadge({ status }: { status: TeacherStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
+        "inline-flex items-center rounded-sm px-2 py-0.5 text-xs font-bold",
         STYLES[status],
       )}
     >
