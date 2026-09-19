@@ -21,5 +21,5 @@ export default async function LoginPage() {
 }
 
 function FormSkeleton() {
-  return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
+  return <div className="h-64 animate-pulse bg-muted" />;
 }

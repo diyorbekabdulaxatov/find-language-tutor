@@ -31,7 +31,7 @@ export function IntroVideo({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-2xl bg-muted ring-1 ring-border",
+        "relative overflow-hidden border border-border bg-muted",
         className,
       )}
     >
@@ -64,7 +64,7 @@ export function IntroVideo({
             className="transition-transform duration-500 group-hover:scale-[1.04]"
           />
           <span className="absolute inset-0 grid place-items-center bg-black/15 transition-colors group-hover:bg-black/25">
-            <span className="grid size-14 place-items-center rounded-full bg-card/95 text-foreground shadow-lift transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+            <span className="grid size-14 place-items-center rounded-full bg-white text-ink transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
               <Play className="size-6 translate-x-0.5 fill-current" />
             </span>
           </span>

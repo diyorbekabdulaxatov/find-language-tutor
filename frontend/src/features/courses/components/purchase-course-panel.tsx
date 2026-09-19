@@ -75,7 +75,7 @@ export function PurchaseCoursePanel({
     return (
       <div className="flex flex-col gap-3">
         {error && (
-          <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {error}
           </p>
         )}
@@ -93,12 +93,12 @@ export function PurchaseCoursePanel({
       </div>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 text-sm font-medium">{t("paymentMethod")}</legend>
+        <legend className="mb-1 text-sm font-bold">{t("paymentMethod")}</legend>
         {TEST_METHODS.map((m) => (
           <label
             key={m.token}
             className={cn(
-              "flex cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-2.5 text-sm transition-colors",
+              "flex cursor-pointer items-center gap-3 rounded-md border px-3.5 py-2.5 text-sm transition-colors",
               method === m.token ? "border-primary bg-accent/50" : "border-border hover:bg-muted/50",
             )}
           >
@@ -114,14 +114,14 @@ export function PurchaseCoursePanel({
               className="accent-primary"
             />
             <CreditCard className="size-4 text-muted-foreground" />
-            <span className="font-medium">{t(m.label)}</span>
+            <span className="font-bold">{t(m.label)}</span>
             <span className="ml-auto text-muted-foreground">{m.hint}</span>
           </label>
         ))}
       </fieldset>
 
       {error && (
-        <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}

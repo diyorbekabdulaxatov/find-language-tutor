@@ -37,7 +37,7 @@ export default async function NewResourcePage({
             <>
               <Link
                 href="/resources"
-                className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+                className="inline-flex items-center gap-1.5 text-sm font-bold text-link hover:underline"
               >
                 <ArrowLeft className="size-4" />
                 {t("back")}
@@ -48,9 +48,9 @@ export default async function NewResourcePage({
                   <li key={type}>
                     <Link
                       href={`/resources/new?type=${type}`}
-                      className="block rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/50"
+                      className="block border border-border bg-card p-4 transition-colors hover:bg-accent"
                     >
-                      <span className="font-medium">{tType(`long.${type}`)}</span>
+                      <span className="font-bold">{tType(`long.${type}`)}</span>
                       <p className="mt-0.5 text-sm text-muted-foreground">{tType(`blurb.${type}`)}</p>
                     </Link>
                   </li>

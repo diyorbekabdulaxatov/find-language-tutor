@@ -34,7 +34,7 @@ export function EditCourse({ id }: { id: string }) {
   }, [id]);
 
   if (state === "loading") {
-    return <div className="h-96 animate-pulse rounded-2xl bg-muted" />;
+    return <div className="h-96 animate-pulse bg-muted" />;
   }
   if (state === "error" || !course) {
     return (

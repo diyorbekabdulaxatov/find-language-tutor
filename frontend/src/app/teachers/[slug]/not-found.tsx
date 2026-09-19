@@ -9,7 +9,7 @@ export default function TeacherNotFound() {
       </p>
       <Link
         href="/teachers"
-        className="mt-6 inline-flex h-11 items-center rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+        className="mt-6 inline-flex h-12 items-center rounded-md bg-primary px-5 text-base font-bold text-primary-foreground transition-colors hover:bg-[#8710d8]"
       >
         Browse all teachers
       </Link>

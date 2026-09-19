@@ -70,7 +70,7 @@ export function Combobox({
           id={id}
           type="button"
           className={cn(
-            "flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+            "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
             className,
           )}
         >
@@ -84,14 +84,14 @@ export function Combobox({
         <PopoverPrimitive.Content
           align="start"
           sideOffset={4}
-          className="z-50 w-(--radix-popover-trigger-width) min-w-56 overflow-hidden rounded-xl border border-border bg-popover p-1 shadow-lift"
+          className="z-50 w-(--radix-popover-trigger-width) min-w-56 overflow-hidden rounded-md border border-border bg-popover p-1 shadow-lift"
         >
           <input
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={searchPlaceholder}
-            className="mb-1 w-full rounded-lg bg-transparent px-2.5 py-2 text-sm outline-none"
+            className="mb-1 w-full rounded-md bg-transparent px-2.5 py-2 text-sm outline-none"
           />
           <div className="max-h-64 overflow-y-auto">
             {filtered.length === 0 && (
@@ -106,7 +106,7 @@ export function Combobox({
                   setOpen(false);
                   setQuery("");
                 }}
-                className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-accent"
+                className="flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-accent"
               >
                 <span className="flex items-center gap-2">
                   <Check

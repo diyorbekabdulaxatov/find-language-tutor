@@ -42,7 +42,7 @@ export function ReviewPrompt({
   return (
     <form
       onSubmit={handleSubmit}
-      className="mt-4 flex flex-col gap-3 rounded-2xl border border-border bg-card p-6"
+      className="mt-4 flex flex-col gap-3 border border-border bg-card p-6"
     >
       <h2 className="font-display text-lg">{t("reviewTitle", { name: teacherName })}</h2>
       <StarInput value={rating} onChange={setRating} />
@@ -76,7 +76,7 @@ export function BookingReview({
 }) {
   const t = useTranslations("bookings");
   return (
-    <div className="mt-4 rounded-2xl border border-border bg-card p-6">
+    <div className="mt-4 border border-border bg-card p-6">
       <h2 className="font-display text-lg">{t("yourReview")}</h2>
       <Stars value={rating} className="mt-2" />
       {comment && (

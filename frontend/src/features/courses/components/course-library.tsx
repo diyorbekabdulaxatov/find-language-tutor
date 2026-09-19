@@ -52,7 +52,7 @@ export function CourseLibrary() {
 
   if (state === "no-teacher") {
     return (
-      <div className="rounded-2xl border border-border bg-card px-6 py-12 text-center">
+      <div className="border border-border bg-card px-6 py-16 text-center">
         <p className="text-sm text-muted-foreground">
           {t("needProfile")}
         </p>
@@ -67,7 +67,7 @@ export function CourseLibrary() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl">{t("libraryTitle")}</h1>
+          <h1 className="font-display text-3xl sm:text-[2rem]">{t("libraryTitle")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t("libraryIntro")}</p>
         </div>
         <Button asChild>
@@ -96,13 +96,13 @@ export function CourseLibrary() {
       </div>
 
       {state === "error" ? (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {t("couldNotLoadLibrary")}
         </p>
       ) : state === "loading" ? (
-        <div className="h-64 animate-pulse rounded-2xl bg-muted" />
+        <div className="h-64 animate-pulse bg-muted" />
       ) : items.length === 0 ? (
-        <p className="rounded-2xl border border-border bg-card px-4 py-12 text-center text-sm text-muted-foreground">
+        <p className="border border-border bg-card px-4 py-16 text-center text-sm text-muted-foreground">
           {t("nothingHereYet")}
         </p>
       ) : (
@@ -129,8 +129,8 @@ function Chip({
     <button
       onClick={onClick}
       className={cn(
-        "rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
-        active ? "border-primary bg-accent" : "border-border hover:bg-muted",
+        "h-8 rounded-md border px-3 text-xs font-bold transition-colors",
+        active ? "border-foreground bg-foreground text-background" : "border-border hover:bg-accent",
       )}
     >
       {children}
@@ -154,15 +154,15 @@ function CourseCard({ course: c, onChanged }: { course: Course; onChanged: () =>
   }
 
   return (
-    <li className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
+    <li className="flex flex-col gap-3 border border-border bg-card p-4">
       <div className="flex items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+        <span className="grid size-9 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
           <GraduationCap className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
           <Link
             href={`/courses/${c.id}/edit`}
-            className="block truncate font-medium hover:text-primary hover:underline"
+            className="block truncate font-bold hover:text-link hover:underline"
           >
             {c.title}
           </Link>
@@ -172,12 +172,12 @@ function CourseCard({ course: c, onChanged }: { course: Course; onChanged: () =>
         </div>
         <span
           className={cn(
-            "shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold",
+            "shrink-0 rounded-sm px-2 py-0.5 text-xs font-bold",
             c.archived
               ? "bg-muted text-muted-foreground"
               : c.status === "published"
-                ? "bg-primary/15 text-primary"
-                : "bg-star/15 text-star",
+                ? "bg-accent text-accent-foreground"
+                : "bg-star/20 text-rating dark:text-star",
           )}
         >
           {c.archived ? t("archived") : t(c.status)}

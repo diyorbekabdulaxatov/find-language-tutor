@@ -21,5 +21,5 @@ export default async function SignupPage() {
 }
 
 function FormSkeleton() {
-  return <div className="h-80 animate-pulse rounded-xl bg-muted" />;
+  return <div className="h-80 animate-pulse bg-muted" />;
 }

@@ -111,7 +111,7 @@ export function LessonResourcesPanel({
   }
 
   if (state === "loading") {
-    return <div className="mt-4 h-24 animate-pulse rounded-2xl bg-muted" />;
+    return <div className="mt-4 h-24 animate-pulse bg-muted" />;
   }
 
   const materials = attachments.filter((a) => a.kind === "material");
@@ -123,7 +123,7 @@ export function LessonResourcesPanel({
   }
 
   return (
-    <div className="mt-4 rounded-2xl border border-border bg-card p-6">
+    <div className="mt-4 border border-border bg-card p-6">
       <div className="flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 font-display text-lg">
           <BookOpen className="size-4 text-primary" /> {t("lessonResources")}
@@ -134,7 +134,7 @@ export function LessonResourcesPanel({
       </div>
 
       {error && (
-        <p className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
@@ -190,7 +190,7 @@ function ResourceGroup({
 
   return (
     <div className="mt-4 border-t border-border pt-4 first:mt-3 first:border-t-0 first:pt-0">
-      <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+      <h3 className="text-xs font-bold tracking-wide text-muted-foreground uppercase">
         {title}
       </h3>
       {items.length === 0 ? (
@@ -251,12 +251,12 @@ function ResourceRow({
           : t("viewFeedback");
 
   return (
-    <li className="flex items-start gap-3 rounded-xl border border-border bg-background/40 p-3">
-      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+    <li className="flex items-start gap-3 border border-border bg-background p-3">
+      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
         <Icon className="size-4" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{a.title}</p>
+        <p className="truncate text-sm font-bold">{a.title}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {tType(a.type)}
           {a.dueAt && <> · {t("due", { date: formatFull(a.dueAt, tz, locale) })}</>}
@@ -394,7 +394,7 @@ function AttachResourceSheet({
         </SheetHeader>
 
         {loadState === "loading" ? (
-          <div className="h-40 animate-pulse rounded-xl bg-muted" />
+          <div className="h-40 animate-pulse bg-muted" />
         ) : loadState === "error" ? (
           <p className="text-sm text-destructive">{t("couldNotLoadResources")}</p>
         ) : resources.length === 0 ? (
@@ -410,14 +410,14 @@ function AttachResourceSheet({
         ) : (
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="attach-resource" className="text-sm font-medium">
+              <label htmlFor="attach-resource" className="text-sm font-bold">
                 {t("resource")}
               </label>
               <select
                 id="attach-resource"
                 value={resourceId}
                 onChange={(e) => selectResource(e.target.value)}
-                className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="w-full rounded-md border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               >
                 <option value="">{t("chooseResource")}</option>
                 {resources.map((r) => (
@@ -429,15 +429,15 @@ function AttachResourceSheet({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">{t("assignAs")}</span>
+              <span className="text-sm font-bold">{t("assignAs")}</span>
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setKind("material")}
-                  className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                  className={`h-9 rounded-md border px-3 text-sm font-bold transition-colors ${
                     kind === "material"
-                      ? "border-primary bg-accent"
-                      : "border-border hover:bg-muted"
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border hover:bg-accent"
                   }`}
                 >
                   {t("material")}
@@ -446,10 +446,10 @@ function AttachResourceSheet({
                   type="button"
                   disabled={!canHomework}
                   onClick={() => setKind("homework")}
-                  className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                  className={`h-9 rounded-md border px-3 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                     kind === "homework"
-                      ? "border-primary bg-accent"
-                      : "border-border hover:bg-muted"
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border hover:bg-accent"
                   }`}
                 >
                   {t("homework")}
@@ -464,7 +464,7 @@ function AttachResourceSheet({
 
             {kind === "homework" && (
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="attach-due" className="text-sm font-medium">
+                <label htmlFor="attach-due" className="text-sm font-bold">
                   {t("dueOptional")}
                 </label>
                 <input
@@ -472,13 +472,13 @@ function AttachResourceSheet({
                   type="datetime-local"
                   value={dueAt}
                   onChange={(e) => setDueAt(e.target.value)}
-                  className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="w-full rounded-md border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 />
               </div>
             )}
 
             {error && (
-              <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 {error}
               </p>
             )}
