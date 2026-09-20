@@ -537,7 +537,10 @@ type Querier interface {
 	// Page of teachers matching the optional filters, ordered by the requested sort.
 	// Child collections (languages, focus, experience) are loaded separately by the
 	// repository using the returned ids.
-	ListTeachers(ctx context.Context, arg ListTeachersParams) ([]Teacher, error)
+	//
+	// from_price_minor is derived, not stored: the price filter and the price sorts
+	// run on it so that what a student filters by is what they can actually book.
+	ListTeachers(ctx context.Context, arg ListTeachersParams) ([]ListTeachersRow, error)
 	// The payout run's row selection, inside the run's transaction.
 	//
 	// FOR UPDATE SKIP LOCKED is the double-run guard: two operators running at the

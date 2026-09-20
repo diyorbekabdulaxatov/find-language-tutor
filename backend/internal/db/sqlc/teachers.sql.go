@@ -15,10 +15,21 @@ import (
 const countTeachers = `-- name: CountTeachers :one
 SELECT count(*)
 FROM teachers t
+LEFT JOIN LATERAL (
+    -- The cheapest live, non-trial offering: what a card means by "from
+    -- 45,000 so'm". Trials are excluded so one cheap taster lesson can't make
+    -- a whole profile look cheap, and min() over no rows is NULL, which the
+    -- COALESCE below turns back into the teacher's headline hourly rate (a
+    -- profile whose offerings are all archived, or one made before them).
+    SELECT min(p.price_minor) AS min_price_minor
+    FROM lesson_types lt
+    JOIN lesson_type_prices p ON p.lesson_type_id = lt.id
+    WHERE lt.teacher_id = t.id AND NOT lt.archived AND NOT lt.is_trial
+) lp ON true
 WHERE
     t.status = 'approved'
     AND ($1::teacher_kind IS NULL OR t.kind = $1::teacher_kind)
-    AND ($2::bigint IS NULL OR t.price_per_hour_minor <= $2::bigint)
+    AND ($2::bigint IS NULL OR COALESCE(lp.min_price_minor, t.price_per_hour_minor) <= $2::bigint)
     AND (
         $3::text IS NULL
         OR EXISTS (
@@ -267,12 +278,23 @@ func (q *Queries) ListTeacherSlugs(ctx context.Context) ([]string, error) {
 }
 
 const listTeachers = `-- name: ListTeachers :many
-SELECT t.id, t.slug, t.display_name, t.headline, t.kind, t.country_code, t.country_name, t.city, t.timezone, t.price_per_hour_minor, t.trial_price_minor, t.currency, t.rating, t.review_count, t.lessons_completed, t.student_count, t.response_time_hours, t.accepting_students, t.avatar_url, t.video_thumbnail_url, t.intro_video_url, t.about, t.teaching_style, t.created_at, t.updated_at, t.user_id, t.meeting_url, t.status, t.verified, t.moderation_note, t.rating_base, t.review_count_base, t.avatar_asset_id, t.intro_video_asset_id
+SELECT t.id, t.slug, t.display_name, t.headline, t.kind, t.country_code, t.country_name, t.city, t.timezone, t.price_per_hour_minor, t.trial_price_minor, t.currency, t.rating, t.review_count, t.lessons_completed, t.student_count, t.response_time_hours, t.accepting_students, t.avatar_url, t.video_thumbnail_url, t.intro_video_url, t.about, t.teaching_style, t.created_at, t.updated_at, t.user_id, t.meeting_url, t.status, t.verified, t.moderation_note, t.rating_base, t.review_count_base, t.avatar_asset_id, t.intro_video_asset_id, COALESCE(lp.min_price_minor, t.price_per_hour_minor)::bigint AS from_price_minor
 FROM teachers t
+LEFT JOIN LATERAL (
+    -- The cheapest live, non-trial offering: what a card means by "from
+    -- 45,000 so'm". Trials are excluded so one cheap taster lesson can't make
+    -- a whole profile look cheap, and min() over no rows is NULL, which the
+    -- COALESCE below turns back into the teacher's headline hourly rate (a
+    -- profile whose offerings are all archived, or one made before them).
+    SELECT min(p.price_minor) AS min_price_minor
+    FROM lesson_types lt
+    JOIN lesson_type_prices p ON p.lesson_type_id = lt.id
+    WHERE lt.teacher_id = t.id AND NOT lt.archived AND NOT lt.is_trial
+) lp ON true
 WHERE
     t.status = 'approved'
     AND ($1::teacher_kind IS NULL OR t.kind = $1::teacher_kind)
-    AND ($2::bigint IS NULL OR t.price_per_hour_minor <= $2::bigint)
+    AND ($2::bigint IS NULL OR COALESCE(lp.min_price_minor, t.price_per_hour_minor) <= $2::bigint)
     AND (
         $3::text IS NULL
         OR EXISTS (
@@ -293,8 +315,10 @@ ORDER BY
     CASE WHEN $5::text = 'recommended' THEN t.accepting_students END DESC,
     CASE WHEN $5::text = 'recommended' THEN t.rating END DESC,
     CASE WHEN $5::text = 'rating_desc' THEN t.rating END DESC,
-    CASE WHEN $5::text = 'price_asc' THEN t.price_per_hour_minor END ASC,
-    CASE WHEN $5::text = 'price_desc' THEN t.price_per_hour_minor END DESC,
+    -- Spelled out rather than reusing the from_price_minor output alias: an
+    -- alias is only visible to ORDER BY as a bare item, not inside a CASE.
+    CASE WHEN $5::text = 'price_asc' THEN COALESCE(lp.min_price_minor, t.price_per_hour_minor) END ASC,
+    CASE WHEN $5::text = 'price_desc' THEN COALESCE(lp.min_price_minor, t.price_per_hour_minor) END DESC,
     t.review_count DESC,
     t.id
 LIMIT $7::int
@@ -311,10 +335,51 @@ type ListTeachersParams struct {
 	PageLimit     int32
 }
 
+type ListTeachersRow struct {
+	ID                uuid.UUID
+	Slug              string
+	DisplayName       string
+	Headline          string
+	Kind              TeacherKind
+	CountryCode       string
+	CountryName       string
+	City              string
+	Timezone          string
+	PricePerHourMinor int64
+	TrialPriceMinor   pgtype.Int8
+	Currency          CurrencyCode
+	Rating            float32
+	ReviewCount       int32
+	LessonsCompleted  int32
+	StudentCount      int32
+	ResponseTimeHours int32
+	AcceptingStudents bool
+	AvatarUrl         string
+	VideoThumbnailUrl string
+	IntroVideoUrl     string
+	About             string
+	TeachingStyle     string
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	UserID            uuid.NullUUID
+	MeetingUrl        string
+	Status            string
+	Verified          bool
+	ModerationNote    string
+	RatingBase        float32
+	ReviewCountBase   int32
+	AvatarAssetID     uuid.NullUUID
+	IntroVideoAssetID uuid.NullUUID
+	FromPriceMinor    int64
+}
+
 // Page of teachers matching the optional filters, ordered by the requested sort.
 // Child collections (languages, focus, experience) are loaded separately by the
 // repository using the returned ids.
-func (q *Queries) ListTeachers(ctx context.Context, arg ListTeachersParams) ([]Teacher, error) {
+//
+// from_price_minor is derived, not stored: the price filter and the price sorts
+// run on it so that what a student filters by is what they can actually book.
+func (q *Queries) ListTeachers(ctx context.Context, arg ListTeachersParams) ([]ListTeachersRow, error) {
 	rows, err := q.db.Query(ctx, listTeachers,
 		arg.Kind,
 		arg.MaxPriceMinor,
@@ -328,9 +393,9 @@ func (q *Queries) ListTeachers(ctx context.Context, arg ListTeachersParams) ([]T
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Teacher{}
+	items := []ListTeachersRow{}
 	for rows.Next() {
-		var i Teacher
+		var i ListTeachersRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Slug,
@@ -366,6 +431,7 @@ func (q *Queries) ListTeachers(ctx context.Context, arg ListTeachersParams) ([]T
 			&i.ReviewCountBase,
 			&i.AvatarAssetID,
 			&i.IntroVideoAssetID,
+			&i.FromPriceMinor,
 		); err != nil {
 			return nil, err
 		}

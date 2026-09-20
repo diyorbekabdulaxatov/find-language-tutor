@@ -2,12 +2,26 @@
 -- Page of teachers matching the optional filters, ordered by the requested sort.
 -- Child collections (languages, focus, experience) are loaded separately by the
 -- repository using the returned ids.
-SELECT t.*
+--
+-- from_price_minor is derived, not stored: the price filter and the price sorts
+-- run on it so that what a student filters by is what they can actually book.
+SELECT t.*, COALESCE(lp.min_price_minor, t.price_per_hour_minor)::bigint AS from_price_minor
 FROM teachers t
+LEFT JOIN LATERAL (
+    -- The cheapest live, non-trial offering: what a card means by "from
+    -- 45,000 so'm". Trials are excluded so one cheap taster lesson can't make
+    -- a whole profile look cheap, and min() over no rows is NULL, which the
+    -- COALESCE below turns back into the teacher's headline hourly rate (a
+    -- profile whose offerings are all archived, or one made before them).
+    SELECT min(p.price_minor) AS min_price_minor
+    FROM lesson_types lt
+    JOIN lesson_type_prices p ON p.lesson_type_id = lt.id
+    WHERE lt.teacher_id = t.id AND NOT lt.archived AND NOT lt.is_trial
+) lp ON true
 WHERE
     t.status = 'approved'
     AND (sqlc.narg('kind')::teacher_kind IS NULL OR t.kind = sqlc.narg('kind')::teacher_kind)
-    AND (sqlc.narg('max_price_minor')::bigint IS NULL OR t.price_per_hour_minor <= sqlc.narg('max_price_minor')::bigint)
+    AND (sqlc.narg('max_price_minor')::bigint IS NULL OR COALESCE(lp.min_price_minor, t.price_per_hour_minor) <= sqlc.narg('max_price_minor')::bigint)
     AND (
         sqlc.narg('language')::text IS NULL
         OR EXISTS (
@@ -28,8 +42,10 @@ ORDER BY
     CASE WHEN sqlc.arg('sort')::text = 'recommended' THEN t.accepting_students END DESC,
     CASE WHEN sqlc.arg('sort')::text = 'recommended' THEN t.rating END DESC,
     CASE WHEN sqlc.arg('sort')::text = 'rating_desc' THEN t.rating END DESC,
-    CASE WHEN sqlc.arg('sort')::text = 'price_asc' THEN t.price_per_hour_minor END ASC,
-    CASE WHEN sqlc.arg('sort')::text = 'price_desc' THEN t.price_per_hour_minor END DESC,
+    -- Spelled out rather than reusing the from_price_minor output alias: an
+    -- alias is only visible to ORDER BY as a bare item, not inside a CASE.
+    CASE WHEN sqlc.arg('sort')::text = 'price_asc' THEN COALESCE(lp.min_price_minor, t.price_per_hour_minor) END ASC,
+    CASE WHEN sqlc.arg('sort')::text = 'price_desc' THEN COALESCE(lp.min_price_minor, t.price_per_hour_minor) END DESC,
     t.review_count DESC,
     t.id
 LIMIT sqlc.arg('page_limit')::int
@@ -38,10 +54,21 @@ OFFSET sqlc.arg('page_offset')::int;
 -- name: CountTeachers :one
 SELECT count(*)
 FROM teachers t
+LEFT JOIN LATERAL (
+    -- The cheapest live, non-trial offering: what a card means by "from
+    -- 45,000 so'm". Trials are excluded so one cheap taster lesson can't make
+    -- a whole profile look cheap, and min() over no rows is NULL, which the
+    -- COALESCE below turns back into the teacher's headline hourly rate (a
+    -- profile whose offerings are all archived, or one made before them).
+    SELECT min(p.price_minor) AS min_price_minor
+    FROM lesson_types lt
+    JOIN lesson_type_prices p ON p.lesson_type_id = lt.id
+    WHERE lt.teacher_id = t.id AND NOT lt.archived AND NOT lt.is_trial
+) lp ON true
 WHERE
     t.status = 'approved'
     AND (sqlc.narg('kind')::teacher_kind IS NULL OR t.kind = sqlc.narg('kind')::teacher_kind)
-    AND (sqlc.narg('max_price_minor')::bigint IS NULL OR t.price_per_hour_minor <= sqlc.narg('max_price_minor')::bigint)
+    AND (sqlc.narg('max_price_minor')::bigint IS NULL OR COALESCE(lp.min_price_minor, t.price_per_hour_minor) <= sqlc.narg('max_price_minor')::bigint)
     AND (
         sqlc.narg('language')::text IS NULL
         OR EXISTS (

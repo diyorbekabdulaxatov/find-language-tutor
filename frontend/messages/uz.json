@@ -113,7 +113,7 @@
     "viewProfile": "Profil",
     "professional": "Professional",
     "community": "Ona tili egasi",
-    "perHour": "/ soat"
+    "fromPrice": "<amount>{price}</amount>dan"
   },
   "teachersPage": {
     "metaTitle": "O'qituvchi topish",

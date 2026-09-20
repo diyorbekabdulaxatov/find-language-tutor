@@ -113,7 +113,7 @@
     "viewProfile": "Профиль",
     "professional": "Профессионал",
     "community": "Носитель",
-    "perHour": "/ час"
+    "fromPrice": "от <amount>{price}</amount>"
   },
   "teachersPage": {
     "metaTitle": "Найти преподавателя",

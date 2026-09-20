@@ -113,7 +113,7 @@
     "viewProfile": "View profile",
     "professional": "Professional",
     "community": "Community",
-    "perHour": "/ hr"
+    "fromPrice": "from <amount>{price}</amount>"
   },
   "teachersPage": {
     "metaTitle": "Find a teacher",

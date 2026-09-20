@@ -184,3 +184,88 @@ func TestLessonTypeWrites_AreScopedToTheOwner(t *testing.T) {
 		t.Fatalf("cross-owner archive: want ErrLessonTypeNotFound, got %v", err)
 	}
 }
+
+func TestDefaultLessonTypes(t *testing.T) {
+	// 120,000 so'm/hour, matching migration 000025's ((hourly*mins)+30)/60.
+	const hourly int64 = 12_000_000
+	got := DefaultLessonTypes(hourly, nil, CurrencyUZS)
+
+	if len(got) != 1 {
+		t.Fatalf("without a trial price: got %d offerings, want 1", len(got))
+	}
+	regular := got[0]
+	if regular.IsTrial {
+		t.Error("the default offering must not be the trial")
+	}
+	want := map[int]int64{30: 6_000_000, 60: 12_000_000, 90: 18_000_000, 120: 24_000_000}
+	if len(regular.Prices) != len(want) {
+		t.Fatalf("prices = %d, want %d", len(regular.Prices), len(want))
+	}
+	for _, p := range regular.Prices {
+		if w, ok := want[p.DurationMinutes]; !ok {
+			t.Errorf("unexpected duration %d", p.DurationMinutes)
+		} else if p.Price.AmountMinor != w {
+			t.Errorf("%d min = %d, want %d", p.DurationMinutes, p.Price.AmountMinor, w)
+		}
+		if p.Price.Currency != CurrencyUZS {
+			t.Errorf("%d min currency = %q", p.DurationMinutes, p.Price.Currency)
+		}
+	}
+
+	// A named trial price adds a second offering, sorted above the rest.
+	trial := int64(3_000_000)
+	got = DefaultLessonTypes(hourly, &trial, CurrencyUZS)
+	if len(got) != 2 {
+		t.Fatalf("with a trial price: got %d offerings, want 2", len(got))
+	}
+	if !got[1].IsTrial || got[1].Position >= got[0].Position {
+		t.Errorf("trial = %+v, want is_trial with a lower position than %d", got[1], got[0].Position)
+	}
+	if len(got[1].Prices) != 1 || got[1].Prices[0].Price.AmountMinor != trial {
+		t.Errorf("trial prices = %+v, want one row at %d", got[1].Prices, trial)
+	}
+}
+
+func TestProRateRoundsToNearest(t *testing.T) {
+	// 100,001 minor over 30 min is 50,000.5 → 50,001, the same rounding the
+	// migration's integer arithmetic does. Drifting here would reprice every
+	// new teacher relative to the backfilled ones.
+	for _, tc := range []struct {
+		hourly  int64
+		minutes int
+		want    int64
+	}{
+		{100_001, 30, 50_001},
+		{100_000, 30, 50_000},
+		{100_000, 45, 75_000},
+		{1, 30, 1},
+		{0, 60, 0},
+	} {
+		if got := proRate(tc.hourly, tc.minutes); got != tc.want {
+			t.Errorf("proRate(%d, %d) = %d, want %d", tc.hourly, tc.minutes, got, tc.want)
+		}
+	}
+}
+
+func TestSummaryFromPriceFallback(t *testing.T) {
+	hourly := Money{AmountMinor: 9_000_000, Currency: CurrencyUZS}
+
+	// Off the search path FromPrice is never populated, so the card still has a
+	// price to show: the hourly rate.
+	if got := fromPrice(Teacher{PricePerHour: hourly}); got != hourly {
+		t.Errorf("underived FromPrice: got %+v, want the hourly %+v", got, hourly)
+	}
+
+	// Derived by the search query: that value wins.
+	derived := Money{AmountMinor: 4_000_000, Currency: CurrencyUZS}
+	if got := fromPrice(Teacher{PricePerHour: hourly, FromPrice: derived}); got != derived {
+		t.Errorf("derived FromPrice: got %+v, want %+v", got, derived)
+	}
+
+	// A free lesson is a real price, not a missing one — lesson_type_prices
+	// allows price_minor = 0, so zero must not fall back to the hourly rate.
+	free := Money{AmountMinor: 0, Currency: CurrencyUZS}
+	if got := fromPrice(Teacher{PricePerHour: hourly, FromPrice: free}); got != free {
+		t.Errorf("free lesson: got %+v, want %+v", got, free)
+	}
+}

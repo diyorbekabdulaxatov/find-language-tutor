@@ -74,3 +74,46 @@ type LessonTypeInput struct {
 	Position    int
 	Prices      []LessonPrice
 }
+
+// DefaultLessonTypes is what a brand-new profile starts with, so no teacher
+// ever has an empty lesson list: the offering they already described through
+// their hourly rate, plus the trial when they named a trial price. It mirrors
+// migration 000025's backfill of the teachers who existed before lesson types,
+// which is why the wording and the 30/60/90/120 ladder match it exactly.
+//
+// These titles are stored content a teacher renames from the dashboard, not UI
+// chrome, so they are not run through i18n — same as the backfilled rows.
+func DefaultLessonTypes(pricePerHourMinor int64, trialPriceMinor *int64, currency Currency) []LessonTypeInput {
+	regular := LessonTypeInput{
+		Title:       "One-to-one lesson",
+		Description: "A regular lesson built around what you need that week.",
+		Position:    0,
+	}
+	for _, d := range []int{30, 60, 90, 120} {
+		regular.Prices = append(regular.Prices, LessonPrice{
+			DurationMinutes: d,
+			Price:           Money{AmountMinor: proRate(pricePerHourMinor, d), Currency: currency},
+		})
+	}
+	out := []LessonTypeInput{regular}
+
+	if trialPriceMinor != nil {
+		out = append(out, LessonTypeInput{
+			Title:       "Trial lesson",
+			Description: "A short first lesson: we talk, I find your level and we agree a plan.",
+			IsTrial:     true,
+			Position:    -1,
+			Prices: []LessonPrice{{
+				DurationMinutes: 30,
+				Price:           Money{AmountMinor: *trialPriceMinor, Currency: currency},
+			}},
+		})
+	}
+	return out
+}
+
+// proRate splits an hourly rate over a shorter lesson, rounding to the nearest
+// minor unit — the integer arithmetic migration 000025 uses.
+func proRate(pricePerHourMinor int64, minutes int) int64 {
+	return ((pricePerHourMinor * int64(minutes)) + 30) / 60
+}

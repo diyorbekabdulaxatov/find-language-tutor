@@ -2215,6 +2215,8 @@ export interface components {
             teaches: components["schemas"]["Language"][];
             also_speaks: components["schemas"]["Language"][];
             price_per_hour: components["schemas"]["Money"];
+            /** @description The cheapest lesson a student can actually book — the minimum over the teacher's live, non-trial lesson types. Trials are excluded so a cheap taster cannot make a profile look cheap. Equal to price_per_hour for a profile with no lesson types. The `price_asc` / `price_desc` sorts and the `max_price_minor` filter run on this, not on price_per_hour. */
+            from_price: components["schemas"]["Money"];
             /**
              * Format: float
              * @description Aggregate rating to one decimal.
@@ -4151,7 +4153,7 @@ export interface operations {
                 /** @description Filter to teachers who teach this language (ISO 639-1 code, e.g. `en`). */
                 language?: string;
                 kind?: components["schemas"]["TeacherKind"];
-                /** @description Only teachers whose hourly price is at or below this amount (minor units). */
+                /** @description Only teachers whose cheapest bookable lesson (from_price) is at or below this amount (minor units). */
                 max_price_minor?: number;
                 /** @description Case-insensitive substring match across name, headline, and focus tags. */
                 q?: string;

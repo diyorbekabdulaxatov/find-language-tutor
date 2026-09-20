@@ -59,9 +59,13 @@ export function TeacherCard({
 
         <Rating value={teacher.rating} reviewCount={teacher.reviewCount} variant="pill" />
 
-        <p className="text-base font-bold text-foreground">
-          {formatMoney(teacher.pricePerHour, locale)}
-          <span className="text-xs font-normal text-muted-foreground"> {t("perHour")}</span>
+        <p className="text-xs font-normal text-muted-foreground">
+          {t.rich("fromPrice", {
+            price: formatMoney(teacher.fromPrice, locale),
+            amount: (chunks) => (
+              <span className="text-base font-bold text-foreground">{chunks}</span>
+            ),
+          })}
         </p>
 
         <div className="mt-0.5 flex flex-wrap gap-1.5">
@@ -110,9 +114,13 @@ export function TeacherRow({ teacher }: { teacher: TeacherSummary }) {
             {teacher.displayName}
             {teacher.verified && <VerifiedBadge className="ml-1 inline-block align-text-bottom" />}
           </h3>
-          <p className="shrink-0 text-base font-bold text-foreground">
-            {formatMoney(teacher.pricePerHour, locale)}
-            <span className="text-xs font-normal text-muted-foreground"> {t("perHour")}</span>
+          <p className="shrink-0 text-xs font-normal text-muted-foreground">
+            {t.rich("fromPrice", {
+              price: formatMoney(teacher.fromPrice, locale),
+              amount: (chunks) => (
+                <span className="text-base font-bold text-foreground">{chunks}</span>
+              ),
+            })}
           </p>
         </div>
         <p className="line-clamp-2 text-sm text-foreground/90">{teacher.headline}</p>

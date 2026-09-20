@@ -135,6 +135,7 @@ export function toSummary(t: ApiSchemas["TeacherSummary"]): TeacherSummary {
     teaches: t.teaches,
     alsoSpeaks: t.also_speaks,
     pricePerHour: toMoney(t.price_per_hour),
+    fromPrice: toMoney(t.from_price),
     rating: t.rating,
     reviewCount: t.review_count,
     lessonsCompleted: t.lessons_completed,

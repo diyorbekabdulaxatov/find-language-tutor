@@ -63,6 +63,13 @@ export interface TeacherSummary {
   teaches: SpokenLanguage[];
   alsoSpeaks: SpokenLanguage[];
   pricePerHour: Money;
+  /**
+   * The cheapest lesson a student can actually book — the minimum over the
+   * teacher's live, non-trial lesson types, equal to pricePerHour when they
+   * have none. What the catalog's price filter and price sorts run on, and what
+   * a card shows as "from …".
+   */
+  fromPrice: Money;
   /** 0–5, one decimal */
   rating: number;
   reviewCount: number;

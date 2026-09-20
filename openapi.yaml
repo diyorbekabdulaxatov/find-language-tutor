@@ -339,7 +339,7 @@ paths:
           schema: { $ref: "#/components/schemas/TeacherKind" }
         - name: max_price_minor
           in: query
-          description: Only teachers whose hourly price is at or below this amount (minor units).
+          description: Only teachers whose cheapest bookable lesson (from_price) is at or below this amount (minor units).
           schema: { type: integer, format: int64, minimum: 0 }
         - name: q
           in: query
@@ -3622,6 +3622,7 @@ components:
         - teaches
         - also_speaks
         - price_per_hour
+        - from_price
         - rating
         - review_count
         - lessons_completed
@@ -3654,6 +3655,15 @@ components:
           type: array
           items: { $ref: "#/components/schemas/Language" }
         price_per_hour: { $ref: "#/components/schemas/Money" }
+        from_price:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: >
+            The cheapest lesson a student can actually book — the minimum over
+            the teacher's live, non-trial lesson types. Trials are excluded so a
+            cheap taster cannot make a profile look cheap. Equal to
+            price_per_hour for a profile with no lesson types. The `price_asc` /
+            `price_desc` sorts and the `max_price_minor` filter run on this, not
+            on price_per_hour.
         rating:
           type: number
           format: float

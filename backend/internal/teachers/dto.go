@@ -29,28 +29,31 @@ type experienceDTO struct {
 
 // summaryDTO is the card view used in search results.
 type summaryDTO struct {
-	ID                string        `json:"id"`
-	Slug              string        `json:"slug"`
-	DisplayName       string        `json:"display_name"`
-	Headline          string        `json:"headline"`
-	Kind              string        `json:"kind"`
-	CountryCode       string        `json:"country_code"`
-	CountryName       string        `json:"country_name"`
-	City              string        `json:"city"`
-	Timezone          string        `json:"timezone"`
-	Teaches           []languageDTO `json:"teaches"`
-	AlsoSpeaks        []languageDTO `json:"also_speaks"`
-	PricePerHour      moneyDTO      `json:"price_per_hour"`
-	Verified          bool          `json:"verified"`
-	Rating            float64       `json:"rating"`
-	ReviewCount       int           `json:"review_count"`
-	LessonsCompleted  int           `json:"lessons_completed"`
-	StudentCount      int           `json:"student_count"`
-	Focus             []string      `json:"focus"`
-	ResponseTimeHours int           `json:"response_time_hours"`
-	AcceptingStudents bool          `json:"accepting_students"`
-	AvatarURL         string        `json:"avatar_url"`
-	VideoThumbnailURL string        `json:"video_thumbnail_url"`
+	ID           string        `json:"id"`
+	Slug         string        `json:"slug"`
+	DisplayName  string        `json:"display_name"`
+	Headline     string        `json:"headline"`
+	Kind         string        `json:"kind"`
+	CountryCode  string        `json:"country_code"`
+	CountryName  string        `json:"country_name"`
+	City         string        `json:"city"`
+	Timezone     string        `json:"timezone"`
+	Teaches      []languageDTO `json:"teaches"`
+	AlsoSpeaks   []languageDTO `json:"also_speaks"`
+	PricePerHour moneyDTO      `json:"price_per_hour"`
+	// FromPrice is the cheapest lesson a student can actually book (trials
+	// excluded). Equal to price_per_hour for a profile with no lesson types.
+	FromPrice         moneyDTO `json:"from_price"`
+	Verified          bool     `json:"verified"`
+	Rating            float64  `json:"rating"`
+	ReviewCount       int      `json:"review_count"`
+	LessonsCompleted  int      `json:"lessons_completed"`
+	StudentCount      int      `json:"student_count"`
+	Focus             []string `json:"focus"`
+	ResponseTimeHours int      `json:"response_time_hours"`
+	AcceptingStudents bool     `json:"accepting_students"`
+	AvatarURL         string   `json:"avatar_url"`
+	VideoThumbnailURL string   `json:"video_thumbnail_url"`
 }
 
 // profileDTO is the full profile view. It embeds summaryDTO, so its JSON is the
@@ -287,6 +290,17 @@ func languages(ls []Language) []languageDTO {
 	return out
 }
 
+// fromPrice falls back to the hourly rate: FromPrice is derived by the search
+// query, so it is unset on the single-profile and admin paths. The currency is
+// the signal, not the amount — an offering may legitimately be priced at zero
+// (a free taster), and that must not read as "not derived".
+func fromPrice(t Teacher) Money {
+	if t.FromPrice.Currency != "" {
+		return t.FromPrice
+	}
+	return t.PricePerHour
+}
+
 func toSummary(t Teacher) summaryDTO {
 	focus := t.Focus
 	if focus == nil {
@@ -306,6 +320,7 @@ func toSummary(t Teacher) summaryDTO {
 		Teaches:           languages(t.Teaches),
 		AlsoSpeaks:        languages(t.AlsoSpeaks),
 		PricePerHour:      money(t.PricePerHour),
+		FromPrice:         money(fromPrice(t)),
 		Rating:            t.Rating,
 		ReviewCount:       t.ReviewCount,
 		LessonsCompleted:  t.LessonsCompleted,

@@ -58,7 +58,7 @@ func (r *repositoryPostgres) List(ctx context.Context, p ListParams) ([]Teacher,
 	ids := make([]uuid.UUID, len(rows))
 	byID := make(map[uuid.UUID]*Teacher, len(rows))
 	for i := range rows {
-		teachers[i] = rowToTeacher(rows[i])
+		teachers[i] = listRowToTeacher(rows[i])
 		ids[i] = rows[i].ID
 		byID[rows[i].ID] = &teachers[i]
 	}
@@ -179,6 +179,50 @@ func (r *repositoryPostgres) attachExperience(ctx context.Context, ids []uuid.UU
 
 // rowToTeacher maps a sqlc teacher row onto the domain aggregate (without
 // children — the caller attaches those).
+// listRowToTeacher maps a search row onto the shared model. ListTeachers adds
+// one derived column to teachers.*, so the stored fields go through the same
+// rowToTeacher as everywhere else and only FromPrice is filled in here.
+func listRowToTeacher(row sqlc.ListTeachersRow) Teacher {
+	t := rowToTeacher(sqlc.Teacher{
+		ID:                row.ID,
+		Slug:              row.Slug,
+		DisplayName:       row.DisplayName,
+		Headline:          row.Headline,
+		Kind:              row.Kind,
+		CountryCode:       row.CountryCode,
+		CountryName:       row.CountryName,
+		City:              row.City,
+		Timezone:          row.Timezone,
+		PricePerHourMinor: row.PricePerHourMinor,
+		TrialPriceMinor:   row.TrialPriceMinor,
+		Currency:          row.Currency,
+		Rating:            row.Rating,
+		ReviewCount:       row.ReviewCount,
+		LessonsCompleted:  row.LessonsCompleted,
+		StudentCount:      row.StudentCount,
+		ResponseTimeHours: row.ResponseTimeHours,
+		AcceptingStudents: row.AcceptingStudents,
+		AvatarUrl:         row.AvatarUrl,
+		VideoThumbnailUrl: row.VideoThumbnailUrl,
+		IntroVideoUrl:     row.IntroVideoUrl,
+		About:             row.About,
+		TeachingStyle:     row.TeachingStyle,
+		CreatedAt:         row.CreatedAt,
+		UpdatedAt:         row.UpdatedAt,
+		UserID:            row.UserID,
+		MeetingUrl:        row.MeetingUrl,
+		Status:            row.Status,
+		Verified:          row.Verified,
+		ModerationNote:    row.ModerationNote,
+		RatingBase:        row.RatingBase,
+		ReviewCountBase:   row.ReviewCountBase,
+		AvatarAssetID:     row.AvatarAssetID,
+		IntroVideoAssetID: row.IntroVideoAssetID,
+	})
+	t.FromPrice = Money{AmountMinor: row.FromPriceMinor, Currency: Currency(row.Currency)}
+	return t
+}
+
 func rowToTeacher(row sqlc.Teacher) Teacher {
 	t := Teacher{
 		ID:             row.ID,
@@ -324,10 +368,39 @@ func (r *repositoryPostgres) Create(ctx context.Context, ownerID uuid.UUID, slug
 		return uuid.Nil, err
 	}
 
+	// A new profile starts with the offerings migration 000025 backfilled for
+	// everyone who predates lesson types, in the same transaction so a teacher
+	// is never left with an empty lesson list.
+	if err := insertLessonTypes(ctx, qtx, id, DefaultLessonTypes(in.PricePerHourMinor, in.TrialPriceMinor, in.Currency)); err != nil {
+		return uuid.Nil, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return uuid.Nil, fmt.Errorf("commit: %w", err)
 	}
 	return id, nil
+}
+
+// insertLessonTypes writes offerings and their price lists on an existing
+// transaction. Used for a new profile's defaults; the CRUD path goes through
+// CreateLessonType, which owns its own transaction.
+func insertLessonTypes(ctx context.Context, q *sqlc.Queries, teacherID uuid.UUID, types []LessonTypeInput) error {
+	for _, lt := range types {
+		row, err := q.CreateLessonType(ctx, sqlc.CreateLessonTypeParams{
+			TeacherID:   teacherID,
+			Title:       lt.Title,
+			Description: lt.Description,
+			IsTrial:     lt.IsTrial,
+			Position:    int32(lt.Position),
+		})
+		if err != nil {
+			return fmt.Errorf("create default lesson type: %w", err)
+		}
+		if err := writePrices(ctx, q, row.ID, lt.Prices); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *repositoryPostgres) Update(ctx context.Context, teacherID uuid.UUID, upd ProfileUpdate) error {

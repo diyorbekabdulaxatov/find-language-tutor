@@ -115,6 +115,12 @@ type Teacher struct {
 	PricePerHour Money
 	TrialPrice   *Money // nil when no trial lesson is offered
 
+	// FromPrice is the cheapest live, non-trial lesson type — the "from
+	// 45,000 so'm" a card shows, and what the catalog's price filter and price
+	// sorts run on. Derived by the search query, so it is only populated on the
+	// list path; it falls back to PricePerHour for a profile with no offerings.
+	FromPrice Money
+
 	Rating            float64
 	ReviewCount       int
 	LessonsCompleted  int
