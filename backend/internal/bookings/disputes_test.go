@@ -340,7 +340,7 @@ func TestCancel_RecordsTheActingParticipant(t *testing.T) {
 	svc := newServiceWithGateway(repo, newFakeGateway(repo))
 
 	byStudent := storedConfirmedBooking(repo, student, owner)
-	if _, err := svc.Cancel(context.Background(), student, byStudent, "clash"); err != nil {
+	if _, err := svc.Cancel(context.Background(), student, byStudent, "clash", false); err != nil {
 		t.Fatalf("student cancel: %v", err)
 	}
 	if got := repo.store[byStudent].CancelledBy; got != CancelledByStudent {
@@ -348,7 +348,7 @@ func TestCancel_RecordsTheActingParticipant(t *testing.T) {
 	}
 
 	byTeacher := storedConfirmedBooking(repo, student, owner)
-	if _, err := svc.Cancel(context.Background(), owner, byTeacher, "ill"); err != nil {
+	if _, err := svc.Cancel(context.Background(), owner, byTeacher, "ill", false); err != nil {
 		t.Fatalf("teacher cancel: %v", err)
 	}
 	if got := repo.store[byTeacher].CancelledBy; got != CancelledByTeacher {

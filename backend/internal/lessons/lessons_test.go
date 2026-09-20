@@ -70,7 +70,7 @@ func TestReminderMessages_SkipsBlankAddresses(t *testing.T) {
 func TestCancelledMessages_SkipsTheCanceller(t *testing.T) {
 	b := sampleBooking()
 	// student cancels -> only the teacher is told.
-	msgs := CancelledMessages(b, b.Student.ID, true)
+	msgs := CancelledMessages(b, b.Student.ID, bookings.OutcomeRefunded)
 	if len(msgs) != 1 || msgs[0].To != "nodira@example.com" {
 		t.Fatalf("student-cancel: want teacher-only, got %+v", msgs)
 	}
@@ -78,7 +78,7 @@ func TestCancelledMessages_SkipsTheCanceller(t *testing.T) {
 		t.Errorf("refund note missing: %s", msgs[0].TextBody)
 	}
 	// teacher cancels -> only the student is told.
-	msgs = CancelledMessages(b, b.TeacherOwnerID, false)
+	msgs = CancelledMessages(b, b.TeacherOwnerID, bookings.OutcomeUnpaid)
 	if len(msgs) != 1 || msgs[0].To != "aziz@example.com" {
 		t.Fatalf("teacher-cancel: want student-only, got %+v", msgs)
 	}

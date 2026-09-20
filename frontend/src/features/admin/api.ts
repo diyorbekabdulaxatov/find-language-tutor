@@ -572,6 +572,8 @@ export interface AdminBookingDetail extends AdminBookingRow {
   cancelledAt: string | null;
   cancelledBy: "" | "student" | "teacher" | "admin";
   cancellationReason: string;
+  /** what happened to the money: "" (settled elsewhere / legacy), refunded, forfeited, unpaid */
+  cancellationOutcome: "" | "refunded" | "forfeited" | "unpaid";
   disputes: AdminBookingDispute[];
 }
 
@@ -645,6 +647,7 @@ export async function getAdminBooking(id: string): Promise<AdminBookingDetail> {
     cancelledAt: w.cancelled_at,
     cancelledBy: w.cancelled_by,
     cancellationReason: w.cancellation_reason,
+    cancellationOutcome: w.cancellation_outcome ?? "",
     disputes: w.disputes.map(toBookingDispute),
   };
 }

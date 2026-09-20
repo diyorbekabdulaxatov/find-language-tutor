@@ -130,7 +130,7 @@ func (f *fakeRepo) SetStatus(_ context.Context, id uuid.UUID, status Status) (Bo
 	return b, nil
 }
 
-func (f *fakeRepo) Cancel(_ context.Context, id uuid.UUID, reason, by string) (Booking, error) {
+func (f *fakeRepo) Cancel(_ context.Context, id uuid.UUID, reason, by string, outcome CancellationOutcome) (Booking, error) {
 	if f.statusErr != nil {
 		return Booking{}, f.statusErr
 	}
@@ -140,6 +140,7 @@ func (f *fakeRepo) Cancel(_ context.Context, id uuid.UUID, reason, by string) (B
 	b.CancelledAt = &t
 	b.CancellationReason = reason
 	b.CancelledBy = by
+	b.CancellationOutcome = outcome
 	f.store[id] = b
 	return b, nil
 }
@@ -180,19 +181,21 @@ type fakeNotifier struct {
 	confirmed []uuid.UUID
 	cancelled []uuid.UUID
 	refunded  map[uuid.UUID]bool
+	outcomes  map[uuid.UUID]CancellationOutcome
 }
 
 func newFakeNotifier() *fakeNotifier {
-	return &fakeNotifier{refunded: map[uuid.UUID]bool{}}
+	return &fakeNotifier{refunded: map[uuid.UUID]bool{}, outcomes: map[uuid.UUID]CancellationOutcome{}}
 }
 
 func (n *fakeNotifier) BookingConfirmed(_ context.Context, b Booking) {
 	n.confirmed = append(n.confirmed, b.ID)
 }
 
-func (n *fakeNotifier) BookingCancelled(_ context.Context, b Booking, _ uuid.UUID, refunded bool) {
+func (n *fakeNotifier) BookingCancelled(_ context.Context, b Booking, _ uuid.UUID, outcome CancellationOutcome) {
 	n.cancelled = append(n.cancelled, b.ID)
-	n.refunded[b.ID] = refunded
+	n.refunded[b.ID] = outcome == OutcomeRefunded
+	n.outcomes[b.ID] = outcome
 }
 
 // newService builds a Service over the fake repo with a frozen clock and a

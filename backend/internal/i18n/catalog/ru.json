@@ -135,7 +135,6 @@
   "Request body must be {\"rating\": 1-5, \"comment\"?: string}.": "Тело запроса должно быть {\"rating\": 1-5, \"comment\"?: string}.",
   "Request body must be {\"reason\": string, \"refund\"?: bool}.": "Тело запроса должно быть {\"reason\": string, \"refund\"?: bool}.",
   "Request body must be {\"reason\": string}.": "Тело запроса должно быть {\"reason\": string}.",
-  "Request body must be {\"reason\"?: string}.": "Тело запроса должно быть {\"reason\"?: string}.",
   "Request body must be {\"resource_id\", \"kind\": \"material\"|\"homework\", \"due_at\"?}.": "Тело запроса должно быть {\"resource_id\", \"kind\": \"material\"|\"homework\", \"due_at\"?}.",
   "Request body must be {\"role_id\": \"<uuid>\"}.": "Тело запроса должно быть {\"role_id\": \"<uuid>\"}.",
   "Request body must be {\"score\"?: integer, \"feedback\": string}.": "Тело запроса должно быть {\"score\"?: integer, \"feedback\": string}.",
@@ -326,5 +325,12 @@
   "too many slots: %d (max %d)": "слишком много слотов: %d (максимум %d)",
   "trial_price_minor must be >= 0.": "trial_price_minor должен быть >= 0.",
   "unknown permission %q.": "неизвестное право %q.",
-  "weekday %d: slots %d–%d and %d–%d overlap": "день %d: слоты %d–%d и %d–%d пересекаются"
+  "weekday %d: slots %d–%d and %d–%d overlap": "день %d: слоты %d–%d и %d–%d пересекаются",
+  "Free cancellation ended %d hours before the lesson. Cancelling now means the full fee is charged.": "Бесплатная отмена закончилась за %d ч. до урока. Если отменить сейчас, будет списана полная стоимость.",
+  "It was cancelled after the free-cancellation deadline, so the full fee has been charged.": "Урок отменён после окончания срока бесплатной отмены, поэтому списана полная стоимость.",
+  "It was cancelled after the free-cancellation deadline, so you will be paid the full fee as for a completed lesson.": "Урок отменён после окончания срока бесплатной отмены, поэтому вы получите полную оплату, как за проведённый урок.",
+  "No payment had been taken for this lesson.": "Оплата за этот урок не списывалась.",
+  "Request body must be {\"reason\"?: string, \"acknowledge_forfeit\"?: boolean}.": "Тело запроса должно быть {\"reason\"?: string, \"acknowledge_forfeit\"?: boolean}.",
+  "The student has been refunded in full.": "Ученику возвращена полная сумма.",
+  "The time is open again in your calendar.": "Это время снова свободно в вашем календаре."
 }

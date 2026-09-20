@@ -252,7 +252,7 @@ func TestService_Cancel_CancelsRemindersAndNotifies(t *testing.T) {
 	svc.reminders = sched
 	svc.notifier = notif
 
-	if _, err := svc.Cancel(ctx(), student, id, "changed my mind"); err != nil {
+	if _, err := svc.Cancel(ctx(), student, id, "changed my mind", false); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
 	if len(sched.cancelled) != 1 || sched.cancelled[0] != id {
@@ -294,7 +294,7 @@ func TestService_NilReminderSchedulerAndNotifier_AreNoOps(t *testing.T) {
 	if _, _, err := svc.Pay(ctx(), student, id, "pm_ok"); err != nil {
 		t.Fatalf("pay with nil ports: %v", err)
 	}
-	if _, err := svc.Cancel(ctx(), student, id, ""); err != nil {
+	if _, err := svc.Cancel(ctx(), student, id, "", false); err != nil {
 		t.Fatalf("cancel with nil ports: %v", err)
 	}
 }

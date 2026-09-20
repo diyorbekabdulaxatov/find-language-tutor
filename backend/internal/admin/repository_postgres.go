@@ -320,12 +320,13 @@ func (r *repositoryPostgres) GetBookingDetail(ctx context.Context, id uuid.UUID)
 			CreatedAt:      row.CreatedAt.Time.UTC(),
 			HasOpenDispute: row.HasOpenDispute,
 		},
-		DurationMinutes:    int(row.DurationMinutes),
-		IsTrial:            row.IsTrial,
-		MeetingURL:         row.MeetingUrl,
-		NoShowParty:        row.NoShowParty,
-		CancelledBy:        row.CancelledBy,
-		CancellationReason: row.CancellationReason,
+		DurationMinutes:     int(row.DurationMinutes),
+		IsTrial:             row.IsTrial,
+		MeetingURL:          row.MeetingUrl,
+		NoShowParty:         row.NoShowParty,
+		CancelledBy:         row.CancelledBy,
+		CancellationReason:  row.CancellationReason,
+		CancellationOutcome: row.CancellationOutcome,
 	}
 	if row.CancelledAt.Valid {
 		t := row.CancelledAt.Time.UTC()

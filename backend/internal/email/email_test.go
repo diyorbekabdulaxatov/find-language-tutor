@@ -67,13 +67,18 @@ func TestTemplates_IncludeMeetingLinkAndTime(t *testing.T) {
 		t.Errorf("24h reminder text wrong: %s", r24)
 	}
 
-	_, _, ctext := BookingCancelledContent("en", li, true)
+	_, _, ctext := BookingCancelledContent("en", li, CancelRefunded, false)
 	if !strings.Contains(ctext, "refunded") {
 		t.Errorf("cancelled text missing refund note: %s", ctext)
 	}
-	_, _, cnote := BookingCancelledContent("en", li, false)
+	_, _, cnote := BookingCancelledContent("en", li, CancelUnpaid, false)
 	if strings.Contains(cnote, "has been refunded") {
 		t.Errorf("no-refund note should not claim a refund: %s", cnote)
+	}
+	// The teacher's copy names the student and, on a forfeit, the payout.
+	csub, _, cteach := BookingCancelledContent("en", li, CancelForfeited, true)
+	if !strings.Contains(csub, li.StudentName) || !strings.Contains(cteach, "paid the full fee") {
+		t.Errorf("teacher forfeit copy wrong: %s / %s", csub, cteach)
 	}
 }
 

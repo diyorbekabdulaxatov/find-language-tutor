@@ -574,8 +574,9 @@ export interface paths {
         put?: never;
         /**
          * Cancel a booking
-         * @description Moves `pending_payment` or `confirmed` -> `cancelled`, recording `cancelled_at` and the optional `reason`. Participant-only. For the MVP cancellation is allowed at any time (no window / penalties yet). Already `completed` or `cancelled` -> 409.
-         *     Payment side effects: an `authorized` intent is refunded in full (the hold is released); an intent that was never authorised is voided. If a payout-ledger row exists it is reversed.
+         * @description Moves `pending_payment` or `confirmed` -> `cancelled`, recording `cancelled_at`, the optional `reason`, who cancelled and what happened to the money (`cancellation_outcome`). Participant-only. Already `completed` or `cancelled` -> 409 `invalid_state`.
+         *     **Cancellation policy.** A teacher may cancel at any time; the student is always refunded in full. A student may cancel for a full refund until `cancellation_policy.free_cancel_until` (24 hours before the start by default). After that the fee is **forfeited**: the hold is captured and paid to the teacher exactly as for a completed lesson. A late student cancellation must carry `acknowledge_forfeit: true` or it is refused with 409 `late_cancellation` and nothing changes, so no client can charge a student by accident. An unpaid (`pending_payment`) booking is simply dropped at any time.
+         *     Payment side effects: refund → an `authorized` intent's hold is released (a never-authorised intent is voided) and any payout-ledger row is reversed; forfeit → the intent is captured and the teacher's ledger row is written. A capture failure leaves the booking `confirmed` and answers 502 `capture_failed`.
          */
         post: operations["cancelBooking"];
         delete?: never;
@@ -2514,6 +2515,13 @@ export interface components {
              * @enum {string}
              */
             cancelled_by: "" | "student" | "teacher" | "admin";
+            /**
+             * @description What happened to the money when the booking was cancelled: `refunded` (hold released / capture refunded), `forfeited` (a late student cancellation — captured and paid to the teacher) or `unpaid` (no payment had been taken). Null while not cancelled, and for an operator cancel that settled the money elsewhere.
+             * @enum {string|null}
+             */
+            cancellation_outcome?: "refunded" | "forfeited" | "unpaid" | null;
+            /** @description Set while the booking is `pending_payment` or `confirmed`; null once completed or cancelled. */
+            cancellation_policy?: components["schemas"]["CancellationPolicy"] | null;
             /** @description The effective video link (the per-booking override if set, else the teacher's default `meeting_url`). Present ONLY when the caller is a participant AND `status` is `confirmed` or `completed`; omitted for everyone else (it never leaks to a `pending_payment` booking or a non-participant). */
             meeting_url?: string;
             /**
@@ -2655,6 +2663,21 @@ export interface components {
         /** @description Optional body. Omit entirely for a reason-less cancellation. */
         CancelBookingRequest: {
             reason?: string;
+            /**
+             * @description Required (true) for a student cancelling after `cancellation_policy.free_cancel_until`: confirms they accept that the full fee is charged. Ignored for teachers and for unpaid bookings.
+             * @default false
+             */
+            acknowledge_forfeit: boolean;
+        };
+        /** @description The student-facing cancellation rule for one booking, present while it can still be cancelled. */
+        CancellationPolicy: {
+            /**
+             * Format: date-time
+             * @description A student cancellation up to this instant is refunded in full.
+             */
+            free_cancel_until: string;
+            /** @description True once `free_cancel_until` has passed: a student cancellation now forfeits the fee (the teacher is paid). A teacher cancellation still refunds. */
+            late: boolean;
         };
         MeetingLinkRequest: {
             /** @description An http(s) URL for the lesson's video room, or an empty string to clear the per-booking override. */
@@ -3702,6 +3725,8 @@ export interface components {
             /** @enum {string} */
             cancelled_by: "" | "student" | "teacher" | "admin";
             cancellation_reason: string;
+            /** @enum {string} */
+            cancellation_outcome?: "" | "refunded" | "forfeited" | "unpaid";
             /** @description The booking's full dispute thread, newest first. */
             disputes: components["schemas"]["AdminBookingDispute"][];
         };
@@ -4906,8 +4931,17 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description The booking is already completed or cancelled (`invalid_state`). */
+            /** @description The booking is already completed or cancelled (`invalid_state`), or a student is cancelling after `free_cancel_until` without `acknowledge_forfeit` (`late_cancellation`). */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The forfeit capture was refused by the provider (`capture_failed`); the booking stays `confirmed`. */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

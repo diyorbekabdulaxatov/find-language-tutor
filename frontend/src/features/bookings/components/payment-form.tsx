@@ -13,6 +13,7 @@ import {
   type Booking,
   type MethodToken,
 } from "@/features/bookings/api";
+import { FREE_CANCEL_HOURS } from "@/lib/policy";
 
 /**
  * The simulated payment step. There is no real PSP yet — the backend's fake
@@ -108,7 +109,7 @@ export function PaymentForm({
       >
         {paying ? t("processing") : t("pay", { amount: formatMoney(amount, locale) })}
       </button>
-      <p className="text-center text-xs text-muted-foreground">{t("teacherPaidAfter")}</p>
+      <p className="text-center text-xs text-muted-foreground">{t("teacherPaidAfter", { hours: FREE_CANCEL_HOURS })}</p>
     </div>
   );
 }

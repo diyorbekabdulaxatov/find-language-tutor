@@ -147,8 +147,10 @@ type Querier interface {
 	// repository to ErrAlreadyAttached — race-safe, never a check-then-insert.
 	AttachBookingResource(ctx context.Context, arg AttachBookingResourceParams) (AttachBookingResourceRow, error)
 	// cancelled_by records WHO cancelled: 'student', 'teacher' (includes a teacher
-	// no-show) or 'admin' (the operator force-cancel override). The service picks
-	// the value; the column's CHECK constraint is the guard.
+	// no-show) or 'admin' (the operator force-cancel override); cancellation_outcome
+	// what happened to the money (refunded / forfeited / unpaid, see migration
+	// 000027). The service picks both values; the columns' CHECK constraints are
+	// the guard.
 	CancelBooking(ctx context.Context, arg CancelBookingParams) error
 	// Catalog: published, non-archived, non-suspended courses only, from an
 	// approved teacher (mirrors GetBookingTeacherContext's status = 'approved'

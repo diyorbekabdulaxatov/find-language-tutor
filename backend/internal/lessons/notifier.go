@@ -32,8 +32,8 @@ func (n *Notifier) BookingConfirmed(ctx context.Context, b bookings.Booking) {
 	n.send(ctx, "booking_confirmed", b.ID, ConfirmedMessages(b))
 }
 
-func (n *Notifier) BookingCancelled(ctx context.Context, b bookings.Booking, cancelledBy uuid.UUID, refunded bool) {
-	n.send(ctx, "booking_cancelled", b.ID, CancelledMessages(b, cancelledBy, refunded))
+func (n *Notifier) BookingCancelled(ctx context.Context, b bookings.Booking, cancelledBy uuid.UUID, outcome bookings.CancellationOutcome) {
+	n.send(ctx, "booking_cancelled", b.ID, CancelledMessages(b, cancelledBy, outcome))
 }
 
 func (n *Notifier) send(ctx context.Context, kind string, bookingID uuid.UUID, msgs []email.Message) {

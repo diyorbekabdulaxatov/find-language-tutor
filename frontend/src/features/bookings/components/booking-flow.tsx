@@ -25,6 +25,7 @@ import {
 import { PaymentForm } from "@/features/bookings/components/payment-form";
 import { TeacherAvatar } from "@/features/teachers/components/teacher-avatar";
 import type { LessonType } from "@/features/teachers/api";
+import { FREE_CANCEL_HOURS } from "@/lib/policy";
 
 type Step = "lesson" | "pick" | "confirm" | "pay" | "done";
 
@@ -333,7 +334,7 @@ export function BookingFlow({
                 <Row label={t("price")}>{formatMoney(selection.slot.price, locale)}</Row>
               </dl>
 
-              <p className="mt-4 bg-muted p-3 text-xs text-muted-foreground">{t("nextPay")}</p>
+              <p className="mt-4 bg-muted p-3 text-xs text-muted-foreground">{t("nextPay", { hours: FREE_CANCEL_HOURS })}</p>
 
               <button
                 type="button"
@@ -406,7 +407,7 @@ export function BookingFlow({
             <span className="font-display text-2xl">{formatMoney(price, locale)}</span>
           </div>
 
-          <p className="mt-3 text-xs text-muted-foreground">{t("teacherPaidAfter")}</p>
+          <p className="mt-3 text-xs text-muted-foreground">{t("teacherPaidAfter", { hours: FREE_CANCEL_HOURS })}</p>
         </div>
       </aside>
     </div>

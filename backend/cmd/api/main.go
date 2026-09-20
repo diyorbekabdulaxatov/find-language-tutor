@@ -122,6 +122,7 @@ func run(logger *slog.Logger) error {
 	)
 
 	bookingService := bookings.NewService(bookings.NewPostgresRepository(pool))
+	bookingService.SetFreeCancelWindow(time.Duration(cfg.BookingsFreeCancelHours) * time.Hour)
 	bookingHandler := bookings.NewHandler(bookingService, logger)
 
 	// Phase 5: lesson reminders (asynq) + transactional email. Both are optional

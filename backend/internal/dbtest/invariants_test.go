@@ -221,6 +221,27 @@ func TestBookings_OneTrialPerStudentPerTeacher(t *testing.T) {
 	}
 }
 
+// TestBookings_CancellationOutcomeIsConstrained pins migration 000027: the
+// outcome column only takes the values the service writes.
+func TestBookings_CancellationOutcomeIsConstrained(t *testing.T) {
+	pool := Pool(t)
+	f := seed(t, pool)
+	ctx := context.Background()
+	id, err := f.booking(t, f.student, time.Date(2030, 1, 6, 9, 0, 0, 0, time.UTC), 60, "confirmed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ok := range []string{"refunded", "forfeited", "unpaid", ""} {
+		if _, err := pool.Exec(ctx, `UPDATE bookings SET cancellation_outcome = $2 WHERE id = $1`, id, ok); err != nil {
+			t.Fatalf("outcome %q should be allowed: %v", ok, err)
+		}
+	}
+	_, err = pool.Exec(ctx, `UPDATE bookings SET cancellation_outcome = 'partial' WHERE id = $1`, id)
+	if pgCode(err) != sqlstateCheck {
+		t.Fatalf("bogus outcome: err=%v, want SQLSTATE %s", err, sqlstateCheck)
+	}
+}
+
 // TestPayments_WebhookReplayIsANoOp checks the insert-first idempotency
 // gate end to end through the real repository: the second delivery of the
 // same event id must neither error nor apply twice.

@@ -164,6 +164,9 @@ export function BookingModeration({ id }: { id: string }) {
                 {data.cancelledBy && ` ${t("cancelledBy", { who: data.cancelledBy })}`}
               </Row>
               <Row label={t("reason")}>{data.cancellationReason || "—"}</Row>
+              <Row label={t("moneyOutcome")}>
+                {data.cancellationOutcome ? t(`outcome.${data.cancellationOutcome}`) : "—"}
+              </Row>
             </>
           )}
         </dl>

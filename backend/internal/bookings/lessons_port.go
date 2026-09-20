@@ -46,6 +46,6 @@ type Notifier interface {
 	BookingConfirmed(ctx context.Context, b Booking)
 
 	// BookingCancelled is sent to the OTHER party on a cancellation / teacher
-	// no-show. refunded says whether the student's payment was returned.
-	BookingCancelled(ctx context.Context, b Booking, cancelledBy uuid.UUID, refunded bool)
+	// no-show. outcome says what happened to the student's payment.
+	BookingCancelled(ctx context.Context, b Booking, cancelledBy uuid.UUID, outcome CancellationOutcome)
 }

@@ -40,6 +40,14 @@ type bookingLessonTypeDTO struct {
 	Title string `json:"title"`
 }
 
+// cancellationPolicyDTO is the student-facing cancellation rule for one booking.
+type cancellationPolicyDTO struct {
+	FreeCancelUntil time.Time `json:"free_cancel_until"`
+	// Late is true once free_cancel_until has passed: a student cancellation
+	// now forfeits the fee (the teacher is paid); a teacher's still refunds.
+	Late bool `json:"late"`
+}
+
 type bookingDTO struct {
 	ID                 string     `json:"id"`
 	Status             string     `json:"status"`
@@ -54,6 +62,13 @@ type bookingDTO struct {
 	// CancelledBy is "" until the booking is cancelled, then student / teacher /
 	// admin (an operator force-cancel).
 	CancelledBy string `json:"cancelled_by"`
+	// CancellationOutcome is null until cancelled, then refunded / forfeited /
+	// unpaid (null also for an operator cancel that settled the money elsewhere).
+	CancellationOutcome *string `json:"cancellation_outcome"`
+	// CancellationPolicy is set while the booking can still be cancelled
+	// (pending_payment / confirmed): the free-cancellation deadline and whether
+	// it has passed. null once the lesson is completed or cancelled.
+	CancellationPolicy *cancellationPolicyDTO `json:"cancellation_policy"`
 	// MeetingURL is the effective video link — present ONLY when the caller is a
 	// participant AND the booking is confirmed or completed. Empty/omitted for
 	// everyone else (it must not leak to a pending_payment booking or a
@@ -150,6 +165,10 @@ type createBookingRequest struct {
 
 type cancelBookingRequest struct {
 	Reason string `json:"reason"`
+	// AcknowledgeForfeit must be true for a student to cancel inside the free
+	// window (the fee is charged); without it the service answers 409
+	// late_cancellation so no client can charge a student by accident.
+	AcknowledgeForfeit bool `json:"acknowledge_forfeit"`
 }
 
 type payBookingRequest struct {
@@ -184,21 +203,22 @@ func meetingURLFor(b Booking, viewerID uuid.UUID) string {
 
 func toBookingDTO(b Booking, viewerID uuid.UUID) bookingDTO {
 	return bookingDTO{
-		Resources:          []bookingResourceDTO{},
-		ID:                 b.ID.String(),
-		Status:             string(b.Status),
-		StartAt:            b.StartAt.UTC(),
-		EndAt:              b.EndAt.UTC(),
-		DurationMinutes:    b.DurationMinutes,
-		IsTrial:            b.IsTrial,
-		LessonType:         toBookingLessonTypeDTO(b),
-		Price:              toMoneyDTO(b.Price),
-		CreatedAt:          b.CreatedAt.UTC(),
-		CancelledAt:        utcPtr(b.CancelledAt),
-		CancellationReason: b.CancellationReason,
-		CancelledBy:        b.CancelledBy,
-		MeetingURL:         meetingURLFor(b, viewerID),
-		NoShowParty:        b.NoShowParty,
+		Resources:           []bookingResourceDTO{},
+		ID:                  b.ID.String(),
+		Status:              string(b.Status),
+		StartAt:             b.StartAt.UTC(),
+		EndAt:               b.EndAt.UTC(),
+		DurationMinutes:     b.DurationMinutes,
+		IsTrial:             b.IsTrial,
+		LessonType:          toBookingLessonTypeDTO(b),
+		Price:               toMoneyDTO(b.Price),
+		CreatedAt:           b.CreatedAt.UTC(),
+		CancelledAt:         utcPtr(b.CancelledAt),
+		CancellationReason:  b.CancellationReason,
+		CancelledBy:         b.CancelledBy,
+		CancellationOutcome: optString(string(b.CancellationOutcome)),
+		MeetingURL:          meetingURLFor(b, viewerID),
+		NoShowParty:         b.NoShowParty,
 		Teacher: teacherSummaryDTO{
 			Slug:        b.Teacher.Slug,
 			DisplayName: b.Teacher.DisplayName,
@@ -210,6 +230,21 @@ func toBookingDTO(b Booking, viewerID uuid.UUID) bookingDTO {
 			DisplayName: b.Student.DisplayName,
 		},
 	}
+}
+
+func optString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// withPolicy attaches the cancellation policy to a still-cancellable booking.
+func withPolicy(dto bookingDTO, b Booking, p CancellationPolicy) bookingDTO {
+	if b.Status == StatusPendingPayment || b.Status == StatusConfirmed {
+		dto.CancellationPolicy = &cancellationPolicyDTO{FreeCancelUntil: p.FreeCancelUntil.UTC(), Late: p.Late}
+	}
+	return dto
 }
 
 func toBookingDTOWithPayment(b Booking, snap *PaymentSnapshot, viewerID uuid.UUID) bookingDTO {

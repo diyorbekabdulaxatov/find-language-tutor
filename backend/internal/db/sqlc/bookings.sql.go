@@ -15,21 +15,29 @@ import (
 const cancelBooking = `-- name: CancelBooking :exec
 UPDATE bookings
 SET status = 'cancelled', cancelled_at = now(), cancellation_reason = $2,
-    cancelled_by = $3, updated_at = now()
+    cancelled_by = $3, cancellation_outcome = $4, updated_at = now()
 WHERE id = $1
 `
 
 type CancelBookingParams struct {
-	ID                 uuid.UUID
-	CancellationReason string
-	CancelledBy        string
+	ID                  uuid.UUID
+	CancellationReason  string
+	CancelledBy         string
+	CancellationOutcome string
 }
 
 // cancelled_by records WHO cancelled: 'student', 'teacher' (includes a teacher
-// no-show) or 'admin' (the operator force-cancel override). The service picks
-// the value; the column's CHECK constraint is the guard.
+// no-show) or 'admin' (the operator force-cancel override); cancellation_outcome
+// what happened to the money (refunded / forfeited / unpaid, see migration
+// 000027). The service picks both values; the columns' CHECK constraints are
+// the guard.
 func (q *Queries) CancelBooking(ctx context.Context, arg CancelBookingParams) error {
-	_, err := q.db.Exec(ctx, cancelBooking, arg.ID, arg.CancellationReason, arg.CancelledBy)
+	_, err := q.db.Exec(ctx, cancelBooking,
+		arg.ID,
+		arg.CancellationReason,
+		arg.CancelledBy,
+		arg.CancellationOutcome,
+	)
 	return err
 }
 
@@ -90,7 +98,8 @@ const getBookingByID = `-- name: GetBookingByID :one
 SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
-    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.created_at, b.updated_at,
+    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.cancellation_outcome,
+    b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
     b.lesson_type_id,
@@ -115,36 +124,37 @@ WHERE b.id = $1
 `
 
 type GetBookingByIDRow struct {
-	ID                 uuid.UUID
-	TeacherID          uuid.UUID
-	StudentID          uuid.UUID
-	StartAt            pgtype.Timestamptz
-	EndAt              pgtype.Timestamptz
-	DurationMinutes    int32
-	Status             string
-	PriceMinor         int64
-	Currency           string
-	IsTrial            bool
-	CancelledAt        pgtype.Timestamptz
-	CancellationReason string
-	CancelledBy        string
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
-	MeetingUrlOverride string
-	NoShowParty        string
-	LessonTypeID       uuid.NullUUID
-	LessonTypeTitle    pgtype.Text
-	TeacherSlug        string
-	TeacherDisplayName string
-	TeacherTimezone    string
-	TeacherAvatarUrl   string
-	TeacherUserID      uuid.NullUUID
-	TeacherMeetingUrl  string
-	TeacherEmail       string
-	TeacherLocale      string
-	StudentDisplayName string
-	StudentEmail       string
-	StudentLocale      string
+	ID                  uuid.UUID
+	TeacherID           uuid.UUID
+	StudentID           uuid.UUID
+	StartAt             pgtype.Timestamptz
+	EndAt               pgtype.Timestamptz
+	DurationMinutes     int32
+	Status              string
+	PriceMinor          int64
+	Currency            string
+	IsTrial             bool
+	CancelledAt         pgtype.Timestamptz
+	CancellationReason  string
+	CancelledBy         string
+	CancellationOutcome string
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	MeetingUrlOverride  string
+	NoShowParty         string
+	LessonTypeID        uuid.NullUUID
+	LessonTypeTitle     pgtype.Text
+	TeacherSlug         string
+	TeacherDisplayName  string
+	TeacherTimezone     string
+	TeacherAvatarUrl    string
+	TeacherUserID       uuid.NullUUID
+	TeacherMeetingUrl   string
+	TeacherEmail        string
+	TeacherLocale       string
+	StudentDisplayName  string
+	StudentEmail        string
+	StudentLocale       string
 }
 
 func (q *Queries) GetBookingByID(ctx context.Context, id uuid.UUID) (GetBookingByIDRow, error) {
@@ -164,6 +174,7 @@ func (q *Queries) GetBookingByID(ctx context.Context, id uuid.UUID) (GetBookingB
 		&i.CancelledAt,
 		&i.CancellationReason,
 		&i.CancelledBy,
+		&i.CancellationOutcome,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.MeetingUrlOverride,
@@ -276,7 +287,8 @@ const listBookings = `-- name: ListBookings :many
 SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
-    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.created_at, b.updated_at,
+    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.cancellation_outcome,
+    b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
     b.lesson_type_id,
@@ -309,36 +321,37 @@ type ListBookingsParams struct {
 }
 
 type ListBookingsRow struct {
-	ID                 uuid.UUID
-	TeacherID          uuid.UUID
-	StudentID          uuid.UUID
-	StartAt            pgtype.Timestamptz
-	EndAt              pgtype.Timestamptz
-	DurationMinutes    int32
-	Status             string
-	PriceMinor         int64
-	Currency           string
-	IsTrial            bool
-	CancelledAt        pgtype.Timestamptz
-	CancellationReason string
-	CancelledBy        string
-	CreatedAt          pgtype.Timestamptz
-	UpdatedAt          pgtype.Timestamptz
-	MeetingUrlOverride string
-	NoShowParty        string
-	LessonTypeID       uuid.NullUUID
-	LessonTypeTitle    pgtype.Text
-	TeacherSlug        string
-	TeacherDisplayName string
-	TeacherTimezone    string
-	TeacherAvatarUrl   string
-	TeacherUserID      uuid.NullUUID
-	TeacherMeetingUrl  string
-	TeacherEmail       string
-	TeacherLocale      string
-	StudentDisplayName string
-	StudentEmail       string
-	StudentLocale      string
+	ID                  uuid.UUID
+	TeacherID           uuid.UUID
+	StudentID           uuid.UUID
+	StartAt             pgtype.Timestamptz
+	EndAt               pgtype.Timestamptz
+	DurationMinutes     int32
+	Status              string
+	PriceMinor          int64
+	Currency            string
+	IsTrial             bool
+	CancelledAt         pgtype.Timestamptz
+	CancellationReason  string
+	CancelledBy         string
+	CancellationOutcome string
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	MeetingUrlOverride  string
+	NoShowParty         string
+	LessonTypeID        uuid.NullUUID
+	LessonTypeTitle     pgtype.Text
+	TeacherSlug         string
+	TeacherDisplayName  string
+	TeacherTimezone     string
+	TeacherAvatarUrl    string
+	TeacherUserID       uuid.NullUUID
+	TeacherMeetingUrl   string
+	TeacherEmail        string
+	TeacherLocale       string
+	StudentDisplayName  string
+	StudentEmail        string
+	StudentLocale       string
 }
 
 // Bookings the caller participates in. Pass the caller's user id as
@@ -367,6 +380,7 @@ func (q *Queries) ListBookings(ctx context.Context, arg ListBookingsParams) ([]L
 			&i.CancelledAt,
 			&i.CancellationReason,
 			&i.CancelledBy,
+			&i.CancellationOutcome,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.MeetingUrlOverride,

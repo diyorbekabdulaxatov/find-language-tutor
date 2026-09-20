@@ -460,7 +460,7 @@ func TestService_Cancel(t *testing.T) {
 
 	repo := newFakeRepo()
 	id := seedBooking(repo, StatusConfirmed, student, owner)
-	b, err := newService(repo).Cancel(ctx(), student, id, "  changed my mind  ")
+	b, err := newService(repo).Cancel(ctx(), student, id, "  changed my mind  ", false)
 	if err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
@@ -472,7 +472,7 @@ func TestService_Cancel(t *testing.T) {
 	}
 
 	// cancelling again -> already cancelled
-	if _, err := newService(repo).Cancel(ctx(), student, id, ""); !errors.Is(err, ErrInvalidTransition) {
+	if _, err := newService(repo).Cancel(ctx(), student, id, "", false); !errors.Is(err, ErrInvalidTransition) {
 		t.Errorf("err = %v, want ErrInvalidTransition", err)
 	}
 }
@@ -485,7 +485,7 @@ func TestService_Cancel_Completed(t *testing.T) {
 	// use a real participant
 	student := b.Student.ID
 	repo.store[id] = b
-	if _, err := newService(repo).Cancel(ctx(), student, id, ""); !errors.Is(err, ErrInvalidTransition) {
+	if _, err := newService(repo).Cancel(ctx(), student, id, "", false); !errors.Is(err, ErrInvalidTransition) {
 		t.Errorf("err = %v, want ErrInvalidTransition", err)
 	}
 }
@@ -497,7 +497,7 @@ func TestService_Cancel_RefundsAuthorizedPayment(t *testing.T) {
 	gw := newFakeGateway(repo)
 	gw.status[id] = "authorized"
 
-	b, err := newServiceWithGateway(repo, gw).Cancel(ctx(), student, id, "changed my mind")
+	b, err := newServiceWithGateway(repo, gw).Cancel(ctx(), student, id, "changed my mind", false)
 	if err != nil {
 		t.Fatalf("cancel: %v", err)
 	}

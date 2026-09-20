@@ -86,6 +86,11 @@ type Config struct {
 	// PAYOUTS_CLEARING_DAYS, default 7; 0 makes earnings payable immediately.
 	PayoutsClearingDays int
 
+	// BookingsFreeCancelHours is how long before a lesson a student may still
+	// cancel for a full refund; later the fee is forfeited to the teacher.
+	// BOOKINGS_FREE_CANCEL_HOURS, default 24.
+	BookingsFreeCancelHours int
+
 	// CoursesTeacherSharePercent is the teacher's cut of a course sale (the
 	// rest is the platform's take) — distinct from the 100%-passthrough
 	// lesson-booking ledger, where the whole captured price becomes the
@@ -142,6 +147,7 @@ func Load() (*Config, error) {
 		PaymentsWebhookSecret:      os.Getenv("PAYMENTS_WEBHOOK_SECRET"),
 		PaymentsWebhookMaxSkew:     getenvDuration("PAYMENTS_WEBHOOK_MAX_SKEW", 5*time.Minute),
 		PayoutsClearingDays:        getenvInt("PAYOUTS_CLEARING_DAYS", 7),
+		BookingsFreeCancelHours:    getenvInt("BOOKINGS_FREE_CANCEL_HOURS", 24),
 		CoursesTeacherSharePercent: getenvInt("COURSES_TEACHER_SHARE_PERCENT", 70),
 
 		ResendAPIKey: os.Getenv("RESEND_API_KEY"),

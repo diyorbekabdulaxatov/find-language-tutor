@@ -229,7 +229,7 @@ WHERE (sqlc.narg('status')::text IS NULL OR b.status = sqlc.narg('status')::text
 SELECT
     b.id, b.status, b.start_at, b.end_at, b.duration_minutes, b.is_trial,
     b.price_minor, b.currency, b.created_at,
-    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.no_show_party,
+    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.cancellation_outcome, b.no_show_party,
     COALESCE(NULLIF(b.meeting_url_override, ''), t.meeting_url)::text AS meeting_url,
     t.slug              AS teacher_slug,
     t.display_name      AS teacher_display_name,

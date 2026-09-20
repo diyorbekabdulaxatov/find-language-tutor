@@ -231,12 +231,12 @@ func (h *Handler) Cancel(c *gin.Context) {
 	var req cancelBookingRequest
 	if c.Request.ContentLength != 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
-			web.BadRequest(c, `Request body must be {"reason"?: string}.`)
+			web.BadRequest(c, `Request body must be {"reason"?: string, "acknowledge_forfeit"?: boolean}.`)
 			return
 		}
 	}
 
-	b, err := h.svc.Cancel(c.Request.Context(), uid, id, req.Reason)
+	b, err := h.svc.Cancel(c.Request.Context(), uid, id, req.Reason, req.AcknowledgeForfeit)
 	if h.rendered(c, err, "cancel booking", slog.String("id", id.String())) {
 		return
 	}
@@ -304,6 +304,7 @@ func (h *Handler) annotate(c *gin.Context, dto bookingDTO, b Booking, viewerID u
 		dispute = h.svc.OpenDisputeFor(ctx, b.ID)
 	}
 	dto = withDispute(withReview(dto, b, viewerID, review), b, viewerID, dispute)
+	dto = withPolicy(dto, b, h.svc.Policy(b))
 	return withResources(dto, h.svc.ResourcesFor(ctx, b.ID, viewerID))
 }
 
@@ -333,7 +334,10 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 
 	var ve ValidationError
 	var payFailed PaymentFailedError
+	var late LateCancellationError
 	switch {
+	case errors.As(err, &late):
+		web.WriteErrorFrom(c, http.StatusConflict, "late_cancellation", late)
 	case errors.Is(err, ErrTeacherNotFound):
 		web.NotFound(c, "No teacher with that slug.")
 	case errors.Is(err, ErrBookingNotFound):

@@ -196,7 +196,7 @@ const adminGetBooking = `-- name: AdminGetBooking :one
 SELECT
     b.id, b.status, b.start_at, b.end_at, b.duration_minutes, b.is_trial,
     b.price_minor, b.currency, b.created_at,
-    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.no_show_party,
+    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.cancellation_outcome, b.no_show_party,
     COALESCE(NULLIF(b.meeting_url_override, ''), t.meeting_url)::text AS meeting_url,
     t.slug              AS teacher_slug,
     t.display_name      AS teacher_display_name,
@@ -215,29 +215,30 @@ WHERE b.id = $1
 `
 
 type AdminGetBookingRow struct {
-	ID                 uuid.UUID
-	Status             string
-	StartAt            pgtype.Timestamptz
-	EndAt              pgtype.Timestamptz
-	DurationMinutes    int32
-	IsTrial            bool
-	PriceMinor         int64
-	Currency           string
-	CreatedAt          pgtype.Timestamptz
-	CancelledAt        pgtype.Timestamptz
-	CancellationReason string
-	CancelledBy        string
-	NoShowParty        string
-	MeetingUrl         string
-	TeacherSlug        string
-	TeacherDisplayName string
-	StudentID          uuid.UUID
-	StudentEmail       string
-	StudentDisplayName string
-	PaymentStatus      string
-	PaymentAmountMinor int64
-	PaymentCurrency    string
-	HasOpenDispute     bool
+	ID                  uuid.UUID
+	Status              string
+	StartAt             pgtype.Timestamptz
+	EndAt               pgtype.Timestamptz
+	DurationMinutes     int32
+	IsTrial             bool
+	PriceMinor          int64
+	Currency            string
+	CreatedAt           pgtype.Timestamptz
+	CancelledAt         pgtype.Timestamptz
+	CancellationReason  string
+	CancelledBy         string
+	CancellationOutcome string
+	NoShowParty         string
+	MeetingUrl          string
+	TeacherSlug         string
+	TeacherDisplayName  string
+	StudentID           uuid.UUID
+	StudentEmail        string
+	StudentDisplayName  string
+	PaymentStatus       string
+	PaymentAmountMinor  int64
+	PaymentCurrency     string
+	HasOpenDispute      bool
 }
 
 // One booking with everything the operator detail view shows: the list-row
@@ -259,6 +260,7 @@ func (q *Queries) AdminGetBooking(ctx context.Context, id uuid.UUID) (AdminGetBo
 		&i.CancelledAt,
 		&i.CancellationReason,
 		&i.CancelledBy,
+		&i.CancellationOutcome,
 		&i.NoShowParty,
 		&i.MeetingUrl,
 		&i.TeacherSlug,

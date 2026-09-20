@@ -3,6 +3,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { CalendarCheck, Clock, ShieldCheck } from "lucide-react";
 import type { TeacherProfile } from "@/types/teacher";
 import { formatMoney } from "@/lib/format";
+import { FREE_CANCEL_HOURS } from "@/lib/policy";
 
 /**
  * The price + book actions. Sticky on desktop (positioned by the profile page),
@@ -63,7 +64,7 @@ export function BookingPanel({ teacher }: { teacher: TeacherProfile }) {
         )}
       </div>
 
-      <p className="mt-3 text-center text-xs text-muted-foreground">{t("chargedNote")}</p>
+      <p className="mt-3 text-center text-xs text-muted-foreground">{t("chargedNote", { hours: FREE_CANCEL_HOURS })}</p>
 
       <dl className="mt-5 space-y-2 border-t border-border pt-4 text-sm">
         <Row icon={Clock} label={t("repliesIn")}>

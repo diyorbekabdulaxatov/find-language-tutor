@@ -27,6 +27,7 @@ import { DisputePanel } from "./dispute-panel";
 import { LessonResourcesPanel } from "./lesson-resources-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { FREE_CANCEL_HOURS } from "@/lib/policy";
 
 export function BookingDetail({ id }: { id: string }) {
   const { user } = useAuth();
@@ -37,6 +38,8 @@ export function BookingDetail({ id }: { id: string }) {
     "complete" | "cancel" | "no_show_student" | "no_show_teacher" | "link" | null
   >(null);
   const [payOpen, setPayOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
   const [linkDraft, setLinkDraft] = useState("");
   const [now] = useState(() => Date.now());
   const viewerTz = viewerTimezone();
@@ -123,6 +126,33 @@ export function BookingDetail({ id }: { id: string }) {
   const canNoShow = isTeacher && booking.status === "confirmed" && started;
   const canCancel =
     booking.status === "pending_payment" || booking.status === "confirmed";
+  // The policy only bites a paid booking cancelled by the student; the teacher
+  // always refunds and an unpaid booking is simply dropped.
+  const policy = booking.cancellationPolicy;
+  const forfeits = isStudent && booking.status === "confirmed" && policy?.late === true;
+
+  async function confirmCancel() {
+    setBusy("cancel");
+    setErrorMsg(null);
+    try {
+      await cancelBooking(booking!.id, {
+        reason: cancelReason.trim() || undefined,
+        acknowledgeForfeit: forfeits,
+      });
+      setCancelOpen(false);
+      setCancelReason("");
+      await refetch();
+    } catch (err) {
+      if (err instanceof BookingError && err.code === "late_cancellation") {
+        // The deadline passed while the panel was open: reload so the
+        // warning and the button say what will really happen.
+        await refetch().catch(() => undefined);
+      }
+      setErrorMsg(err instanceof BookingError ? err.message : tCommon("somethingWrong"));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
@@ -171,6 +201,22 @@ export function BookingDetail({ id }: { id: string }) {
           )}
           {booking.status === "cancelled" && booking.cancellationReason && (
             <Row label={t("cancellationReason")}>{booking.cancellationReason}</Row>
+          )}
+          {booking.status === "cancelled" && booking.cancellationOutcome && (
+            <Row label={t("cancellationOutcome")}>
+              {t(`outcome.${booking.cancellationOutcome}`)}
+            </Row>
+          )}
+          {canCancel && policy && booking.status === "confirmed" && (
+            <Row label={t("cancellation")}>
+              {policy.late
+                ? isStudent
+                  ? t("policyLateStudent")
+                  : t("policyLateTeacher")
+                : t("policyFreeUntil", {
+                    when: formatFull(policy.freeCancelUntil, viewerTz, locale),
+                  })}
+            </Row>
           )}
         </dl>
 
@@ -262,19 +308,84 @@ export function BookingDetail({ id }: { id: string }) {
                 </Button>
               </>
             )}
-            {canCancel && (
+            {canCancel && !cancelOpen && (
               <Button
                 variant="destructive"
-                onClick={() => run("cancel", () => cancelBooking(booking.id))}
+                onClick={() => {
+                  setErrorMsg(null);
+                  setCancelOpen(true);
+                }}
+                disabled={busy !== null}
+              >
+                {t("cancelLesson")}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {canCancel && cancelOpen && (
+          <div
+            role="group"
+            aria-labelledby="cancel-heading"
+            className="mt-4 border border-border bg-muted p-5"
+          >
+            <h2 id="cancel-heading" className="font-display text-lg">
+              {t("cancelHeading")}
+            </h2>
+            <p
+              className={
+                forfeits
+                  ? "mt-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                  : "mt-2 text-sm text-muted-foreground"
+              }
+            >
+              {booking.status !== "confirmed"
+                ? t("cancelUnpaidNote")
+                : !isStudent
+                  ? t("cancelTeacherNote")
+                  : forfeits
+                    ? t("cancelForfeitNote", {
+                        hours: FREE_CANCEL_HOURS,
+                        price: formatMoney(booking.price, locale),
+                        name: booking.teacher.displayName,
+                      })
+                    : t("cancelRefundNote", {
+                        when: formatFull(policy!.freeCancelUntil, viewerTz, locale),
+                      })}
+            </p>
+            <label htmlFor="cancel-reason" className="mt-4 block text-sm font-bold">
+              {t("cancelReasonLabel")}
+            </label>
+            <Input
+              id="cancel-reason"
+              className="mt-1"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder={t("cancelReasonPlaceholder")}
+              maxLength={300}
+            />
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Button
+                variant="destructive"
+                onClick={() => void confirmCancel()}
                 disabled={busy !== null}
               >
                 {busy === "cancel"
                   ? t("cancelling")
-                  : booking.status === "confirmed"
-                    ? t("cancelRefund")
-                    : t("cancelLesson")}
+                  : forfeits
+                    ? t("cancelAndForfeit", { price: formatMoney(booking.price, locale) })
+                    : booking.status === "confirmed"
+                      ? t("cancelRefund")
+                      : t("cancelLesson")}
               </Button>
-            )}
+              <Button
+                variant="outline"
+                onClick={() => setCancelOpen(false)}
+                disabled={busy !== null}
+              >
+                {t("keepLesson")}
+              </Button>
+            </div>
           </div>
         )}
       </div>

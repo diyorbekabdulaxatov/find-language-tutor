@@ -90,6 +90,8 @@ export interface BookingResource {
   submissionStatus: SubmissionStatus;
 }
 
+export type CancellationOutcome = "refunded" | "forfeited" | "unpaid";
+
 export interface Booking {
   id: string;
   status: BookingStatus;
@@ -103,6 +105,10 @@ export interface Booking {
   createdAt: string;
   cancelledAt: string | null;
   cancellationReason?: string;
+  /** what happened to the money on cancellation; null while not cancelled */
+  cancellationOutcome: CancellationOutcome | null;
+  /** the free-cancellation deadline; null once completed or cancelled */
+  cancellationPolicy: { freeCancelUntil: string; late: boolean } | null;
   payment: PaymentInfo | null;
   /** Effective video link. Only populated for a participant once confirmed. */
   meetingUrl: string;
@@ -220,6 +226,13 @@ function toBooking(b: WireBooking): Booking {
     createdAt: b.created_at,
     cancelledAt: b.cancelled_at,
     cancellationReason: b.cancellation_reason,
+    cancellationOutcome: b.cancellation_outcome ?? null,
+    cancellationPolicy: b.cancellation_policy
+      ? {
+          freeCancelUntil: b.cancellation_policy.free_cancel_until,
+          late: b.cancellation_policy.late,
+        }
+      : null,
     payment: wp
       ? {
           status: wp.status,
@@ -442,13 +455,24 @@ export async function reportNoShow(
   return toBooking(data);
 }
 
+/**
+ * Cancel a booking. A student cancelling after the free-cancellation deadline
+ * must pass acknowledgeForfeit, or the backend refuses with 409
+ * `late_cancellation` and nothing changes.
+ */
 export async function cancelBooking(
   id: string,
-  reason?: string,
+  opts: { reason?: string; acknowledgeForfeit?: boolean } = {},
 ): Promise<Booking> {
   const { data, error, response } = await browserApi.POST(
     "/v1/bookings/{id}/cancel",
-    { params: { path: { id } }, body: reason ? { reason } : {} },
+    {
+      params: { path: { id } },
+      body: {
+        ...(opts.reason ? { reason: opts.reason } : {}),
+        acknowledge_forfeit: opts.acknowledgeForfeit ?? false,
+      },
+    },
   );
   if (error || !data) {
     throw toError(error, response.status, "Could not cancel the booking.");

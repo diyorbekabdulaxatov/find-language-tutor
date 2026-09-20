@@ -334,6 +334,8 @@ type BookingDetail struct {
 	CancelledAt        *time.Time
 	CancelledBy        string
 	CancellationReason string
+	// CancellationOutcome is "" or refunded / forfeited / unpaid (bookings).
+	CancellationOutcome string
 
 	Disputes []BookingDispute
 }

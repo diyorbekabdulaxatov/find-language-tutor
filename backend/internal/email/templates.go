@@ -107,20 +107,53 @@ func BookingConfirmedContent(loc string, li LessonInfo) (subject, html, text str
 	return subject, html, text
 }
 
-// BookingCancelledContent is sent to the other party on a cancellation / teacher
-// no-show.
-func BookingCancelledContent(loc string, li LessonInfo, refunded bool) (subject, html, text string) {
-	subject = i18n.Tf(loc, "Lesson with %s cancelled — %s", li.TeacherName, li.when(loc))
-	refundNote := i18n.T(loc, "No payment had been taken, so there is nothing to refund.")
-	if refunded {
-		refundNote = i18n.T(loc, "Any payment you made for this lesson has been refunded in full.")
+// CancelOutcome mirrors bookings.CancellationOutcome for the cancellation
+// email: what happened to the student's payment.
+type CancelOutcome string
+
+const (
+	CancelRefunded  CancelOutcome = "refunded"
+	CancelForfeited CancelOutcome = "forfeited"
+	CancelUnpaid    CancelOutcome = "unpaid"
+)
+
+// BookingCancelledContent is sent to the other party on a cancellation /
+// teacher no-show. toTeacher picks the recipient's side: the lesson is named
+// after their counterpart and the money note is theirs.
+func BookingCancelledContent(loc string, li LessonInfo, outcome CancelOutcome, toTeacher bool) (subject, html, text string) {
+	other := li.TeacherName
+	if toTeacher {
+		other = li.StudentName
 	}
+	subject = i18n.Tf(loc, "Lesson with %s cancelled — %s", other, li.when(loc))
+
+	var moneyNote, next string
+	switch {
+	case toTeacher && outcome == CancelForfeited:
+		moneyNote = i18n.T(loc, "It was cancelled after the free-cancellation deadline, so you will be paid the full fee as for a completed lesson.")
+	case toTeacher && outcome == CancelRefunded:
+		moneyNote = i18n.T(loc, "The student has been refunded in full.")
+	case toTeacher:
+		moneyNote = i18n.T(loc, "No payment had been taken for this lesson.")
+	case outcome == CancelForfeited:
+		moneyNote = i18n.T(loc, "It was cancelled after the free-cancellation deadline, so the full fee has been charged.")
+	case outcome == CancelRefunded:
+		moneyNote = i18n.T(loc, "Any payment you made for this lesson has been refunded in full.")
+	default:
+		moneyNote = i18n.T(loc, "No payment had been taken, so there is nothing to refund.")
+	}
+	if toTeacher {
+		next = i18n.T(loc, "The time is open again in your calendar.")
+	} else {
+		next = i18n.T(loc, "You can book another time from the teacher's profile.")
+	}
+
 	lines := []string{
-		i18n.Tf(loc, "Your lesson with %s scheduled for %s has been cancelled.", li.TeacherName, li.when(loc)),
+		i18n.Tf(loc, "Your lesson with %s scheduled for %s has been cancelled.", other, li.when(loc)),
 		"",
-		refundNote,
+		moneyNote,
 		"",
-		i18n.T(loc, "You can book another time from the teacher's profile."),
+		next,
 	}
 	html, text = wrap(subject, lines)
 	return subject, html, text

@@ -44,6 +44,25 @@ const (
 	CancelledByAdmin   = "admin"
 )
 
+// CancellationOutcome records what happened to the money when a booking was
+// cancelled (migration 000027). "" while it is not cancelled — and for a
+// cancellation the operator settled outside the platform.
+type CancellationOutcome string
+
+const (
+	// OutcomeRefunded — the student's hold was released or the capture refunded.
+	OutcomeRefunded CancellationOutcome = "refunded"
+	// OutcomeForfeited — cancelled inside the free window: the fee was captured
+	// and is paid to the teacher as if the lesson had happened.
+	OutcomeForfeited CancellationOutcome = "forfeited"
+	// OutcomeUnpaid — no payment had been taken, so nothing moved.
+	OutcomeUnpaid CancellationOutcome = "unpaid"
+)
+
+// DefaultFreeCancelWindow is how long before the start a student may still
+// cancel for a full refund. italki's rule; overridable per Service.
+const DefaultFreeCancelWindow = 24 * time.Hour
+
 func (s Status) valid() bool {
 	switch s {
 	case StatusPendingPayment, StatusConfirmed, StatusCompleted, StatusCancelled:
@@ -139,6 +158,9 @@ type Booking struct {
 	CancellationReason string
 	// CancelledBy is "" normally, or student / teacher / admin once cancelled.
 	CancelledBy string
+	// CancellationOutcome is "" normally, or refunded / forfeited / unpaid once
+	// cancelled (see CancellationOutcome).
+	CancellationOutcome CancellationOutcome
 
 	// MeetingURLOverride is an optional per-booking video link. When set it wins
 	// over the teacher's default; "" means "use the teacher default".

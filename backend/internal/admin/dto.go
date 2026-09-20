@@ -360,6 +360,8 @@ type bookingDetailDTO struct {
 	CancelledAt        *time.Time `json:"cancelled_at"`
 	CancelledBy        string     `json:"cancelled_by"`
 	CancellationReason string     `json:"cancellation_reason"`
+	// CancellationOutcome is "" or refunded / forfeited / unpaid.
+	CancellationOutcome string `json:"cancellation_outcome"`
 
 	Disputes []bookingDisputeDTO `json:"disputes"`
 }
@@ -397,14 +399,15 @@ func toBookingsPageDTO(p BookingsPage) bookingsPageDTO {
 
 func toBookingDetailDTO(d BookingDetail) bookingDetailDTO {
 	out := bookingDetailDTO{
-		bookingRowDTO:      toBookingRowDTO(d.BookingRow),
-		DurationMinutes:    d.DurationMinutes,
-		IsTrial:            d.IsTrial,
-		MeetingURL:         d.MeetingURL,
-		NoShowParty:        d.NoShowParty,
-		CancelledBy:        d.CancelledBy,
-		CancellationReason: d.CancellationReason,
-		Disputes:           make([]bookingDisputeDTO, len(d.Disputes)),
+		bookingRowDTO:       toBookingRowDTO(d.BookingRow),
+		DurationMinutes:     d.DurationMinutes,
+		IsTrial:             d.IsTrial,
+		MeetingURL:          d.MeetingURL,
+		NoShowParty:         d.NoShowParty,
+		CancelledBy:         d.CancelledBy,
+		CancellationReason:  d.CancellationReason,
+		CancellationOutcome: d.CancellationOutcome,
+		Disputes:            make([]bookingDisputeDTO, len(d.Disputes)),
 	}
 	if d.Payment != nil {
 		out.Payment = &bookingPaymentDTO{

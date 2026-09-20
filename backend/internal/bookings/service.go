@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/diyorbekabdulaxatov/find-language-tutor/backend/internal/i18n"
 )
 
 // Domain errors. The handler maps each to an HTTP status; anything else is 500.
@@ -141,10 +143,10 @@ type Repository interface {
 	// SetStatus writes a new status and returns the hydrated booking.
 	SetStatus(ctx context.Context, id uuid.UUID, status Status) (Booking, error)
 
-	// Cancel marks a booking cancelled (status, cancelled_at, reason, and who
-	// cancelled it — one of CancelledByStudent / Teacher / Admin) and returns
-	// the hydrated booking.
-	Cancel(ctx context.Context, id uuid.UUID, reason, by string) (Booking, error)
+	// Cancel marks a booking cancelled (status, cancelled_at, reason, who
+	// cancelled it — one of CancelledByStudent / Teacher / Admin — and what
+	// happened to the money) and returns the hydrated booking.
+	Cancel(ctx context.Context, id uuid.UUID, reason, by string, outcome CancellationOutcome) (Booking, error)
 
 	// SetMeetingLinkOverride writes the per-booking meeting link ("" clears it)
 	// and returns the hydrated booking.
@@ -171,8 +173,46 @@ type Service struct {
 	// (italki-style). nil keeps the pre-L1 hourly path — see LessonTypeReader.
 	lessonTypes LessonTypeReader
 
+	// freeCancelWindow is how long before start_at a student may still cancel
+	// for a full refund; zero means DefaultFreeCancelWindow.
+	freeCancelWindow time.Duration
+
 	logger *slog.Logger
 }
+
+// SetFreeCancelWindow overrides DefaultFreeCancelWindow (BOOKINGS_FREE_CANCEL_HOURS).
+func (s *Service) SetFreeCancelWindow(d time.Duration) { s.freeCancelWindow = d }
+
+func (s *Service) freeWindow() time.Duration {
+	if s.freeCancelWindow > 0 {
+		return s.freeCancelWindow
+	}
+	return DefaultFreeCancelWindow
+}
+
+// CancellationPolicy is what the student is told before cancelling: the
+// deadline for a free cancellation and whether it has already passed.
+type CancellationPolicy struct {
+	FreeCancelUntil time.Time
+	// Late is true once the deadline has passed — a student cancellation from
+	// here on forfeits the fee.
+	Late bool
+}
+
+// Policy computes the cancellation policy for a booking as of now.
+func (s *Service) Policy(b Booking) CancellationPolicy {
+	until := b.StartAt.Add(-s.freeWindow())
+	return CancellationPolicy{FreeCancelUntil: until, Late: s.now().UTC().After(until)}
+}
+
+// LateCancellationError is returned when a student cancels inside the free
+// window without acknowledging the forfeit. 409 late_cancellation.
+type LateCancellationError struct {
+	i18n.Msg
+	Policy CancellationPolicy
+}
+
+func (e LateCancellationError) Error() string { return e.Msg.String() }
 
 func NewService(repo Repository) *Service {
 	return &Service{repo: repo, now: time.Now, logger: slog.Default()}
@@ -293,11 +333,11 @@ func (s *Service) notifyConfirmed(ctx context.Context, b Booking) {
 	s.notifier.BookingConfirmed(ctx, b)
 }
 
-func (s *Service) notifyCancelled(ctx context.Context, b Booking, cancelledBy uuid.UUID, refunded bool) {
+func (s *Service) notifyCancelled(ctx context.Context, b Booking, cancelledBy uuid.UUID, outcome CancellationOutcome) {
 	if s.notifier == nil {
 		return
 	}
-	s.notifier.BookingCancelled(ctx, b, cancelledBy, refunded)
+	s.notifier.BookingCancelled(ctx, b, cancelledBy, outcome)
 }
 
 func (s *Service) log() *slog.Logger {
@@ -674,13 +714,16 @@ func (s *Service) Complete(ctx context.Context, callerID, bookingID uuid.UUID) (
 	return b, &snap, nil
 }
 
-// Cancel moves pending_payment | confirmed -> cancelled. Participant-only. When
-// a payment gateway is wired, the booking's intent is also refunded/voided (a
-// full refund releases the hold; if a payout-ledger row exists it is reversed).
+// Cancel moves pending_payment | confirmed -> cancelled. Participant-only.
 //
-// TODO(phase-5): cancellation window / penalties. For the MVP a participant may
-// cancel at any time; we only record who (implicitly, via the caller) and when.
-func (s *Service) Cancel(ctx context.Context, callerID, bookingID uuid.UUID, reason string) (Booking, error) {
+// The policy (italki's): a teacher may cancel at any time and the student is
+// always refunded in full. A student may cancel for a full refund until
+// freeWindow before the start; after that the fee is forfeited — captured and
+// paid to the teacher exactly as a completed lesson — and the student must
+// say so (acknowledgeForfeit) or get LateCancellationError back, so no client
+// can charge them by accident. An unpaid (pending_payment) booking is simply
+// dropped whenever it is cancelled: there is nothing to forfeit.
+func (s *Service) Cancel(ctx context.Context, callerID, bookingID uuid.UUID, reason string, acknowledgeForfeit bool) (Booking, error) {
 	b, err := s.repo.GetBooking(ctx, bookingID)
 	if err != nil {
 		return Booking{}, err
@@ -691,7 +734,39 @@ func (s *Service) Cancel(ctx context.Context, callerID, bookingID uuid.UUID, rea
 	if b.Status != StatusPendingPayment && b.Status != StatusConfirmed {
 		return Booking{}, ErrInvalidTransition
 	}
-	return s.doCancel(ctx, bookingID, reason, cancellerFor(b, callerID), callerID, true)
+	by := cancellerFor(b, callerID)
+
+	if by == CancelledByStudent && b.Status == StatusConfirmed {
+		if p := s.Policy(b); p.Late {
+			if !acknowledgeForfeit {
+				return Booking{}, LateCancellationError{
+					Msg:    i18n.Message("Free cancellation ended %d hours before the lesson. Cancelling now means the full fee is charged.", int(s.freeWindow().Hours())),
+					Policy: p,
+				}
+			}
+			return s.forfeit(ctx, b, reason, callerID)
+		}
+	}
+	return s.doCancel(ctx, bookingID, reason, by, callerID, true)
+}
+
+// forfeit is the late-student-cancellation money path: capture the hold FIRST
+// (same as Complete — a capture failure leaves the booking confirmed and the
+// request retryable), then cancel without a refund. The capture webhook writes
+// the teacher's payout-ledger row, so the teacher is paid as for a lesson.
+func (s *Service) forfeit(ctx context.Context, b Booking, reason string, actorID uuid.UUID) (Booking, error) {
+	if s.payments != nil {
+		if _, err := s.payments.Capture(ctx, b.ID); err != nil {
+			return Booking{}, err
+		}
+	}
+	cancelled, err := s.repo.Cancel(ctx, b.ID, strings.TrimSpace(reason), CancelledByStudent, OutcomeForfeited)
+	if err != nil {
+		return Booking{}, err
+	}
+	s.cancelReminders(ctx, b.ID)
+	s.notifyCancelled(ctx, cancelled, actorID, OutcomeForfeited)
+	return cancelled, nil
 }
 
 // AdminForceCancel is the operator override behind
@@ -747,14 +822,23 @@ func (s *Service) AdminRefund(ctx context.Context, bookingID uuid.UUID) error {
 // actorID is the account that triggered it (uuid.Nil for an admin override, so
 // the notifier mails both participants rather than "the other party").
 func (s *Service) doCancel(ctx context.Context, bookingID uuid.UUID, reason, by string, actorID uuid.UUID, refund bool) (Booking, error) {
-	cancelled, err := s.repo.Cancel(ctx, bookingID, strings.TrimSpace(reason), by)
+	// The outcome is decided before the write so the row and the email agree.
+	// A confirmed booking holds an authorized payment; pending_payment never
+	// had one. refund=false is the operator's "settled elsewhere" — unrecorded.
+	var outcome CancellationOutcome
+	if refund {
+		outcome = OutcomeUnpaid
+		if b, err := s.repo.GetBooking(ctx, bookingID); err == nil && b.Status == StatusConfirmed {
+			outcome = OutcomeRefunded
+		}
+	}
+
+	cancelled, err := s.repo.Cancel(ctx, bookingID, strings.TrimSpace(reason), by, outcome)
 	if err != nil {
 		return Booking{}, err
 	}
 
-	refunded := false
 	if refund && s.payments != nil {
-		refunded = true
 		if _, rerr := s.payments.Refund(ctx, bookingID); rerr != nil {
 			// The booking is already cancelled; a stuck refund must not fail the
 			// request. TODO(payments): enqueue a refund retry.
@@ -765,7 +849,7 @@ func (s *Service) doCancel(ctx context.Context, bookingID uuid.UUID, reason, by 
 	// Rescheduling cancels old jobs; a cancelled booking must drop its
 	// reminders, and the other party is told.
 	s.cancelReminders(ctx, bookingID)
-	s.notifyCancelled(ctx, cancelled, actorID, refunded)
+	s.notifyCancelled(ctx, cancelled, actorID, outcome)
 	return cancelled, nil
 }
 

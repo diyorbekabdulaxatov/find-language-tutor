@@ -188,11 +188,12 @@ func (r *repositoryPostgres) SetStatus(ctx context.Context, id uuid.UUID, status
 	return r.GetBooking(ctx, id)
 }
 
-func (r *repositoryPostgres) Cancel(ctx context.Context, id uuid.UUID, reason, by string) (Booking, error) {
+func (r *repositoryPostgres) Cancel(ctx context.Context, id uuid.UUID, reason, by string, outcome CancellationOutcome) (Booking, error) {
 	if err := r.q.CancelBooking(ctx, sqlc.CancelBookingParams{
-		ID:                 id,
-		CancellationReason: reason,
-		CancelledBy:        by,
+		ID:                  id,
+		CancellationReason:  reason,
+		CancelledBy:         by,
+		CancellationOutcome: string(outcome),
 	}); err != nil {
 		return Booking{}, fmt.Errorf("cancel booking: %w", err)
 	}
@@ -215,24 +216,25 @@ func (r *repositoryPostgres) SetNoShowParty(ctx context.Context, id uuid.UUID, p
 
 func rowToBooking(row sqlc.GetBookingByIDRow) Booking {
 	b := Booking{
-		ID:                 row.ID,
-		Status:             Status(row.Status),
-		StartAt:            row.StartAt.Time.UTC(),
-		EndAt:              row.EndAt.Time.UTC(),
-		DurationMinutes:    int(row.DurationMinutes),
-		IsTrial:            row.IsTrial,
-		Price:              Money{AmountMinor: row.PriceMinor, Currency: row.Currency},
-		CreatedAt:          row.CreatedAt.Time.UTC(),
-		CancellationReason: row.CancellationReason,
-		CancelledBy:        row.CancelledBy,
-		MeetingURLOverride: row.MeetingUrlOverride,
-		TeacherMeetingURL:  row.TeacherMeetingUrl,
-		NoShowParty:        row.NoShowParty,
-		LessonTypeTitle:    row.LessonTypeTitle.String,
-		StudentEmail:       row.StudentEmail,
-		TeacherEmail:       row.TeacherEmail,
-		StudentLocale:      row.StudentLocale,
-		TeacherLocale:      row.TeacherLocale,
+		ID:                  row.ID,
+		Status:              Status(row.Status),
+		StartAt:             row.StartAt.Time.UTC(),
+		EndAt:               row.EndAt.Time.UTC(),
+		DurationMinutes:     int(row.DurationMinutes),
+		IsTrial:             row.IsTrial,
+		Price:               Money{AmountMinor: row.PriceMinor, Currency: row.Currency},
+		CreatedAt:           row.CreatedAt.Time.UTC(),
+		CancellationReason:  row.CancellationReason,
+		CancelledBy:         row.CancelledBy,
+		CancellationOutcome: CancellationOutcome(row.CancellationOutcome),
+		MeetingURLOverride:  row.MeetingUrlOverride,
+		TeacherMeetingURL:   row.TeacherMeetingUrl,
+		NoShowParty:         row.NoShowParty,
+		LessonTypeTitle:     row.LessonTypeTitle.String,
+		StudentEmail:        row.StudentEmail,
+		TeacherEmail:        row.TeacherEmail,
+		StudentLocale:       row.StudentLocale,
+		TeacherLocale:       row.TeacherLocale,
 		Teacher: TeacherSummary{
 			Slug:        row.TeacherSlug,
 			DisplayName: row.TeacherDisplayName,

@@ -44,7 +44,8 @@ RETURNING id;
 SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
-    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.created_at, b.updated_at,
+    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.cancellation_outcome,
+    b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
     b.lesson_type_id,
@@ -74,7 +75,8 @@ WHERE b.id = $1;
 SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
-    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.created_at, b.updated_at,
+    b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.cancellation_outcome,
+    b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
     b.lesson_type_id,
@@ -115,11 +117,13 @@ UPDATE bookings SET no_show_party = $2, updated_at = now() WHERE id = $1;
 
 -- name: CancelBooking :exec
 -- cancelled_by records WHO cancelled: 'student', 'teacher' (includes a teacher
--- no-show) or 'admin' (the operator force-cancel override). The service picks
--- the value; the column's CHECK constraint is the guard.
+-- no-show) or 'admin' (the operator force-cancel override); cancellation_outcome
+-- what happened to the money (refunded / forfeited / unpaid, see migration
+-- 000027). The service picks both values; the columns' CHECK constraints are
+-- the guard.
 UPDATE bookings
 SET status = 'cancelled', cancelled_at = now(), cancellation_reason = $2,
-    cancelled_by = $3, updated_at = now()
+    cancelled_by = $3, cancellation_outcome = $4, updated_at = now()
 WHERE id = $1;
 
 -- name: SeedInsertBooking :one

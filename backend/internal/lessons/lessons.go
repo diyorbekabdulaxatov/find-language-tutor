@@ -96,18 +96,19 @@ func ConfirmedMessages(b bookings.Booking) []email.Message {
 
 // CancelledMessages renders booking_cancelled for the party who did NOT trigger
 // the cancellation (the "other party").
-func CancelledMessages(b bookings.Booking, cancelledBy uuid.UUID, refunded bool) []email.Message {
+func CancelledMessages(b bookings.Booking, cancelledBy uuid.UUID, outcome bookings.CancellationOutcome) []email.Message {
 	var out []email.Message
 	for _, r := range recipients(b) {
+		toTeacher := r.addr == b.TeacherEmail
 		if cancelledBy != uuid.Nil {
-			if r.addr == b.StudentEmail && b.Student.ID == cancelledBy {
+			if !toTeacher && b.Student.ID == cancelledBy {
 				continue
 			}
-			if r.addr == b.TeacherEmail && b.TeacherOwnerID == cancelledBy {
+			if toTeacher && b.TeacherOwnerID == cancelledBy {
 				continue
 			}
 		}
-		subject, html, text := email.BookingCancelledContent(r.locale, lessonInfo(b), refunded)
+		subject, html, text := email.BookingCancelledContent(r.locale, lessonInfo(b), email.CancelOutcome(outcome), toTeacher)
 		out = append(out, email.Message{To: r.addr, ToName: r.name, Subject: subject, HTMLBody: html, TextBody: text})
 	}
 	return out
