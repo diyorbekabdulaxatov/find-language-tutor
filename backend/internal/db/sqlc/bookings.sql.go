@@ -36,10 +36,10 @@ func (q *Queries) CancelBooking(ctx context.Context, arg CancelBookingParams) er
 const createBooking = `-- name: CreateBooking :one
 INSERT INTO bookings (
     teacher_id, student_id, start_at, end_at,
-    duration_minutes, status, price_minor, currency, is_trial
+    duration_minutes, status, price_minor, currency, is_trial, lesson_type_id
 ) VALUES (
     $1, $2, $3, $4,
-    $5, $6, $7, $8, $9
+    $5, $6, $7, $8, $9, $10
 )
 RETURNING id
 `
@@ -54,6 +54,7 @@ type CreateBookingParams struct {
 	PriceMinor      int64
 	Currency        string
 	IsTrial         bool
+	LessonTypeID    uuid.NullUUID
 }
 
 func (q *Queries) CreateBooking(ctx context.Context, arg CreateBookingParams) (uuid.UUID, error) {
@@ -67,6 +68,7 @@ func (q *Queries) CreateBooking(ctx context.Context, arg CreateBookingParams) (u
 		arg.PriceMinor,
 		arg.Currency,
 		arg.IsTrial,
+		arg.LessonTypeID,
 	)
 	var id uuid.UUID
 	err := row.Scan(&id)
@@ -91,6 +93,8 @@ SELECT
     b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
+    b.lesson_type_id,
+    lt.title          AS lesson_type_title,
     t.slug            AS teacher_slug,
     t.display_name    AS teacher_display_name,
     t.timezone        AS teacher_timezone,
@@ -103,6 +107,7 @@ SELECT
     u.email::text     AS student_email,
     u.locale::text    AS student_locale
 FROM bookings b
+LEFT JOIN lesson_types lt ON lt.id = b.lesson_type_id
 JOIN teachers t ON t.id = b.teacher_id
 JOIN users    u ON u.id = b.student_id
 LEFT JOIN users tu ON tu.id = t.user_id
@@ -127,6 +132,8 @@ type GetBookingByIDRow struct {
 	UpdatedAt          pgtype.Timestamptz
 	MeetingUrlOverride string
 	NoShowParty        string
+	LessonTypeID       uuid.NullUUID
+	LessonTypeTitle    pgtype.Text
 	TeacherSlug        string
 	TeacherDisplayName string
 	TeacherTimezone    string
@@ -161,6 +168,8 @@ func (q *Queries) GetBookingByID(ctx context.Context, id uuid.UUID) (GetBookingB
 		&i.UpdatedAt,
 		&i.MeetingUrlOverride,
 		&i.NoShowParty,
+		&i.LessonTypeID,
+		&i.LessonTypeTitle,
 		&i.TeacherSlug,
 		&i.TeacherDisplayName,
 		&i.TeacherTimezone,
@@ -244,6 +253,8 @@ SELECT
     b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
+    b.lesson_type_id,
+    lt.title          AS lesson_type_title,
     t.slug            AS teacher_slug,
     t.display_name    AS teacher_display_name,
     t.timezone        AS teacher_timezone,
@@ -256,6 +267,7 @@ SELECT
     u.email::text     AS student_email,
     u.locale::text    AS student_locale
 FROM bookings b
+LEFT JOIN lesson_types lt ON lt.id = b.lesson_type_id
 JOIN teachers t ON t.id = b.teacher_id
 JOIN users    u ON u.id = b.student_id
 LEFT JOIN users tu ON tu.id = t.user_id
@@ -288,6 +300,8 @@ type ListBookingsRow struct {
 	UpdatedAt          pgtype.Timestamptz
 	MeetingUrlOverride string
 	NoShowParty        string
+	LessonTypeID       uuid.NullUUID
+	LessonTypeTitle    pgtype.Text
 	TeacherSlug        string
 	TeacherDisplayName string
 	TeacherTimezone    string
@@ -331,6 +345,8 @@ func (q *Queries) ListBookings(ctx context.Context, arg ListBookingsParams) ([]L
 			&i.UpdatedAt,
 			&i.MeetingUrlOverride,
 			&i.NoShowParty,
+			&i.LessonTypeID,
+			&i.LessonTypeTitle,
 			&i.TeacherSlug,
 			&i.TeacherDisplayName,
 			&i.TeacherTimezone,

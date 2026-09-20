@@ -26,6 +26,12 @@ test("a new student can sign up, book a lesson and pay for it", async ({ page })
   await page.getByRole("link", { name: "Book a lesson", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Book a lesson" })).toBeVisible();
 
+  // Step one: which of the teacher's offerings. The seed gives Nodira an
+  // "IELTS" lesson; picking a paid one (not the trial) keeps this the ordinary
+  // checkout. Entering from a profile lesson card preselects it and skips here.
+  await expect(page.getByRole("heading", { name: "What would you like to book?" })).toBeVisible();
+  await page.getByRole("button", { name: /IELTS/ }).click();
+
   // First open day, first slot. The seed teacher has weekly hours, so the
   // next two weeks always contain at least one. A time button is named by the
   // time it holds ("11:00"), which the duration chips ("60 min") never match.

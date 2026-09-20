@@ -18,8 +18,11 @@ import type {
 
 export type BookingStatus = components["schemas"]["BookingStatus"];
 
-export const DURATION_OPTIONS = [30, 60, 90, 120] as const;
+export const DURATION_OPTIONS = [30, 45, 60, 90, 120] as const;
 export type Duration = (typeof DURATION_OPTIONS)[number];
+
+/** The lengths a teacher with no lesson types can still be booked for. */
+export const LEGACY_DURATIONS = [30, 60, 90, 120] as const;
 
 export interface BookableSlot {
   /** RFC3339 UTC */
@@ -94,6 +97,8 @@ export interface Booking {
   endAt: string;
   durationMinutes: number;
   isTrial: boolean;
+  /** the offering booked, or null for a booking made before lesson types */
+  lessonType: { id: string; title: string } | null;
   price: Money;
   createdAt: string;
   cancelledAt: string | null;
@@ -208,6 +213,9 @@ function toBooking(b: WireBooking): Booking {
     endAt: b.end_at,
     durationMinutes: b.duration_minutes,
     isTrial: b.is_trial,
+    lessonType: b.lesson_type
+      ? { id: b.lesson_type.id, title: b.lesson_type.title }
+      : null,
     price: money(b.price),
     createdAt: b.created_at,
     cancelledAt: b.cancelled_at,
@@ -253,14 +261,19 @@ function toBooking(b: WireBooking): Booking {
 
 export async function getSlots(
   slug: string,
-  opts: { from?: string; to?: string; duration: Duration },
+  opts: { from?: string; to?: string; duration: Duration; lessonTypeId?: string },
 ): Promise<SlotsResult> {
   const { data, error, response } = await browserApi.GET(
     "/v1/teachers/{slug}/slots",
     {
       params: {
         path: { slug },
-        query: { from: opts.from, to: opts.to, duration: opts.duration },
+        query: {
+          from: opts.from,
+          to: opts.to,
+          duration: opts.duration,
+          lesson_type_id: opts.lessonTypeId,
+        },
       },
     },
   );
@@ -286,6 +299,8 @@ export async function createBooking(input: {
   startAt: string;
   durationMinutes: Duration;
   isTrial?: boolean;
+  /** the offering the student picked; it sets the price and the trial flag */
+  lessonTypeId?: string;
 }): Promise<Booking> {
   const { data, error, response } = await browserApi.POST("/v1/bookings", {
     body: {
@@ -293,6 +308,7 @@ export async function createBooking(input: {
       start_at: input.startAt,
       duration_minutes: input.durationMinutes,
       is_trial: input.isTrial ?? false,
+      lesson_type_id: input.lessonTypeId,
     },
   });
   if (error || !data) {

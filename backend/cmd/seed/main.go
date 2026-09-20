@@ -115,6 +115,14 @@ func main() {
 	if err := q.DeleteAllCourses(ctx); err != nil {
 		log.Fatalf("clear courses: %v", err)
 	}
+	// lesson_type_prices -> lesson_types -> teachers, and bookings (already
+	// cleared above) point at lesson_types.
+	if err := q.DeleteAllLessonTypePrices(ctx); err != nil {
+		log.Fatalf("clear lesson type prices: %v", err)
+	}
+	if err := q.DeleteAllLessonTypes(ctx); err != nil {
+		log.Fatalf("clear lesson types: %v", err)
+	}
 	if err := q.DeleteAllTeachers(ctx); err != nil {
 		log.Fatalf("clear teachers: %v", err)
 	}
@@ -201,6 +209,7 @@ func main() {
 		}
 		teacherIDBySlug[t.Slug] = id
 		teacherPriceBySlug[t.Slug] = t.PriceMinor
+		seedLessonTypes(ctx, q, id, t)
 
 		for i, l := range t.Teaches {
 			addLang(ctx, q, id, sqlc.LanguageRoleTeaches, l, i)
@@ -525,4 +534,83 @@ func bookedOn(start time.Time, ordinal int, now time.Time) time.Time {
 		return now
 	}
 	return made
+}
+
+// seedLessonTypes gives a demo teacher the italki-shaped offerings a real one
+// would list: the trial they already advertised, a lesson named after what they
+// actually teach, and cheaper open-ended conversation practice. Prices hang off
+// the teacher's hourly rate so the numbers stay coherent with their card.
+func seedLessonTypes(ctx context.Context, q *sqlc.Queries, teacherID uuid.UUID, t seedTeacher) {
+	type offering struct {
+		title       string
+		description string
+		isTrial     bool
+		position    int32
+		// durations priced as a fraction of the hourly rate, rounded to
+		// thousands of so'm so nothing reads like a computed number
+		prices map[int32]int64
+	}
+
+	hourly := t.PriceMinor
+	round := func(v int64) int64 { return (v / 500_000) * 500_000 } // to 5,000 so'm
+
+	focus := "Lessons"
+	if len(t.Focus) > 0 {
+		focus = t.Focus[0]
+	}
+
+	offerings := []offering{{
+		title:       focus,
+		description: "A structured lesson built around " + strings.ToLower(focus) + ". We agree a goal in the first lesson and work through it week by week.",
+		position:    0,
+		prices: map[int32]int64{
+			45: round(hourly * 3 / 4),
+			60: hourly,
+			90: round(hourly * 3 / 2),
+		},
+	}, {
+		title:       "Conversation practice",
+		description: "No slides, no homework — we talk, and I correct what gets in the way. Bring a topic or I will.",
+		position:    1,
+		prices: map[int32]int64{
+			30: round(hourly * 2 / 5),
+			60: round(hourly * 4 / 5),
+		},
+	}}
+
+	if t.TrialMinor != nil {
+		offerings = append([]offering{{
+			title:       "Trial lesson",
+			description: "A short first lesson: we talk, I find your level and we agree a plan. No commitment.",
+			isTrial:     true,
+			position:    -1,
+			prices:      map[int32]int64{30: *t.TrialMinor},
+		}}, offerings...)
+	}
+
+	for _, o := range offerings {
+		row, err := q.CreateLessonType(ctx, sqlc.CreateLessonTypeParams{
+			TeacherID:   teacherID,
+			Title:       o.title,
+			Description: o.description,
+			IsTrial:     o.isTrial,
+			Position:    o.position,
+		})
+		if err != nil {
+			log.Fatalf("seed lesson type %s/%s: %v", t.Slug, o.title, err)
+		}
+		for _, minutes := range []int32{30, 45, 60, 90, 120} {
+			price, ok := o.prices[minutes]
+			if !ok {
+				continue
+			}
+			if err := q.InsertLessonTypePrice(ctx, sqlc.InsertLessonTypePriceParams{
+				LessonTypeID:    row.ID,
+				DurationMinutes: minutes,
+				PriceMinor:      price,
+			}); err != nil {
+				log.Fatalf("seed lesson price %s/%s/%d: %v", t.Slug, o.title, minutes, err)
+			}
+		}
+	}
 }

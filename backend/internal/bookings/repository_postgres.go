@@ -114,6 +114,7 @@ func (r *repositoryPostgres) CreateBooking(ctx context.Context, p CreateBookingP
 		PriceMinor:      p.PriceMinor,
 		Currency:        p.Currency,
 		IsTrial:         p.IsTrial,
+		LessonTypeID:    p.LessonTypeID,
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -204,6 +205,7 @@ func rowToBooking(row sqlc.GetBookingByIDRow) Booking {
 		MeetingURLOverride: row.MeetingUrlOverride,
 		TeacherMeetingURL:  row.TeacherMeetingUrl,
 		NoShowParty:        row.NoShowParty,
+		LessonTypeTitle:    row.LessonTypeTitle.String,
 		StudentEmail:       row.StudentEmail,
 		TeacherEmail:       row.TeacherEmail,
 		StudentLocale:      row.StudentLocale,
@@ -225,6 +227,9 @@ func rowToBooking(row sqlc.GetBookingByIDRow) Booking {
 	}
 	if row.TeacherUserID.Valid {
 		b.TeacherOwnerID = row.TeacherUserID.UUID
+	}
+	if row.LessonTypeID.Valid {
+		b.LessonTypeID = row.LessonTypeID.UUID
 	}
 	return b
 }

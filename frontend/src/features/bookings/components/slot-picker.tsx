@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
 import {
   BookingError,
-  DURATION_OPTIONS,
+  LEGACY_DURATIONS,
   getSlots,
   type BookableSlot,
   type Duration,
@@ -31,6 +31,9 @@ export function SlotPicker({
   isTrial,
   onPick,
   onPreview,
+  lessonTypeId,
+  durations,
+  initialDuration,
 }: {
   slug: string;
   teacherTimezone: string;
@@ -38,13 +41,21 @@ export function SlotPicker({
   onPick: (sel: SlotSelection) => void;
   /** fires as soon as a time is highlighted, so the summary can follow along */
   onPreview?: (sel: SlotSelection | null) => void;
+  /** the offering being booked; slots are then priced from it */
+  lessonTypeId?: string;
+  /** the lengths this offering is priced at; defaults to the legacy list */
+  durations?: readonly Duration[];
+  initialDuration?: Duration;
 }) {
   const viewerTz = useMemo(() => viewerTimezone(), []);
   const t = useTranslations("bookings");
   const locale = useLocale();
-  const [duration, setDuration] = useState<Duration>(
-    isTrial ? TRIAL_DURATION : 60,
-  );
+  const lengths = durations && durations.length > 0 ? durations : LEGACY_DURATIONS;
+  const [duration, setDuration] = useState<Duration>(() => {
+    if (initialDuration && lengths.includes(initialDuration)) return initialDuration;
+    if (lessonTypeId) return lengths[0];
+    return isTrial ? TRIAL_DURATION : 60;
+  });
   const [slots, setSlots] = useState<BookableSlot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +69,7 @@ export function SlotPicker({
       setError(null);
       setSelected(null);
       try {
-        const res = await getSlots(slug, { duration });
+        const res = await getSlots(slug, { duration, lessonTypeId });
         if (alive) setSlots(res.slots);
       } catch (err) {
         if (alive) {
@@ -72,7 +83,7 @@ export function SlotPicker({
     return () => {
       alive = false;
     };
-  }, [slug, duration, t]);
+  }, [slug, duration, lessonTypeId, t]);
 
   const days = useMemo(() => groupByDay(slots, viewerTz, locale), [slots, viewerTz, locale]);
   const currentDay =
@@ -82,11 +93,11 @@ export function SlotPicker({
 
   return (
     <div className="flex flex-col gap-6">
-      {!isTrial && (
+      {lengths.length > 1 && (
         <div className="flex flex-col gap-2">
           <span className="text-sm font-bold">{t("lessonLength")}</span>
           <div className="flex flex-wrap gap-2">
-            {DURATION_OPTIONS.map((d) => (
+            {lengths.map((d) => (
               <button
                 key={d}
                 type="button"

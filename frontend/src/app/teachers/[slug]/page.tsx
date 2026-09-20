@@ -3,11 +3,12 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getLocale, getTranslations } from "next-intl/server";
 
-import { getTeacherBySlug, listTeacherSlugs } from "@/features/teachers/api";
+import { getLessonTypes, getTeacherBySlug, listTeacherSlugs } from "@/features/teachers/api";
 import { Stars } from "@/features/reviews/components/star-rating";
 import { LanguageLine } from "@/features/teachers/components/language-line";
 import { LocalTime } from "@/features/teachers/components/local-time";
 import { IntroVideo } from "@/features/teachers/components/intro-video";
+import { LessonTypeList } from "@/features/teachers/components/lesson-type-list";
 import { BookingPanel } from "@/features/teachers/components/booking-panel";
 import { ReviewsSection } from "@/features/reviews/components/reviews-section";
 import { VerifiedBadge } from "@/features/teachers/components/verified-badge";
@@ -62,10 +63,11 @@ export default async function TeacherProfilePage({
   const teacher = await loadTeacher(slug);
   if (!teacher) notFound();
 
-  const [t, tLang, locale] = await Promise.all([
+  const [t, tLang, locale, lessonTypes] = await Promise.all([
     getTranslations("profile"),
     getTranslations("languages"),
     getLocale(),
+    getLessonTypes(slug),
   ]);
   const primaryLanguage = teacher.teaches[0];
   const kindLabel = t(teacher.kind === "professional" ? "professionalOf" : "communityOf", {
@@ -124,6 +126,12 @@ export default async function TeacherProfilePage({
               <BookingPanel teacher={teacher} />
             </div>
           </div>
+
+          <LessonTypeList
+            slug={slug}
+            lessonTypes={lessonTypes}
+            accepting={teacher.acceptingStudents}
+          />
 
           <Section title={t("about")}>
             <Prose text={teacher.about} />

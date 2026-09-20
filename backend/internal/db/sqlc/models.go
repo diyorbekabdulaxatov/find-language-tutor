@@ -213,6 +213,7 @@ type Booking struct {
 	MeetingUrlOverride string
 	NoShowParty        string
 	CancelledBy        string
+	LessonTypeID       uuid.NullUUID
 }
 
 type BookingResource struct {
@@ -344,6 +345,24 @@ type FileAsset struct {
 	ContentType string
 	Bytes       int64
 	CreatedAt   pgtype.Timestamptz
+}
+
+type LessonType struct {
+	ID          uuid.UUID
+	TeacherID   uuid.UUID
+	Title       string
+	Description string
+	IsTrial     bool
+	Archived    bool
+	Position    int32
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+type LessonTypePrice struct {
+	LessonTypeID    uuid.UUID
+	DurationMinutes int32
+	PriceMinor      int64
 }
 
 type Payment struct {

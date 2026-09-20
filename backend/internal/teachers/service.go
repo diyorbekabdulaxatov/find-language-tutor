@@ -62,6 +62,27 @@ type Repository interface {
 	// Update writes the merged scalar fields for teacherID and replaces any
 	// child collection flagged in the ProfileUpdate.
 	Update(ctx context.Context, teacherID uuid.UUID, upd ProfileUpdate) error
+
+	// --- lesson types (the teacher's 1-on-1 offerings) ---
+
+	// ListLessonTypes returns a teacher's offerings with their price lists,
+	// trial first. Archived ones are included only when asked for.
+	ListLessonTypes(ctx context.Context, teacherID uuid.UUID, includeArchived bool) ([]LessonType, error)
+
+	// GetLessonType returns one offering with its prices, or
+	// ErrLessonTypeNotFound.
+	GetLessonType(ctx context.Context, id uuid.UUID) (LessonType, error)
+
+	// CreateLessonType inserts an offering and its price list.
+	CreateLessonType(ctx context.Context, teacherID uuid.UUID, in LessonTypeInput) (LessonType, error)
+
+	// UpdateLessonType replaces an offering's text, position and price list.
+	// The trial flag is fixed at creation.
+	UpdateLessonType(ctx context.Context, id uuid.UUID, in LessonTypeInput) (LessonType, error)
+
+	// SetLessonTypeArchived hides (or restores) an offering. Bookings already
+	// made against it keep pointing at it.
+	SetLessonTypeArchived(ctx context.Context, id uuid.UUID, archived bool) (LessonType, error)
 }
 
 // Service holds the teacher-profiles business logic. Handlers call it; it never

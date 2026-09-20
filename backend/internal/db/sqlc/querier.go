@@ -205,6 +205,7 @@ type Querier interface {
 	CreateCoursePayment(ctx context.Context, arg CreateCoursePaymentParams) (CoursePayment, error)
 	// File assets (phase A1): the app's handle to a blob in the store.
 	CreateFileAsset(ctx context.Context, arg CreateFileAssetParams) (FileAsset, error)
+	CreateLessonType(ctx context.Context, arg CreateLessonTypeParams) (LessonType, error)
 	// Payments module: one payment intent per booking, the webhook-event log that
 	// guards idempotency, and the simplified teacher-earnings ledger. Money is
 	// integer minor units everywhere.
@@ -252,6 +253,9 @@ type Querier interface {
 	// Seed-only. file_assets.owner_id -> users cascades, but resources may still
 	// reference an asset id in JSONB (no FK), so the seed clears this before users.
 	DeleteAllFileAssets(ctx context.Context) error
+	// Seed-only (no ON DELETE CASCADE in this schema — see cmd/seed).
+	DeleteAllLessonTypePrices(ctx context.Context) error
+	DeleteAllLessonTypes(ctx context.Context) error
 	DeleteAllPaymentEvents(ctx context.Context) error
 	// Seed-only. payments.booking_id references bookings with no ON DELETE CASCADE,
 	// so the seed must clear payment rows (and the event log / ledger that
@@ -283,6 +287,7 @@ type Querier interface {
 	DeleteCourse(ctx context.Context, id uuid.UUID) error
 	DeleteCourseItem(ctx context.Context, id uuid.UUID) error
 	DeleteCourseSection(ctx context.Context, id uuid.UUID) error
+	DeleteLessonTypePrices(ctx context.Context, lessonTypeID uuid.UUID) error
 	DeleteResource(ctx context.Context, id uuid.UUID) error
 	DeleteReview(ctx context.Context, id uuid.UUID) error
 	DeleteRole(ctx context.Context, id uuid.UUID) error
@@ -345,6 +350,7 @@ type Querier interface {
 	// teacher's owning account, and the enrolled student.
 	GetEnrollmentParticipants(ctx context.Context, id uuid.UUID) (GetEnrollmentParticipantsRow, error)
 	GetFileAsset(ctx context.Context, id uuid.UUID) (FileAsset, error)
+	GetLessonType(ctx context.Context, id uuid.UUID) (LessonType, error)
 	// A token that can still be redeemed: matches the hash + purpose, not consumed,
 	// not expired.
 	GetLiveAuthToken(ctx context.Context, arg GetLiveAuthTokenParams) (GetLiveAuthTokenRow, error)
@@ -438,6 +444,9 @@ type Querier interface {
 	// The row stays 'held' until a payout run settles it (phase E) — nothing flips
 	// it to 'available'; that state is derived from available_at at read time.
 	InsertLedgerHeld(ctx context.Context, arg InsertLedgerHeldParams) error
+	// Replace is delete-then-insert; a price list is at most five rows, so the
+	// repository loops rather than carrying a two-array unnest.
+	InsertLessonTypePrice(ctx context.Context, arg InsertLessonTypePriceParams) error
 	// The idempotency gate. A duplicate event_id raises SQLSTATE 23505, which the
 	// repository treats as "already processed".
 	InsertPaymentEvent(ctx context.Context, arg InsertPaymentEventParams) error
@@ -459,6 +468,12 @@ type Querier interface {
 	// The most recent still-live token of a purpose for a user — drives the "one was
 	// just sent, don't send another" cooldown. No row -> zero time.
 	LatestAuthTokenAt(ctx context.Context, arg LatestAuthTokenAtParams) (pgtype.Timestamptz, error)
+	// Durations a live offering can be booked for, cheapest first.
+	LessonTypeDurations(ctx context.Context, lessonTypeID uuid.UUID) ([]LessonTypeDurationsRow, error)
+	// What the booking service needs to price one lesson: the offering, its owner
+	// and the price for the requested duration. No row means the duration is not
+	// offered (or the type is archived / belongs to another teacher).
+	LessonTypeOffering(ctx context.Context, arg LessonTypeOfferingParams) (LessonTypeOfferingRow, error)
 	ListAvailabilitySlots(ctx context.Context, teacherID uuid.UUID) ([]ListAvailabilitySlotsRow, error)
 	// A booking's attachments, teacher-ordered, each with its resource's display
 	// fields joined in (title/type/status/content) so the caller never N+1s.
@@ -486,6 +501,12 @@ type Querier interface {
 	ListFocusForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]TeacherFocu, error)
 	ListItemProgressForEnrollment(ctx context.Context, enrollmentID uuid.UUID) ([]CourseItemProgress, error)
 	ListLanguagesForTeachers(ctx context.Context, teacherIds []uuid.UUID) ([]TeacherLanguage, error)
+	ListLessonTypePrices(ctx context.Context, lessonTypeIds []uuid.UUID) ([]LessonTypePrice, error)
+	// Lesson types: a teacher's 1-on-1 offerings and their per-duration prices.
+	// Prices are read as a separate pass (by type id) rather than joined, so a
+	// type with no prices yet still comes back and the caller assembles the tree.
+	// The teacher's live offerings, trial first, then by position.
+	ListLessonTypes(ctx context.Context, arg ListLessonTypesParams) ([]LessonType, error)
 	ListPermissionsForRoles(ctx context.Context, roleIds []uuid.UUID) ([]RolePermission, error)
 	ListRoles(ctx context.Context) ([]ListRolesRow, error)
 	// Every submission filed against one booking's homeworks. A booking has
@@ -648,6 +669,7 @@ type Querier interface {
 	// (same two-query shape avoids a CTE-scoped ambiguous-column parse sqlc
 	// rejects when the same query both updates and re-joins the touched row).
 	SetCourseSuspended(ctx context.Context, arg SetCourseSuspendedParams) (Course, error)
+	SetLessonTypeArchived(ctx context.Context, arg SetLessonTypeArchivedParams) (LessonType, error)
 	SetResourceArchived(ctx context.Context, arg SetResourceArchivedParams) (Resource, error)
 	SetResourceStatus(ctx context.Context, arg SetResourceStatusParams) (Resource, error)
 	SetReviewHidden(ctx context.Context, arg SetReviewHiddenParams) error
@@ -698,6 +720,7 @@ type Querier interface {
 	// The author edits their own standing opinion. Scoped by student_id so an
 	// edit can never touch someone else's row even if the id leaked.
 	UpdateCourseReview(ctx context.Context, arg UpdateCourseReviewParams) (CourseReview, error)
+	UpdateLessonType(ctx context.Context, arg UpdateLessonTypeParams) (LessonType, error)
 	// Partial edit: title / instructions / content are replaced wholesale when
 	// provided (the service passes the current value for fields it isn't changing).
 	UpdateResource(ctx context.Context, arg UpdateResourceParams) (Resource, error)

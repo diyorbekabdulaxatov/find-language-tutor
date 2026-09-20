@@ -13,6 +13,7 @@ import {
   BookingError,
   createBooking,
   type Booking,
+  type DURATION_OPTIONS,
 } from "@/features/bookings/api";
 import { formatFull, viewerTimezone } from "@/features/bookings/datetime";
 import {
@@ -21,10 +22,9 @@ import {
 } from "@/features/bookings/components/slot-picker";
 import { PaymentForm } from "@/features/bookings/components/payment-form";
 import { TeacherAvatar } from "@/features/teachers/components/teacher-avatar";
+import type { LessonType } from "@/features/teachers/api";
 
-type Step = "pick" | "confirm" | "pay" | "done";
-
-const STEPS: Step[] = ["pick", "confirm", "pay"];
+type Step = "lesson" | "pick" | "confirm" | "pay" | "done";
 
 /**
  * Udemy-style checkout: the step column on the left, a sticky order summary on
@@ -38,6 +38,9 @@ export function BookingFlow({
   teacherTimezone,
   listPrice,
   isTrial,
+  lessonTypes = [],
+  selectedLessonTypeId,
+  selectedDuration,
 }: {
   slug: string;
   teacherName: string;
@@ -45,13 +48,27 @@ export function BookingFlow({
   teacherTimezone: string;
   listPrice: Money;
   isTrial: boolean;
+  /** the teacher's offerings; empty for a profile that predates lesson types */
+  lessonTypes?: LessonType[];
+  /** preselected by the profile's lesson cards — skips the first step */
+  selectedLessonTypeId?: string;
+  selectedDuration?: number;
 }) {
   const { status } = useAuth();
   const router = useRouter();
   const t = useTranslations("bookings");
   const locale = useLocale();
 
-  const [step, setStep] = useState<Step>("pick");
+  // Choosing the lesson is step one — unless the profile already linked to one,
+  // or the teacher has no offerings (the pre-lesson-type path).
+  const [lessonTypeId, setLessonTypeId] = useState<string | undefined>(selectedLessonTypeId);
+  const chosen = lessonTypes.find((lt) => lt.id === lessonTypeId);
+  const needsLessonStep = lessonTypes.length > 0 && !selectedLessonTypeId;
+  const steps: Step[] = needsLessonStep
+    ? ["lesson", "pick", "confirm", "pay"]
+    : ["pick", "confirm", "pay"];
+
+  const [step, setStep] = useState<Step>(needsLessonStep ? "lesson" : "pick");
   const [selection, setSelection] = useState<SlotSelection | null>(null);
   // the time highlighted in the picker, before "Continue" — the summary follows it
   const [preview, setPreview] = useState<SlotSelection | null>(null);
@@ -83,6 +100,7 @@ export function BookingFlow({
         startAt: selection.slot.startAt,
         durationMinutes: selection.durationMinutes,
         isTrial: selection.isTrial,
+        lessonTypeId,
       });
       setBooking(b);
       setSubmitting(false);
@@ -148,7 +166,7 @@ export function BookingFlow({
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-12">
       <div>
-        <StepRail current={step} />
+        <StepRail current={step} steps={steps} />
 
         {error && (
           <p role="alert" className="mt-6 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -156,14 +174,47 @@ export function BookingFlow({
           </p>
         )}
 
+        {step === "lesson" && (
+          <div className="mt-6">
+            <LessonPicker
+              lessonTypes={lessonTypes}
+              locale={locale}
+              onPick={(id) => {
+                setLessonTypeId(id);
+                setPreview(null);
+                setStep("pick");
+              }}
+            />
+          </div>
+        )}
+
         {step === "pick" && (
           <div className="mt-6">
+            {needsLessonStep && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPreview(null);
+                  setStep("lesson");
+                }}
+                className="mb-4 inline-flex items-center gap-1.5 text-sm font-bold text-link hover:underline"
+              >
+                <ArrowLeft className="size-4" /> {t("changeLesson")}
+              </button>
+            )}
             <SlotPicker
               slug={slug}
               teacherTimezone={teacherTimezone}
               isTrial={isTrial}
               onPick={handlePick}
               onPreview={setPreview}
+              lessonTypeId={lessonTypeId}
+              durations={chosen?.prices.map((p) => p.durationMinutes)}
+              initialDuration={
+                selectedDuration && chosen?.prices.some((p) => p.durationMinutes === selectedDuration)
+                  ? (selectedDuration as (typeof DURATION_OPTIONS)[number])
+                  : undefined
+              }
             />
           </div>
         )}
@@ -185,6 +236,7 @@ export function BookingFlow({
               <h2 className="font-display text-xl">{t("confirmYourLesson")}</h2>
               <dl className="mt-4 divide-y divide-border border-y border-border text-sm">
                 <Row label={t("teacher")}>{teacherName}</Row>
+                {chosen && <Row label={t("lesson")}>{chosen.title}</Row>}
                 <Row label={t("when")}>{formatFull(selection.slot.startAt, viewerTz, locale)}</Row>
                 <Row label={t("yourTimezone")}>{viewerTz}</Row>
                 {viewerTz !== teacherTimezone && (
@@ -244,7 +296,7 @@ export function BookingFlow({
             <div className="min-w-0">
               <p className="truncate text-sm font-bold">{teacherName}</p>
               <p className="text-xs text-muted-foreground">
-                {isTrial ? t("trialLesson") : t("lesson")}
+                {chosen ? chosen.title : isTrial ? t("trialLesson") : t("lesson")}
               </p>
             </div>
           </div>
@@ -277,19 +329,20 @@ export function BookingFlow({
 }
 
 /** "1 Choose a time — 2 Review — 3 Payment", the done steps in ink. */
-function StepRail({ current }: { current: Step }) {
+function StepRail({ current, steps }: { current: Step; steps: Step[] }) {
   const t = useTranslations("bookings");
   const labels: Record<Step, string> = {
+    lesson: t("stepLesson"),
     pick: t("stepTime"),
     confirm: t("stepReview"),
     pay: t("stepPayment"),
     done: "",
   };
-  const index = STEPS.indexOf(current);
+  const index = steps.indexOf(current);
 
   return (
     <ol className="flex items-center gap-3 border-b border-border pb-3 text-sm">
-      {STEPS.map((s, i) => (
+      {steps.map((s, i) => (
         <li key={s} className="flex items-center gap-3">
           {i > 0 && <span aria-hidden className="h-px w-4 bg-border sm:w-8" />}
           <span
@@ -332,6 +385,59 @@ function Row({
     <div className="flex justify-between gap-4 py-2.5">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="text-right font-bold text-foreground">{children}</dd>
+    </div>
+  );
+}
+
+/**
+ * Step one when the teacher lists offerings: the same cards as the profile, as
+ * radio-style buttons. Picking one moves straight to the calendar, with that
+ * offering's lengths and prices.
+ */
+function LessonPicker({
+  lessonTypes,
+  locale,
+  onPick,
+}: {
+  lessonTypes: LessonType[];
+  locale: string;
+  onPick: (id: string) => void;
+}) {
+  const t = useTranslations("bookings");
+  return (
+    <div className="flex flex-col gap-3">
+      <h2 className="font-display text-xl">{t("chooseLesson")}</h2>
+      <ul className="flex flex-col gap-3">
+        {lessonTypes.map((lt) => (
+          <li key={lt.id}>
+            <button
+              type="button"
+              onClick={() => onPick(lt.id)}
+              className="w-full border border-border bg-card p-4 text-left transition-colors hover:border-foreground hover:bg-accent"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <span className="font-bold">
+                  {lt.title}
+                  {lt.isTrial && (
+                    <span className="ml-2 rounded-sm bg-accent px-1.5 py-0.5 text-xs font-bold text-accent-foreground">
+                      {t("trial")}
+                    </span>
+                  )}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {t("fromPrice", { price: formatMoney(lt.from, locale) })}
+                </span>
+              </div>
+              {lt.description && (
+                <p className="mt-1 text-sm text-muted-foreground">{lt.description}</p>
+              )}
+              <p className="mt-2 text-xs text-muted-foreground">
+                {lt.prices.map((p) => t("min", { count: p.durationMinutes })).join(" · ")}
+              </p>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

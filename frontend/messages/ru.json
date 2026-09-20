@@ -185,6 +185,13 @@
     "hours": "{count} ч",
     "days": "{count, plural, one {# день} few {# дня} many {# дней} other {# дня}}"
   },
+  "lessonTypes": {
+    "title": "Уроки с этим преподавателем",
+    "intro": "Выберите урок, а затем удобное время.",
+    "trialBadge": "Пробный",
+    "from": "от {price}",
+    "minutes": "{count} мин"
+  },
   "bookPage": {
     "backTo": "Назад к {name}",
     "bookLesson": "Записаться на урок",
@@ -428,7 +435,11 @@
     "noSubmissionFlow": "{type, select, material {Материалы} other {Статьи}} не сдаются на проверку — прикрепите как материал.",
     "dueOptional": "Срок сдачи (необязательно)",
     "attaching": "Прикрепляем…",
-    "attach": "Прикрепить"
+    "attach": "Прикрепить",
+    "stepLesson": "Выберите урок",
+    "chooseLesson": "Что вы хотите забронировать?",
+    "changeLesson": "Изменить урок",
+    "fromPrice": "от {price}"
   },
   "dashboard": {
     "meta": "Кабинет преподавателя",
@@ -464,7 +475,32 @@
     "stateAvailable": "Доступно",
     "statePaid": "Выплачено",
     "stateReversed": "Возвращено",
-    "clears": "доступно с {date}"
+    "clears": "доступно с {date}",
+    "tabLessons": "Уроки",
+    "needProfileLessons": "Сначала создайте профиль, затем добавьте свои уроки."
+  },
+  "lessonEditor": {
+    "intro": "Именно это бронируют ученики. Дайте каждому уроку понятное название, опишите, что на нём происходит, и укажите цену для каждой длительности.",
+    "couldNotLoad": "Не удалось загрузить ваши уроки.",
+    "couldNotSave": "Не удалось сохранить урок.",
+    "addLesson": "Добавить урок",
+    "archivedTitle": "Скрытые",
+    "restore": "Показать снова",
+    "trial": "Пробный",
+    "edit": "Изменить",
+    "archive": "Скрыть",
+    "titleLabel": "Название урока",
+    "titlePlaceholder": "Подготовка к IELTS Speaking",
+    "descriptionLabel": "Что происходит на уроке",
+    "descriptionPlaceholder": "Пробные Part 2 и Part 3, затем разбор, который можно применить на этой же неделе.",
+    "pricesLabel": "Длительность и цены",
+    "pricesHint": "В сумах. Оставьте поле пустым, если такую длительность не ведёте.",
+    "minutes": "{count} мин",
+    "markAsTrial": "Это мой пробный урок",
+    "trialTaken": "У вас уже есть пробный урок",
+    "save": "Сохранить урок",
+    "saving": "Сохранение…",
+    "cancel": "Отмена"
   },
   "profileEditor": {
     "somethingWrong": "Что-то пошло не так. Попробуйте ещё раз.",

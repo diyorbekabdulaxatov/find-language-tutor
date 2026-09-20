@@ -313,6 +313,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/teachers/{slug}/lesson-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A teacher's 1-on-1 offerings
+         * @description The lessons a teacher offers — italki's shape, where each offering has its own description and a price per length, and at most one is the trial. Live offerings only, trial first. Public.
+         */
+        get: operations["listLessonTypes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/teachers/me/lesson-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's own offerings
+         * @description Includes archived offerings so the dashboard can restore them.
+         */
+        get: operations["listOwnLessonTypes"];
+        put?: never;
+        /**
+         * Add an offering
+         * @description At most 8 live offerings, at most one of them the trial (409 `trial_exists` otherwise). Lengths must be 30/45/60/90/120 minutes and each may appear once.
+         */
+        post: operations["createLessonType"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/teachers/me/lesson-types/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit an offering
+         * @description Title, description, position and the whole price list are replaced. The trial flag is fixed at creation.
+         */
+        patch: operations["updateLessonType"];
+        trace?: never;
+    };
+    "/v1/teachers/me/lesson-types/{id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hide an offering
+         * @description Archiving takes an offering off the profile without deleting it — bookings already made against it keep their title.
+         */
+        post: operations["archiveLessonType"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/teachers/me/lesson-types/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore an archived offering */
+        post: operations["restoreLessonType"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/teachers/{slug}/slots": {
         parameters: {
             query?: never;
@@ -2254,6 +2355,51 @@ export interface components {
         };
         /** @enum {string} */
         BookingStatus: "pending_payment" | "confirmed" | "completed" | "cancelled";
+        /** @description One length an offering can be booked at, with its price. */
+        LessonPrice: {
+            /** @enum {integer} */
+            duration_minutes: 30 | 45 | 60 | 90 | 120;
+            price: components["schemas"]["Money"];
+        };
+        /** @description One of a teacher's 1-on-1 offerings. `from` is the cheapest of its prices — the "from 45,000 so'm" line on a card. */
+        LessonType: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            description: string;
+            /** @description At most one live offering per teacher is the trial. */
+            is_trial: boolean;
+            archived: boolean;
+            /** @description Display order; the trial sorts first regardless. */
+            position: number;
+            from: components["schemas"]["Money"];
+            prices: components["schemas"]["LessonPrice"][];
+        };
+        LessonTypeList: {
+            lesson_types: components["schemas"]["LessonType"][];
+        };
+        LessonTypeWrite: {
+            title: string;
+            description?: string;
+            /**
+             * @description Honoured on create only; the flag is fixed afterwards.
+             * @default false
+             */
+            is_trial: boolean;
+            position?: number;
+            prices: {
+                /** @enum {integer} */
+                duration_minutes: 30 | 45 | 60 | 90 | 120;
+                /** Format: int64 */
+                price_minor: number;
+            }[];
+        };
+        /** @description The offering a booking was made against; its title survives archival. */
+        BookingLessonType: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+        };
         /** @description One concrete bookable start time with its price. */
         Slot: {
             /**
@@ -2316,6 +2462,8 @@ export interface components {
             end_at: string;
             duration_minutes: number;
             is_trial: boolean;
+            /** @description Null for bookings made before the teacher had lesson types. */
+            lesson_type: components["schemas"]["BookingLessonType"] | null;
             price: components["schemas"]["Money"];
             /** Format: date-time */
             created_at: string;
@@ -2456,11 +2604,13 @@ export interface components {
              * @description RFC3339 UTC. Must be in the future and a real bookable slot.
              */
             start_at: string;
+            /** @description With lesson_type_id, one of that offering's priced lengths. Without one, 30/60/90/120 — and ignored when is_trial is true (forced to 30). */
+            duration_minutes: number;
             /**
-             * @description Ignored when is_trial is true (forced to 30).
-             * @enum {integer}
+             * Format: uuid
+             * @description The offering the student picked. It sets the price and the trial flag, and the client's price is never trusted. Omit for the pre-lesson-type path (the teacher's hourly rate).
              */
-            duration_minutes: 30 | 60 | 90 | 120;
+            lesson_type_id?: string;
             /**
              * @description A trial lesson — 30 minutes, priced at the teacher's trial_price.
              * @default false
@@ -4235,6 +4385,189 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listLessonTypes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The teacher's offerings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonTypeList"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listOwnLessonTypes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's offerings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonTypeList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The caller owns no teacher profile. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createLessonType: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LessonTypeWrite"];
+            };
+        };
+        responses: {
+            /** @description The new offering. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonType"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The caller owns no teacher profile. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `trial_exists` — the caller already offers a trial lesson. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateLessonType: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LessonTypeWrite"];
+            };
+        };
+        responses: {
+            /** @description The updated offering. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonType"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    archiveLessonType: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The archived offering. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonType"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    restoreLessonType: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The restored offering. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonType"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description `trial_exists` — a live trial offering already exists. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     listTeacherSlots: {
         parameters: {
             query?: {
@@ -4242,8 +4575,10 @@ export interface operations {
                 from?: string;
                 /** @description RFC3339 UTC. Defaults to from + 14 days. Max span 21 days. */
                 to?: string;
-                /** @description Lesson length in minutes. */
-                duration?: 30 | 60 | 90 | 120;
+                /** @description Lesson length in minutes. With lesson_type_id, one of that offering's priced lengths. */
+                duration?: 30 | 45 | 60 | 90 | 120;
+                /** @description Price the slots from this offering instead of the teacher's hourly rate. */
+                lesson_type_id?: string;
             };
             header?: never;
             path: {

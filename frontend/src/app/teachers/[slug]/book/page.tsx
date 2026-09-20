@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { ArrowLeft } from "lucide-react";
-import { getTeacherBySlug } from "@/features/teachers/api";
+import { getLessonTypes, getTeacherBySlug } from "@/features/teachers/api";
 import { BookingFlow } from "@/features/bookings/components/booking-flow";
 
 export const dynamicParams = true;
@@ -22,10 +22,25 @@ export default async function BookPage({
 }: PageProps<"/teachers/[slug]/book">) {
   const { slug } = await params;
   const sp = await searchParams;
-  const [t, teacher] = await Promise.all([getTranslations("bookPage"), getTeacherBySlug(slug)]);
+  const [t, teacher, lessonTypes] = await Promise.all([
+    getTranslations("bookPage"),
+    getTeacherBySlug(slug),
+    getLessonTypes(slug),
+  ]);
   if (!teacher) notFound();
 
-  const isTrial = sp.trial === "1" && teacher.trialPrice != null;
+  // The profile links straight to an offering (?lesson=&duration=); ?trial=1 is
+  // the pre-lesson-type link and maps onto the teacher's trial offering.
+  const requested = typeof sp.lesson === "string" ? sp.lesson : undefined;
+  const trialWanted = sp.trial === "1";
+  const selected =
+    lessonTypes.find((lt) => lt.id === requested) ??
+    (trialWanted ? lessonTypes.find((lt) => lt.isTrial) : undefined);
+  const requestedDuration = Number(
+    typeof sp.duration === "string" ? sp.duration : Number.NaN,
+  );
+
+  const isTrial = selected ? selected.isTrial : trialWanted && teacher.trialPrice != null;
 
   return (
     <div className="mx-auto max-w-[1340px] px-4 py-8 sm:px-6">
@@ -47,8 +62,19 @@ export default async function BookPage({
           teacherName={teacher.displayName}
           teacherAvatarUrl={teacher.avatarUrl}
           teacherTimezone={teacher.timezone}
-          listPrice={isTrial && teacher.trialPrice ? teacher.trialPrice : teacher.pricePerHour}
+          listPrice={
+            selected
+              ? selected.from
+              : isTrial && teacher.trialPrice
+                ? teacher.trialPrice
+                : teacher.pricePerHour
+          }
           isTrial={isTrial}
+          lessonTypes={lessonTypes}
+          selectedLessonTypeId={selected?.id}
+          selectedDuration={
+            Number.isFinite(requestedDuration) ? requestedDuration : undefined
+          }
         />
       </div>
     </div>

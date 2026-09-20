@@ -185,6 +185,13 @@
     "hours": "{count} soat",
     "days": "{count, plural, other {# kun}}"
   },
+  "lessonTypes": {
+    "title": "Ushbu o'qituvchi bilan darslar",
+    "intro": "Kerakli darsni tanlang, so'ng qulay vaqtni belgilang.",
+    "trialBadge": "Sinov",
+    "from": "{price} dan",
+    "minutes": "{count} daqiqa"
+  },
   "bookPage": {
     "backTo": "{name} sahifasiga qaytish",
     "bookLesson": "Darsga yozilish",
@@ -428,7 +435,11 @@
     "noSubmissionFlow": "{type, select, material {Materiallar} other {Maqolalar}} topshirilmaydi — material sifatida biriktiring.",
     "dueOptional": "Topshirish muddati (ixtiyoriy)",
     "attaching": "Biriktirilmoqda…",
-    "attach": "Biriktirish"
+    "attach": "Biriktirish",
+    "stepLesson": "Darsni tanlang",
+    "chooseLesson": "Nimani band qilmoqchisiz?",
+    "changeLesson": "Darsni o'zgartirish",
+    "fromPrice": "{price} dan"
   },
   "dashboard": {
     "meta": "O'qituvchi kabineti",
@@ -464,7 +475,32 @@
     "stateAvailable": "Mavjud",
     "statePaid": "To'langan",
     "stateReversed": "Qaytarilgan",
-    "clears": "{date}dan mavjud"
+    "clears": "{date}dan mavjud",
+    "tabLessons": "Darslar",
+    "needProfileLessons": "Avval profilingizni yarating, so'ng darslaringizni qo'shing."
+  },
+  "lessonEditor": {
+    "intro": "O'quvchilar aynan shularni band qiladi. Har biriga aniq nom bering, darsda nima bo'lishini yozing va har bir davomiylik uchun narx ko'rsating.",
+    "couldNotLoad": "Darslaringizni yuklab bo'lmadi.",
+    "couldNotSave": "Darsni saqlab bo'lmadi.",
+    "addLesson": "Dars qo'shish",
+    "archivedTitle": "Yashirilgan",
+    "restore": "Qayta ko'rsatish",
+    "trial": "Sinov",
+    "edit": "Tahrirlash",
+    "archive": "Yashirish",
+    "titleLabel": "Dars nomi",
+    "titlePlaceholder": "IELTS Speaking tayyorgarligi",
+    "descriptionLabel": "Darsda nima bo'ladi",
+    "descriptionPlaceholder": "Sinov Part 2 va Part 3, so'ng shu haftada qo'llasa bo'ladigan izohlar.",
+    "pricesLabel": "Davomiylik va narxlar",
+    "pricesHint": "So'mda. O'tmaydigan davomiylikni bo'sh qoldiring.",
+    "minutes": "{count} daqiqa",
+    "markAsTrial": "Bu mening sinov darsim",
+    "trialTaken": "Sizda sinov darsi allaqachon bor",
+    "save": "Darsni saqlash",
+    "saving": "Saqlanmoqda…",
+    "cancel": "Bekor qilish"
   },
   "profileEditor": {
     "somethingWrong": "Xatolik yuz berdi. Qayta urinib ko'ring.",

@@ -185,6 +185,13 @@
     "hours": "{count}h",
     "days": "{count, plural, one {# day} other {# days}}"
   },
+  "lessonTypes": {
+    "title": "Lessons with this teacher",
+    "intro": "Pick the lesson you want, then a time that suits you.",
+    "trialBadge": "Trial",
+    "from": "from {price}",
+    "minutes": "{count} min"
+  },
   "bookPage": {
     "backTo": "Back to {name}",
     "bookLesson": "Book a lesson",
@@ -428,7 +435,11 @@
     "noSubmissionFlow": "{type, select, material {Materials} other {Articles}} have no submission flow — attach as material.",
     "dueOptional": "Due date (optional)",
     "attaching": "Attaching…",
-    "attach": "Attach"
+    "attach": "Attach",
+    "stepLesson": "Choose a lesson",
+    "chooseLesson": "What would you like to book?",
+    "changeLesson": "Change lesson",
+    "fromPrice": "from {price}"
   },
   "dashboard": {
     "meta": "Teacher dashboard",
@@ -464,7 +475,32 @@
     "stateAvailable": "Available",
     "statePaid": "Paid out",
     "stateReversed": "Refunded",
-    "clears": "clears {date}"
+    "clears": "clears {date}",
+    "tabLessons": "Lessons",
+    "needProfileLessons": "Create your profile first, then list the lessons you offer."
+  },
+  "lessonEditor": {
+    "intro": "These are what a student books. Give each one a clear name, a line about what happens in it, and a price for every length you teach it at.",
+    "couldNotLoad": "Could not load your lessons.",
+    "couldNotSave": "Could not save that lesson.",
+    "addLesson": "Add a lesson",
+    "archivedTitle": "Hidden",
+    "restore": "Show again",
+    "trial": "Trial",
+    "edit": "Edit",
+    "archive": "Hide",
+    "titleLabel": "Lesson name",
+    "titlePlaceholder": "IELTS Speaking preparation",
+    "descriptionLabel": "What happens in it",
+    "descriptionPlaceholder": "Mock Part 2 and Part 3, then feedback you can act on the same week.",
+    "pricesLabel": "Lengths and prices",
+    "pricesHint": "In so'm. Leave a length blank if you don't teach it.",
+    "minutes": "{count} min",
+    "markAsTrial": "This is my trial lesson",
+    "trialTaken": "You already offer a trial lesson",
+    "save": "Save lesson",
+    "saving": "Saving…",
+    "cancel": "Cancel"
   },
   "profileEditor": {
     "somethingWrong": "Something went wrong. Please try again.",

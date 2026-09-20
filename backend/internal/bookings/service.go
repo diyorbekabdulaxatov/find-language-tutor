@@ -58,6 +58,10 @@ type CreateInput struct {
 	StartAt         time.Time
 	DurationMinutes int
 	IsTrial         bool
+
+	// LessonTypeID is the offering the student picked. uuid.Nil keeps the
+	// pre-L1 path: priced from the teacher's hourly rate.
+	LessonTypeID uuid.UUID
 }
 
 // ListFilter is passed to the repository. StudentFilter / TeacherFilter are
@@ -72,6 +76,7 @@ type ListFilter struct {
 type CreateBookingParams struct {
 	TeacherID       uuid.UUID
 	StudentID       uuid.UUID
+	LessonTypeID    uuid.NullUUID
 	StartAt         time.Time
 	EndAt           time.Time
 	DurationMinutes int
@@ -135,7 +140,12 @@ type Service struct {
 	reviews   ReviewReader      // nil until SetReviewReader; guarded
 	disputes  DisputeReader     // nil until SetDisputeReader; guarded
 	resources ResourceReader    // nil until SetResourceReader; guarded
-	logger    *slog.Logger
+
+	// lessonTypes prices a booking against one of the teacher's offerings
+	// (italki-style). nil keeps the pre-L1 hourly path — see LessonTypeReader.
+	lessonTypes LessonTypeReader
+
+	logger *slog.Logger
 }
 
 func NewService(repo Repository) *Service {
@@ -275,7 +285,7 @@ func (s *Service) log() *slog.Logger {
 // Public — no auth. from defaults to now, to defaults to from+14d, and the
 // window is capped at 21 days (ValidationError beyond that). duration defaults
 // to 60 and must be one of 30/60/90/120.
-func (s *Service) Slots(ctx context.Context, slug string, from, to *time.Time, durationMinutes int) (SlotResult, error) {
+func (s *Service) Slots(ctx context.Context, slug string, from, to *time.Time, durationMinutes int, lessonTypeID uuid.UUID) (SlotResult, error) {
 	now := s.now().UTC()
 
 	start := now
@@ -300,13 +310,25 @@ func (s *Service) Slots(ctx context.Context, slug string, from, to *time.Time, d
 	if durationMinutes == 0 {
 		durationMinutes = DefaultDurationMinutes
 	}
-	if !allowedDurations[durationMinutes] {
+	// With an offering the length is whatever it is priced at; without one the
+	// legacy list applies.
+	if lessonTypeID == uuid.Nil && !allowedDurations[durationMinutes] {
 		return SlotResult{}, invalid("`duration` must be one of 30, 60, 90, 120.")
 	}
 
 	tc, err := s.repo.TeacherContextBySlug(ctx, slug)
 	if err != nil {
 		return SlotResult{}, err
+	}
+
+	// Every slot in the window costs the same, so the offering is priced once.
+	var offering *Offering
+	if lessonTypeID != uuid.Nil {
+		o, err := s.offering(ctx, tc.ID, lessonTypeID, durationMinutes)
+		if err != nil {
+			return SlotResult{}, err
+		}
+		offering = &o
 	}
 
 	spans, err := s.repo.WeeklyAvailability(ctx, tc.ID)
@@ -319,6 +341,9 @@ func (s *Service) Slots(ctx context.Context, slug string, from, to *time.Time, d
 	}
 
 	price := hourlyPrice(tc.PricePerHourMinor, durationMinutes, tc.Currency)
+	if offering != nil {
+		price = offering.Price
+	}
 	q := SlotQuery{From: start, To: end, DurationMinutes: durationMinutes}
 	slots := generateSlots(spans, booked, q, func() Money { return price }, now)
 
@@ -345,12 +370,25 @@ func (s *Service) Create(ctx context.Context, studentID uuid.UUID, in CreateInpu
 		return Booking{}, ErrCannotBookSelf
 	}
 
-	// is_trial forces a fixed 30-minute length; otherwise the requested duration
-	// must be one of the allowed values.
+	// An offering (lesson type) sets both the length and the price; without one
+	// the legacy path applies — is_trial forces 30 minutes, everything else
+	// must be one of the allowed lengths.
+	var offering *Offering
+	if in.LessonTypeID != uuid.Nil {
+		o, err := s.offering(ctx, tc.ID, in.LessonTypeID, in.DurationMinutes)
+		if err != nil {
+			return Booking{}, err
+		}
+		offering = &o
+	}
+
 	duration := in.DurationMinutes
-	if in.IsTrial {
+	switch {
+	case offering != nil:
+		// validated against the offering's own price list
+	case in.IsTrial:
 		duration = trialDurationMinutes
-	} else if !allowedDurations[duration] {
+	case !allowedDurations[duration]:
 		return Booking{}, invalid("`duration_minutes` must be one of 30, 60, 90, 120.")
 	}
 
@@ -360,14 +398,19 @@ func (s *Service) Create(ctx context.Context, studentID uuid.UUID, in CreateInpu
 	}
 	end := start.Add(time.Duration(duration) * time.Minute)
 
-	// Pricing.
+	// Pricing. The offering's own price wins; the client's is never trusted.
 	var price Money
-	if in.IsTrial {
+	isTrial := in.IsTrial
+	switch {
+	case offering != nil:
+		price = offering.Price
+		isTrial = offering.IsTrial
+	case in.IsTrial:
 		if tc.TrialPriceMinor == nil {
 			return Booking{}, invalid("this teacher does not offer a trial lesson.")
 		}
 		price = Money{AmountMinor: *tc.TrialPriceMinor, Currency: tc.Currency}
-	} else {
+	default:
 		price = hourlyPrice(tc.PricePerHourMinor, duration, tc.Currency)
 	}
 
@@ -392,7 +435,8 @@ func (s *Service) Create(ctx context.Context, studentID uuid.UUID, in CreateInpu
 		DurationMinutes: duration,
 		PriceMinor:      price.AmountMinor,
 		Currency:        price.Currency,
-		IsTrial:         in.IsTrial,
+		IsTrial:         isTrial,
+		LessonTypeID:    lessonTypeRef(offering),
 	})
 	if err != nil {
 		return Booking{}, err

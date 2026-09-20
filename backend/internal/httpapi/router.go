@@ -120,6 +120,7 @@ func NewRouter(d Deps) *gin.Engine {
 
 	teacherRoutes := v1.Group("/teachers")
 	teachers.RegisterRoutes(teacherRoutes, d.TeacherHandler, d.AuthMiddleware)
+	teachers.RegisterLessonTypeRoutes(teacherRoutes, d.TeacherHandler, d.AuthMiddleware)
 	availability.RegisterRoutes(teacherRoutes, d.AvailabilityHandler, d.AuthMiddleware)
 	bookings.RegisterTeacherSlotRoute(teacherRoutes, d.BookingHandler)
 	reviews.RegisterTeacherRoutes(teacherRoutes, d.ReviewHandler)

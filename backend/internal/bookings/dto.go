@@ -33,6 +33,13 @@ type bookingPaymentDTO struct {
 	Currency    string `json:"currency"`
 }
 
+// bookingLessonTypeDTO is the offering a booking was made against. The title is
+// stored on the booking's row via the join, so it survives archival.
+type bookingLessonTypeDTO struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
 type bookingDTO struct {
 	ID                 string     `json:"id"`
 	Status             string     `json:"status"`
@@ -53,6 +60,10 @@ type bookingDTO struct {
 	// non-participant).
 	MeetingURL  string `json:"meeting_url,omitempty"`
 	NoShowParty string `json:"no_show_party"`
+
+	// LessonType names the offering the lesson was booked against — null for
+	// bookings made before a teacher had lesson types.
+	LessonType *bookingLessonTypeDTO `json:"lesson_type"`
 
 	// CanReview is true only when the viewer is the student, the booking is
 	// `completed`, and no review exists yet — the frontend shows the post-lesson
@@ -132,6 +143,9 @@ type createBookingRequest struct {
 	StartAt         time.Time `json:"start_at"`
 	DurationMinutes int       `json:"duration_minutes"`
 	IsTrial         bool      `json:"is_trial"`
+	// LessonTypeID is the offering the student picked. Omitted keeps the
+	// pre-lesson-type path (hourly rate, is_trial for the trial price).
+	LessonTypeID string `json:"lesson_type_id"`
 }
 
 type cancelBookingRequest struct {
@@ -170,13 +184,14 @@ func meetingURLFor(b Booking, viewerID uuid.UUID) string {
 
 func toBookingDTO(b Booking, viewerID uuid.UUID) bookingDTO {
 	return bookingDTO{
-		Resources: []bookingResourceDTO{},
+		Resources:          []bookingResourceDTO{},
 		ID:                 b.ID.String(),
 		Status:             string(b.Status),
 		StartAt:            b.StartAt.UTC(),
 		EndAt:              b.EndAt.UTC(),
 		DurationMinutes:    b.DurationMinutes,
 		IsTrial:            b.IsTrial,
+		LessonType:         toBookingLessonTypeDTO(b),
 		Price:              toMoneyDTO(b.Price),
 		CreatedAt:          b.CreatedAt.UTC(),
 		CancelledAt:        utcPtr(b.CancelledAt),
@@ -306,4 +321,13 @@ func utcPtr(t *time.Time) *time.Time {
 	}
 	u := t.UTC()
 	return &u
+}
+
+// toBookingLessonTypeDTO renders the offering, or nil for a booking made
+// before the teacher had lesson types.
+func toBookingLessonTypeDTO(b Booking) *bookingLessonTypeDTO {
+	if b.LessonTypeID == uuid.Nil {
+		return nil
+	}
+	return &bookingLessonTypeDTO{ID: b.LessonTypeID.String(), Title: b.LessonTypeTitle}
 }

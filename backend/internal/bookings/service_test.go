@@ -39,7 +39,7 @@ func TestService_Slots_WindowCap(t *testing.T) {
 
 	from := fixedNow
 	to := fixedNow.AddDate(0, 0, 22)
-	_, err := svc.Slots(ctx(), "nodira-karimova", &from, &to, 60)
+	_, err := svc.Slots(ctx(), "nodira-karimova", &from, &to, 60, uuid.Nil)
 	var ve ValidationError
 	if !errors.As(err, &ve) {
 		t.Fatalf("err = %v, want ValidationError", err)
@@ -49,7 +49,7 @@ func TestService_Slots_WindowCap(t *testing.T) {
 func TestService_Slots_BadDuration(t *testing.T) {
 	repo := newFakeRepo()
 	repo.tc = teacherCtx()
-	_, err := newService(repo).Slots(ctx(), "nodira-karimova", nil, nil, 45)
+	_, err := newService(repo).Slots(ctx(), "nodira-karimova", nil, nil, 45, uuid.Nil)
 	var ve ValidationError
 	if !errors.As(err, &ve) {
 		t.Fatalf("err = %v, want ValidationError", err)
@@ -59,7 +59,7 @@ func TestService_Slots_BadDuration(t *testing.T) {
 func TestService_Slots_TeacherNotFound(t *testing.T) {
 	repo := newFakeRepo()
 	repo.tcErr = ErrTeacherNotFound
-	_, err := newService(repo).Slots(ctx(), "ghost", nil, nil, 0)
+	_, err := newService(repo).Slots(ctx(), "ghost", nil, nil, 0, uuid.Nil)
 	if !errors.Is(err, ErrTeacherNotFound) {
 		t.Fatalf("err = %v, want ErrTeacherNotFound", err)
 	}
@@ -73,7 +73,7 @@ func TestService_Slots_HappyPath(t *testing.T) {
 
 	from := fixedNow
 	to := fixedNow.AddDate(0, 0, 3)
-	res, err := svc.Slots(ctx(), "nodira-karimova", &from, &to, 0) // duration defaults to 60
+	res, err := svc.Slots(ctx(), "nodira-karimova", &from, &to, 0, uuid.Nil) // duration defaults to 60
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

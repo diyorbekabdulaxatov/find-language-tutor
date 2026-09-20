@@ -65,7 +65,17 @@ func (h *Handler) Slots(c *gin.Context) {
 		return
 	}
 
-	res, err := h.svc.Slots(c.Request.Context(), slug, from, to, duration)
+	var lessonTypeID uuid.UUID
+	if raw := c.Query("lesson_type_id"); raw != "" {
+		parsed, err := uuid.Parse(raw)
+		if err != nil {
+			web.BadRequest(c, "`lesson_type_id` must be a UUID.")
+			return
+		}
+		lessonTypeID = parsed
+	}
+
+	res, err := h.svc.Slots(c.Request.Context(), slug, from, to, duration, lessonTypeID)
 	if h.rendered(c, err, "list slots", slog.String("slug", slug)) {
 		return
 	}
@@ -86,11 +96,23 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
+	// An empty lesson_type_id is the pre-lesson-type path, not an error.
+	var lessonTypeID uuid.UUID
+	if req.LessonTypeID != "" {
+		parsed, err := uuid.Parse(req.LessonTypeID)
+		if err != nil {
+			web.BadRequest(c, "`lesson_type_id` must be a UUID.")
+			return
+		}
+		lessonTypeID = parsed
+	}
+
 	b, err := h.svc.Create(c.Request.Context(), uid, CreateInput{
 		TeacherSlug:     req.TeacherSlug,
 		StartAt:         req.StartAt,
 		DurationMinutes: req.DurationMinutes,
 		IsTrial:         req.IsTrial,
+		LessonTypeID:    lessonTypeID,
 	})
 	if h.rendered(c, err, "create booking", slog.String("slug", req.TeacherSlug)) {
 		return

@@ -5,6 +5,7 @@ import type {
   TeacherSummary,
 } from "@/types/teacher";
 import { api, type ApiSchemas } from "@/lib/api/client";
+import type { Duration } from "@/features/bookings/api";
 import { mediaUrl } from "@/lib/media";
 
 /**
@@ -172,4 +173,49 @@ function describeError(error: unknown): string {
     if (inner?.message) return inner.message;
   }
   return "unknown error";
+}
+
+/* ----------------------------- lesson types ------------------------------ */
+
+export interface LessonPrice {
+  durationMinutes: Duration;
+  price: Money;
+}
+
+/** One of a teacher's 1-on-1 offerings — italki's unit of booking. */
+export interface LessonType {
+  id: string;
+  title: string;
+  description: string;
+  isTrial: boolean;
+  archived: boolean;
+  position: number;
+  /** cheapest of the offering's prices — the "from …" line on a card */
+  from: Money;
+  prices: LessonPrice[];
+}
+
+function toLessonType(w: ApiSchemas["LessonType"]): LessonType {
+  return {
+    id: w.id,
+    title: w.title,
+    description: w.description,
+    isTrial: w.is_trial,
+    archived: w.archived,
+    position: w.position,
+    from: toMoney(w.from),
+    prices: w.prices.map((p) => ({
+      durationMinutes: p.duration_minutes as Duration,
+      price: toMoney(p.price),
+    })),
+  };
+}
+
+/** A teacher's live offerings, trial first. Public — used by the profile. */
+export async function getLessonTypes(slug: string): Promise<LessonType[]> {
+  const { data, error } = await api.GET("/v1/teachers/{slug}/lesson-types", {
+    params: { path: { slug } },
+  });
+  if (error || !data) return [];
+  return data.lesson_types.map(toLessonType);
 }

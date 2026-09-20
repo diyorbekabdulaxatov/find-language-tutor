@@ -5,7 +5,7 @@
  */
 
 import { browserApi } from "@/features/auth/browser-client";
-import { toProfile } from "@/features/teachers/api";
+import { toMoney, toProfile, type LessonType } from "@/features/teachers/api";
 import type { components } from "@/lib/api/schema";
 import type { TeacherProfile } from "@/types/teacher";
 
@@ -187,4 +187,89 @@ export function profileToForm(p: TeacherProfile): ProfileFormValues {
     focus: p.focus,
     experience: p.experience,
   };
+}
+
+/* ----------------------------- lesson types ------------------------------ */
+
+
+type WireLessonType = components["schemas"]["LessonType"];
+
+function toLessonTypeVM(w: WireLessonType): LessonType {
+  return {
+    id: w.id,
+    title: w.title,
+    description: w.description,
+    isTrial: w.is_trial,
+    archived: w.archived,
+    position: w.position,
+    from: toMoney(w.from),
+    prices: w.prices.map((p) => ({
+      durationMinutes: p.duration_minutes as LessonType["prices"][number]["durationMinutes"],
+      price: toMoney(p.price),
+    })),
+  };
+}
+
+/** The lengths the API prices an offering at. */
+export type LessonDuration = 30 | 45 | 60 | 90 | 120;
+
+export const LESSON_DURATIONS: readonly LessonDuration[] = [30, 45, 60, 90, 120];
+
+export interface LessonTypeDraft {
+  title: string;
+  description: string;
+  isTrial?: boolean;
+  position?: number;
+  prices: { durationMinutes: LessonDuration; priceMinor: number }[];
+}
+
+function toBody(draft: LessonTypeDraft) {
+  return {
+    title: draft.title,
+    description: draft.description,
+    is_trial: draft.isTrial ?? false,
+    position: draft.position ?? 0,
+    prices: draft.prices.map((p) => ({
+      duration_minutes: p.durationMinutes,
+      price_minor: p.priceMinor,
+    })),
+  };
+}
+
+/** The caller's own offerings, archived ones included. */
+export async function getOwnLessonTypes(): Promise<LessonType[]> {
+  const { data, error, response } = await browserApi.GET("/v1/teachers/me/lesson-types", {});
+  if (error || !data) {
+    if (response.status === 404) return [];
+    throw new ProfileError("Could not load your lessons.", "unknown", response.status);
+  }
+  return data.lesson_types.map(toLessonTypeVM);
+}
+
+export async function createLessonType(draft: LessonTypeDraft): Promise<LessonType> {
+  const { data, error, response } = await browserApi.POST("/v1/teachers/me/lesson-types", {
+    body: toBody(draft),
+  });
+  if (error || !data) throw toError(error, response.status, "Could not save that lesson.");
+  return toLessonTypeVM(data);
+}
+
+export async function updateLessonType(id: string, draft: LessonTypeDraft): Promise<LessonType> {
+  const { data, error, response } = await browserApi.PATCH("/v1/teachers/me/lesson-types/{id}", {
+    params: { path: { id } },
+    body: toBody(draft),
+  });
+  if (error || !data) throw toError(error, response.status, "Could not save that lesson.");
+  return toLessonTypeVM(data);
+}
+
+export async function setLessonTypeArchived(id: string, archived: boolean): Promise<LessonType> {
+  const path = archived
+    ? ("/v1/teachers/me/lesson-types/{id}/archive" as const)
+    : ("/v1/teachers/me/lesson-types/{id}/restore" as const);
+  const { data, error, response } = await browserApi.POST(path, {
+    params: { path: { id } },
+  });
+  if (error || !data) throw toError(error, response.status, "Could not update that lesson.");
+  return toLessonTypeVM(data);
 }

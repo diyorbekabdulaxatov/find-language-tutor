@@ -33,10 +33,10 @@ ORDER BY start_at;
 -- name: CreateBooking :one
 INSERT INTO bookings (
     teacher_id, student_id, start_at, end_at,
-    duration_minutes, status, price_minor, currency, is_trial
+    duration_minutes, status, price_minor, currency, is_trial, lesson_type_id
 ) VALUES (
     $1, $2, $3, $4,
-    $5, $6, $7, $8, $9
+    $5, $6, $7, $8, $9, $10
 )
 RETURNING id;
 
@@ -47,6 +47,8 @@ SELECT
     b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
+    b.lesson_type_id,
+    lt.title          AS lesson_type_title,
     t.slug            AS teacher_slug,
     t.display_name    AS teacher_display_name,
     t.timezone        AS teacher_timezone,
@@ -59,6 +61,7 @@ SELECT
     u.email::text     AS student_email,
     u.locale::text    AS student_locale
 FROM bookings b
+LEFT JOIN lesson_types lt ON lt.id = b.lesson_type_id
 JOIN teachers t ON t.id = b.teacher_id
 JOIN users    u ON u.id = b.student_id
 LEFT JOIN users tu ON tu.id = t.user_id
@@ -74,6 +77,8 @@ SELECT
     b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
+    b.lesson_type_id,
+    lt.title          AS lesson_type_title,
     t.slug            AS teacher_slug,
     t.display_name    AS teacher_display_name,
     t.timezone        AS teacher_timezone,
@@ -86,6 +91,7 @@ SELECT
     u.email::text     AS student_email,
     u.locale::text    AS student_locale
 FROM bookings b
+LEFT JOIN lesson_types lt ON lt.id = b.lesson_type_id
 JOIN teachers t ON t.id = b.teacher_id
 JOIN users    u ON u.id = b.student_id
 LEFT JOIN users tu ON tu.id = t.user_id

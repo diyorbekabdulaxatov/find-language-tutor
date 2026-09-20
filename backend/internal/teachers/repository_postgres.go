@@ -482,3 +482,173 @@ func optUUID(n uuid.NullUUID) *uuid.UUID {
 	id := n.UUID
 	return &id
 }
+
+// --- lesson types ---
+
+func lessonTypeFromRow(id, teacherID uuid.UUID, title, description string, isTrial, archived bool, position int32, created, updated pgtype.Timestamptz) LessonType {
+	return LessonType{
+		ID:          id,
+		TeacherID:   teacherID,
+		Title:       title,
+		Description: description,
+		IsTrial:     isTrial,
+		Archived:    archived,
+		Position:    int(position),
+		CreatedAt:   created.Time.UTC(),
+		UpdatedAt:   updated.Time.UTC(),
+	}
+}
+
+// attachPrices fills each type's price list in one extra round trip.
+func (r *repositoryPostgres) attachPrices(ctx context.Context, types []LessonType, currency Currency) error {
+	if len(types) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, len(types))
+	at := make(map[uuid.UUID]int, len(types))
+	for i, lt := range types {
+		ids[i] = lt.ID
+		at[lt.ID] = i
+	}
+	rows, err := r.q.ListLessonTypePrices(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("list lesson type prices: %w", err)
+	}
+	for _, row := range rows {
+		i, ok := at[row.LessonTypeID]
+		if !ok {
+			continue
+		}
+		types[i].Prices = append(types[i].Prices, LessonPrice{
+			DurationMinutes: int(row.DurationMinutes),
+			Price:           Money{AmountMinor: row.PriceMinor, Currency: currency},
+		})
+	}
+	return nil
+}
+
+func (r *repositoryPostgres) ListLessonTypes(ctx context.Context, teacherID uuid.UUID, includeArchived bool) ([]LessonType, error) {
+	rows, err := r.q.ListLessonTypes(ctx, sqlc.ListLessonTypesParams{
+		TeacherID:       teacherID,
+		IncludeArchived: includeArchived,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list lesson types: %w", err)
+	}
+	out := make([]LessonType, len(rows))
+	for i, row := range rows {
+		out[i] = lessonTypeFromRow(row.ID, row.TeacherID, row.Title, row.Description,
+			row.IsTrial, row.Archived, row.Position, row.CreatedAt, row.UpdatedAt)
+	}
+	if err := r.attachPrices(ctx, out, CurrencyUZS); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *repositoryPostgres) GetLessonType(ctx context.Context, id uuid.UUID) (LessonType, error) {
+	row, err := r.q.GetLessonType(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return LessonType{}, ErrLessonTypeNotFound
+	}
+	if err != nil {
+		return LessonType{}, fmt.Errorf("get lesson type: %w", err)
+	}
+	lt := lessonTypeFromRow(row.ID, row.TeacherID, row.Title, row.Description,
+		row.IsTrial, row.Archived, row.Position, row.CreatedAt, row.UpdatedAt)
+	one := []LessonType{lt}
+	if err := r.attachPrices(ctx, one, CurrencyUZS); err != nil {
+		return LessonType{}, err
+	}
+	return one[0], nil
+}
+
+// writePrices replaces a type's whole price list inside the caller's tx.
+func writePrices(ctx context.Context, q *sqlc.Queries, id uuid.UUID, prices []LessonPrice) error {
+	if err := q.DeleteLessonTypePrices(ctx, id); err != nil {
+		return fmt.Errorf("clear lesson type prices: %w", err)
+	}
+	for _, p := range prices {
+		if err := q.InsertLessonTypePrice(ctx, sqlc.InsertLessonTypePriceParams{
+			LessonTypeID:    id,
+			DurationMinutes: int32(p.DurationMinutes),
+			PriceMinor:      p.Price.AmountMinor,
+		}); err != nil {
+			return fmt.Errorf("insert lesson type price: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *repositoryPostgres) CreateLessonType(ctx context.Context, teacherID uuid.UUID, in LessonTypeInput) (LessonType, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return LessonType{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
+	qtx := r.q.WithTx(tx)
+
+	row, err := qtx.CreateLessonType(ctx, sqlc.CreateLessonTypeParams{
+		TeacherID:   teacherID,
+		Title:       in.Title,
+		Description: in.Description,
+		IsTrial:     in.IsTrial,
+		Position:    int32(in.Position),
+	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return LessonType{}, ErrTrialExists
+		}
+		return LessonType{}, fmt.Errorf("create lesson type: %w", err)
+	}
+	if err := writePrices(ctx, qtx, row.ID, in.Prices); err != nil {
+		return LessonType{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return LessonType{}, fmt.Errorf("commit: %w", err)
+	}
+	return r.GetLessonType(ctx, row.ID)
+}
+
+func (r *repositoryPostgres) UpdateLessonType(ctx context.Context, id uuid.UUID, in LessonTypeInput) (LessonType, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return LessonType{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
+	qtx := r.q.WithTx(tx)
+
+	if _, err := qtx.UpdateLessonType(ctx, sqlc.UpdateLessonTypeParams{
+		ID:          id,
+		Title:       in.Title,
+		Description: in.Description,
+		Position:    int32(in.Position),
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return LessonType{}, ErrLessonTypeNotFound
+		}
+		return LessonType{}, fmt.Errorf("update lesson type: %w", err)
+	}
+	if err := writePrices(ctx, qtx, id, in.Prices); err != nil {
+		return LessonType{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return LessonType{}, fmt.Errorf("commit: %w", err)
+	}
+	return r.GetLessonType(ctx, id)
+}
+
+func (r *repositoryPostgres) SetLessonTypeArchived(ctx context.Context, id uuid.UUID, archived bool) (LessonType, error) {
+	if _, err := r.q.SetLessonTypeArchived(ctx, sqlc.SetLessonTypeArchivedParams{ID: id, Archived: archived}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return LessonType{}, ErrLessonTypeNotFound
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return LessonType{}, ErrTrialExists
+		}
+		return LessonType{}, fmt.Errorf("archive lesson type: %w", err)
+	}
+	return r.GetLessonType(ctx, id)
+}

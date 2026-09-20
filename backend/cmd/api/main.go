@@ -224,6 +224,8 @@ func run(logger *slog.Logger) error {
 	resourceService.SetBookingReader(bookings.NewResourceBookingGateway(bookingService))
 	resourceService.SetMailer(resourcesmail.New(mailer, cfg.AppBaseURL, logger))
 	bookingService.SetResourceReader(resources.NewBookingGateway(resourceService))
+	// Lesson types (italki-style offerings) price a booking; see lesson_type_gateway.go.
+	bookingService.SetLessonTypes(&lessonTypeGateway{svc: teacherService})
 
 	fileHandler := files.NewHandler(fileService, logger)
 	resourceHandler := resources.NewHandler(resourceService, logger)

@@ -13,6 +13,7 @@ import { useAuth } from "@/features/auth/auth-context";
 import { getMyProfile } from "@/features/dashboard/api";
 import { ProfileWizard } from "@/features/dashboard/components/profile-wizard";
 import { AvailabilityEditor } from "@/features/availability/components/availability-editor";
+import { LessonTypesPanel } from "@/features/dashboard/components/lesson-types-panel";
 import { EarningsPanel } from "@/features/dashboard/components/earnings-panel";
 import type { TeacherProfile } from "@/types/teacher";
 import { Button } from "@/components/ui/button";
@@ -78,12 +79,23 @@ export function DashboardShell() {
         <Tabs defaultValue="profile">
           <TabsList variant="line" className="h-auto w-full justify-start gap-6 border-b border-border p-0">
             <TabsTrigger value="profile">{t("tabProfile")}</TabsTrigger>
+            <TabsTrigger value="lessons">{t("tabLessons")}</TabsTrigger>
             <TabsTrigger value="availability">{t("tabAvailability")}</TabsTrigger>
             <TabsTrigger value="earnings">{t("tabEarnings")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="profile" className="mt-6">
             <ProfileWizard initial={profile} onSaved={handleSaved} />
+          </TabsContent>
+
+          <TabsContent value="lessons" className="mt-6">
+            {profile ? (
+              <LessonTypesPanel />
+            ) : (
+              <p className="border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
+                {t("needProfileLessons")}
+              </p>
+            )}
           </TabsContent>
 
           <TabsContent value="availability" className="mt-6">

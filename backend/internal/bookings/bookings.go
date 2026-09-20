@@ -150,6 +150,12 @@ type Booking struct {
 	// been recorded.
 	NoShowParty string
 
+	// LessonTypeID / LessonTypeTitle name the offering this lesson was booked
+	// against. Both are zero for bookings made before lesson types existed,
+	// and the title survives the offering being archived.
+	LessonTypeID    uuid.UUID
+	LessonTypeTitle string
+
 	Teacher TeacherSummary
 	Student StudentSummary
 

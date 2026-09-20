@@ -27,6 +27,73 @@ type fakeRepo struct {
 	updatedID     uuid.UUID
 	createErr     error
 	updateErr     error
+
+	// lesson types, keyed by id; the fake keeps them in insertion order so a
+	// list read is deterministic.
+	lessonTypes   map[uuid.UUID]LessonType
+	lessonOrder   []uuid.UUID
+	lessonTypeErr error
+}
+
+// --- lesson types ---
+
+func (f *fakeRepo) ListLessonTypes(_ context.Context, teacherID uuid.UUID, includeArchived bool) ([]LessonType, error) {
+	if f.lessonTypeErr != nil {
+		return nil, f.lessonTypeErr
+	}
+	var out []LessonType
+	for _, id := range f.lessonOrder {
+		lt := f.lessonTypes[id]
+		if lt.TeacherID != teacherID || (lt.Archived && !includeArchived) {
+			continue
+		}
+		out = append(out, lt)
+	}
+	return out, nil
+}
+
+func (f *fakeRepo) GetLessonType(_ context.Context, id uuid.UUID) (LessonType, error) {
+	lt, ok := f.lessonTypes[id]
+	if !ok {
+		return LessonType{}, ErrLessonTypeNotFound
+	}
+	return lt, nil
+}
+
+func (f *fakeRepo) CreateLessonType(_ context.Context, teacherID uuid.UUID, in LessonTypeInput) (LessonType, error) {
+	if f.lessonTypeErr != nil {
+		return LessonType{}, f.lessonTypeErr
+	}
+	if f.lessonTypes == nil {
+		f.lessonTypes = map[uuid.UUID]LessonType{}
+	}
+	lt := LessonType{
+		ID: uuid.New(), TeacherID: teacherID, Title: in.Title, Description: in.Description,
+		IsTrial: in.IsTrial, Position: in.Position, Prices: in.Prices,
+	}
+	f.lessonTypes[lt.ID] = lt
+	f.lessonOrder = append(f.lessonOrder, lt.ID)
+	return lt, nil
+}
+
+func (f *fakeRepo) UpdateLessonType(_ context.Context, id uuid.UUID, in LessonTypeInput) (LessonType, error) {
+	lt, ok := f.lessonTypes[id]
+	if !ok {
+		return LessonType{}, ErrLessonTypeNotFound
+	}
+	lt.Title, lt.Description, lt.Position, lt.Prices = in.Title, in.Description, in.Position, in.Prices
+	f.lessonTypes[id] = lt
+	return lt, nil
+}
+
+func (f *fakeRepo) SetLessonTypeArchived(_ context.Context, id uuid.UUID, archived bool) (LessonType, error) {
+	lt, ok := f.lessonTypes[id]
+	if !ok {
+		return LessonType{}, ErrLessonTypeNotFound
+	}
+	lt.Archived = archived
+	f.lessonTypes[id] = lt
+	return lt, nil
 }
 
 func (f *fakeRepo) List(_ context.Context, p ListParams) ([]Teacher, int, error) {

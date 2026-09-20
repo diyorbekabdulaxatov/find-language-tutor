@@ -585,6 +585,119 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /v1/teachers/{slug}/lesson-types:
+    get:
+      tags: [teachers]
+      summary: A teacher's 1-on-1 offerings
+      description: >
+        The lessons a teacher offers — italki's shape, where each offering has
+        its own description and a price per length, and at most one is the
+        trial. Live offerings only, trial first. Public.
+      operationId: listLessonTypes
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The teacher's offerings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LessonTypeList" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/teachers/me/lesson-types:
+    get:
+      tags: [teachers]
+      summary: The caller's own offerings
+      description: Includes archived offerings so the dashboard can restore them.
+      operationId: listOwnLessonTypes
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The caller's offerings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LessonTypeList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: "The caller owns no teacher profile.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    post:
+      tags: [teachers]
+      summary: Add an offering
+      description: >
+        At most 8 live offerings, at most one of them the trial (409
+        `trial_exists` otherwise). Lengths must be 30/45/60/90/120 minutes and
+        each may appear once.
+      operationId: createLessonType
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LessonTypeWrite" }
+      responses:
+        "201":
+          description: The new offering.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LessonType" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: "The caller owns no teacher profile.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: "`trial_exists` — the caller already offers a trial lesson.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /v1/teachers/me/lesson-types/{id}:
+    patch:
+      tags: [teachers]
+      summary: Edit an offering
+      description: Title, description, position and the whole price list are replaced. The trial flag is fixed at creation.
+      operationId: updateLessonType
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LessonTypeWrite" }
+      responses:
+        "200":
+          description: The updated offering.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LessonType" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/teachers/me/lesson-types/{id}/archive:
+    post:
+      tags: [teachers]
+      summary: Hide an offering
+      description: >
+        Archiving takes an offering off the profile without deleting it —
+        bookings already made against it keep their title.
+      operationId: archiveLessonType
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The archived offering., content: { application/json: { schema: { $ref: "#/components/schemas/LessonType" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/teachers/me/lesson-types/{id}/restore:
+    post:
+      tags: [teachers]
+      summary: Restore an archived offering
+      operationId: restoreLessonType
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: The restored offering., content: { application/json: { schema: { $ref: "#/components/schemas/LessonType" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "`trial_exists` — a live trial offering already exists.", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
   /v1/teachers/{slug}/slots:
     get:
       tags: [bookings]
@@ -626,8 +739,13 @@ paths:
         - name: duration
           in: query
           required: false
-          schema: { type: integer, enum: [30, 60, 90, 120], default: 60 }
-          description: Lesson length in minutes.
+          schema: { type: integer, enum: [30, 45, 60, 90, 120], default: 60 }
+          description: Lesson length in minutes. With lesson_type_id, one of that offering's priced lengths.
+        - name: lesson_type_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: Price the slots from this offering instead of the teacher's hourly rate.
       responses:
         "200":
           description: The bookable start times in the window.
@@ -3783,6 +3901,66 @@ components:
       type: string
       enum: [pending_payment, confirmed, completed, cancelled]
 
+    LessonPrice:
+      type: object
+      description: One length an offering can be booked at, with its price.
+      required: [duration_minutes, price]
+      properties:
+        duration_minutes: { type: integer, enum: [30, 45, 60, 90, 120] }
+        price: { $ref: "#/components/schemas/Money" }
+
+    LessonType:
+      type: object
+      description: >
+        One of a teacher's 1-on-1 offerings. `from` is the cheapest of its
+        prices — the "from 45,000 so'm" line on a card.
+      required: [id, title, description, is_trial, archived, position, from, prices]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        is_trial: { type: boolean, description: At most one live offering per teacher is the trial. }
+        archived: { type: boolean }
+        position: { type: integer, description: Display order; the trial sorts first regardless. }
+        from: { $ref: "#/components/schemas/Money" }
+        prices:
+          type: array
+          items: { $ref: "#/components/schemas/LessonPrice" }
+
+    LessonTypeList:
+      type: object
+      required: [lesson_types]
+      properties:
+        lesson_types:
+          type: array
+          items: { $ref: "#/components/schemas/LessonType" }
+
+    LessonTypeWrite:
+      type: object
+      required: [title, prices]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string }
+        is_trial: { type: boolean, default: false, description: Honoured on create only; the flag is fixed afterwards. }
+        position: { type: integer }
+        prices:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [duration_minutes, price_minor]
+            properties:
+              duration_minutes: { type: integer, enum: [30, 45, 60, 90, 120] }
+              price_minor: { type: integer, format: int64, minimum: 0 }
+
+    BookingLessonType:
+      type: object
+      description: The offering a booking was made against; its title survives archival.
+      required: [id, title]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+
     Slot:
       type: object
       description: One concrete bookable start time with its price.
@@ -3834,6 +4012,7 @@ components:
         - end_at
         - duration_minutes
         - is_trial
+        - lesson_type
         - price
         - created_at
         - cancelled_at
@@ -3854,6 +4033,10 @@ components:
         end_at: { type: string, format: date-time, description: RFC3339 UTC. }
         duration_minutes: { type: integer }
         is_trial: { type: boolean }
+        lesson_type:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/BookingLessonType" }]
+          description: Null for bookings made before the teacher had lesson types.
         price: { $ref: "#/components/schemas/Money" }
         created_at: { type: string, format: date-time }
         cancelled_at:
@@ -4071,8 +4254,17 @@ components:
           description: RFC3339 UTC. Must be in the future and a real bookable slot.
         duration_minutes:
           type: integer
-          enum: [30, 60, 90, 120]
-          description: Ignored when is_trial is true (forced to 30).
+          description: >
+            With lesson_type_id, one of that offering's priced lengths.
+            Without one, 30/60/90/120 — and ignored when is_trial is true
+            (forced to 30).
+        lesson_type_id:
+          type: string
+          format: uuid
+          description: >
+            The offering the student picked. It sets the price and the trial
+            flag, and the client's price is never trusted. Omit for the
+            pre-lesson-type path (the teacher's hourly rate).
         is_trial:
           type: boolean
           default: false
