@@ -300,6 +300,26 @@ func toBookingListDTO(bs []Booking, viewerID uuid.UUID, reviews []*BookingReview
 	return bookingListDTO{Bookings: out}
 }
 
+// trialEligibilityDTO is GET /v1/teachers/{slug}/trial-eligibility.
+type trialEligibilityDTO struct {
+	Eligible  bool    `json:"eligible"`
+	Reason    *string `json:"reason,omitempty"`
+	BookingID *string `json:"booking_id,omitempty"`
+}
+
+func toTrialEligibilityDTO(e TrialEligibility) trialEligibilityDTO {
+	out := trialEligibilityDTO{Eligible: e.Eligible}
+	if e.Reason != "" {
+		r := string(e.Reason)
+		out.Reason = &r
+	}
+	if e.BookingID != uuid.Nil {
+		id := e.BookingID.String()
+		out.BookingID = &id
+	}
+	return out
+}
+
 func toSlotsResponseDTO(r SlotResult) slotsResponseDTO {
 	slots := make([]slotDTO, len(r.Slots))
 	for i, s := range r.Slots {

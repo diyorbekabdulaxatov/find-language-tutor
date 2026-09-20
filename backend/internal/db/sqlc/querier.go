@@ -380,6 +380,10 @@ type Querier interface {
 	GetRole(ctx context.Context, id uuid.UUID) (Role, error)
 	GetRoleByName(ctx context.Context, name string) (Role, error)
 	GetSessionByRefreshHash(ctx context.Context, refreshTokenHash []byte) (Session, error)
+	// The trial a student already holds with a teacher, if any. Mirrors the
+	// partial unique index bookings_one_trial_per_student_idx: cancelled trials
+	// do not count, everything else does.
+	GetStudentTrialBooking(ctx context.Context, arg GetStudentTrialBookingParams) (uuid.UUID, error)
 	GetSubmissionByID(ctx context.Context, id uuid.UUID) (Submission, error)
 	// Availability module: a teacher's weekly recurring slots (UTC minutes).
 	// Resolve a slug to the teacher id, timezone, and owning user the availability

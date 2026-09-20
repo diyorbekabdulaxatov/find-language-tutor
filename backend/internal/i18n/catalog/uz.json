@@ -166,6 +166,7 @@
   "That lesson isn't offered at that length.": "Bu dars bunday davomiylikda taklif qilinmaydi.",
   "That resource isn't one of your published resources.": "Bu material sizning chop etilgan materiallaringizdan emas.",
   "That slot was just taken. Pick another time.": "Bu vaqt hozirgina band qilindi. Boshqa vaqt tanlang.",
+  "You have already booked your trial lesson with this teacher. Book a regular lesson instead.": "Siz bu o'qituvchi bilan sinov darsini allaqachon band qilgansiz. Oddiy dars band qiling.",
   "That start time is not currently bookable for this teacher.": "Bu vaqt hozir bu o'qituvchi uchun band qilib bo'lmaydi.",
   "The %d-minute length is listed twice.": "%d daqiqalik davomiylik ikki marta ko'rsatilgan.",
   "The attachment id must be a UUID.": "Biriktirma id si UUID bo'lishi kerak.",

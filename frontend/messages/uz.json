@@ -439,6 +439,11 @@
     "stepLesson": "Darsni tanlang",
     "chooseLesson": "Nimani band qilmoqchisiz?",
     "changeLesson": "Darsni o'zgartirish",
+    "trialUsedTitle": "Siz {name} bilan sinov darsini allaqachon o'tgansiz",
+    "trialUsedBody": "Har bir o'quvchi bir o'qituvchi bilan bitta sinov darsini band qila oladi. {name} ning oddiy darslaridan birini tanlang.",
+    "trialUsedView": "Sinov darsini ochish",
+    "trialUsedChoose": "Boshqa dars tanlash",
+    "trialUsedBadge": "Allaqachon band",
     "fromPrice": "{price} dan"
   },
   "dashboard": {

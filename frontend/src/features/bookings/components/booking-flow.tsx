@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
 import type { Money } from "@/types/teacher";
@@ -12,8 +12,10 @@ import { useAuth } from "@/features/auth/auth-context";
 import {
   BookingError,
   createBooking,
+  getTrialEligibility,
   type Booking,
   type DURATION_OPTIONS,
+  type TrialEligibility,
 } from "@/features/bookings/api";
 import { formatFull, viewerTimezone } from "@/features/bookings/datetime";
 import {
@@ -63,12 +65,55 @@ export function BookingFlow({
   // or the teacher has no offerings (the pre-lesson-type path).
   const [lessonTypeId, setLessonTypeId] = useState<string | undefined>(selectedLessonTypeId);
   const chosen = lessonTypes.find((lt) => lt.id === lessonTypeId);
-  const needsLessonStep = lessonTypes.length > 0 && !selectedLessonTypeId;
+  // "Choose another lesson" from a blocked trial reopens the lesson step even
+  // though the profile linked straight to an offering.
+  const [lessonStepReopened, setLessonStepReopened] = useState(false);
+  const needsLessonStep = lessonTypes.length > 0 && (!selectedLessonTypeId || lessonStepReopened);
   const steps: Step[] = needsLessonStep
     ? ["lesson", "pick", "confirm", "pay"]
     : ["pick", "confirm", "pay"];
 
   const [step, setStep] = useState<Step>(needsLessonStep ? "lesson" : "pick");
+
+  // One trial per student per teacher. Asked once the session is known; until
+  // then (and for a signed-out visitor) the trial card stays available and the
+  // server is the authority at create time.
+  const [trialEligibility, setTrialEligibility] = useState<TrialEligibility | null>(null);
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    let cancelled = false;
+    async function load() {
+      try {
+        const e = await getTrialEligibility(slug);
+        if (!cancelled) setTrialEligibility(e);
+      } catch {
+        // best effort: the create call still enforces the rule
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, status]);
+  const heldTrialId =
+    trialEligibility && !trialEligibility.eligible && trialEligibility.reason === "already_booked"
+      ? trialEligibility.bookingId
+      : null;
+  // The picked (or pre-linked) lesson is a trial the student has already used.
+  const trialBlocked = heldTrialId != null && (chosen ? chosen.isTrial : isTrial);
+
+  function chooseAnotherLesson() {
+    setPreview(null);
+    setSelection(null);
+    setError(null);
+    if (lessonTypes.length > 0) {
+      setLessonTypeId(undefined);
+      setLessonStepReopened(true);
+      setStep("lesson");
+    } else {
+      router.push(`/teachers/${slug}/book`);
+    }
+  }
   const [selection, setSelection] = useState<SlotSelection | null>(null);
   // the time highlighted in the picker, before "Continue" — the summary follows it
   const [preview, setPreview] = useState<SlotSelection | null>(null);
@@ -115,6 +160,21 @@ export function BookingFlow({
         setSelection(null);
         setPreview(null);
         setStep("pick");
+        return;
+      }
+      if (err instanceof BookingError && err.code === "trial_already_booked") {
+        // A trial booked in another tab, or before the eligibility check
+        // landed: surface the rule where the lesson is chosen.
+        setTrialEligibility({ eligible: false, reason: "already_booked", bookingId: "" });
+        setSelection(null);
+        setPreview(null);
+        if (lessonTypes.length > 0) {
+          setLessonTypeId(undefined);
+          setLessonStepReopened(true);
+          setStep("lesson");
+        } else {
+          setStep("pick");
+        }
         return;
       }
       setError(err instanceof BookingError ? err.message : t("couldNotCreate"));
@@ -176,9 +236,17 @@ export function BookingFlow({
 
         {step === "lesson" && (
           <div className="mt-6">
+            {heldTrialId != null && (
+              <TrialUsedNotice
+                teacherName={teacherName}
+                bookingId={heldTrialId}
+                className="mb-6"
+              />
+            )}
             <LessonPicker
               lessonTypes={lessonTypes}
               locale={locale}
+              disabledTrial={heldTrialId != null}
               onPick={(id) => {
                 setLessonTypeId(id);
                 setPreview(null);
@@ -188,7 +256,20 @@ export function BookingFlow({
           </div>
         )}
 
-        {step === "pick" && (
+        {step === "pick" && trialBlocked && (
+          <div className="mt-6">
+            <TrialUsedNotice teacherName={teacherName} bookingId={heldTrialId} />
+            <button
+              type="button"
+              onClick={chooseAnotherLesson}
+              className="mt-4 flex h-12 items-center justify-center rounded-md bg-primary px-5 text-base font-bold text-primary-foreground transition-colors hover:bg-[#8710d8]"
+            >
+              {t("trialUsedChoose")}
+            </button>
+          </div>
+        )}
+
+        {step === "pick" && !trialBlocked && (
           <div className="mt-6">
             {needsLessonStep && (
               <button
@@ -296,7 +377,11 @@ export function BookingFlow({
             <div className="min-w-0">
               <p className="truncate text-sm font-bold">{teacherName}</p>
               <p className="text-xs text-muted-foreground">
-                {chosen ? chosen.title : isTrial ? t("trialLesson") : t("lesson")}
+                {chosen
+                  ? chosen.title
+                  : isTrial && !lessonStepReopened
+                    ? t("trialLesson")
+                    : t("lesson")}
               </p>
             </div>
           </div>
@@ -397,10 +482,13 @@ function Row({
 function LessonPicker({
   lessonTypes,
   locale,
+  disabledTrial = false,
   onPick,
 }: {
   lessonTypes: LessonType[];
   locale: string;
+  /** the student has used their trial with this teacher — the trial card is shown, not pickable */
+  disabledTrial?: boolean;
   onPick: (id: string) => void;
 }) {
   const t = useTranslations("bookings");
@@ -408,19 +496,28 @@ function LessonPicker({
     <div className="flex flex-col gap-3">
       <h2 className="font-display text-xl">{t("chooseLesson")}</h2>
       <ul className="flex flex-col gap-3">
-        {lessonTypes.map((lt) => (
+        {lessonTypes.map((lt) => {
+          const blocked = lt.isTrial && disabledTrial;
+          return (
           <li key={lt.id}>
             <button
               type="button"
               onClick={() => onPick(lt.id)}
-              className="w-full border border-border bg-card p-4 text-left transition-colors hover:border-foreground hover:bg-accent"
+              disabled={blocked}
+              aria-disabled={blocked || undefined}
+              className={cn(
+                "w-full border border-border bg-card p-4 text-left transition-colors",
+                blocked
+                  ? "cursor-not-allowed opacity-60"
+                  : "hover:border-foreground hover:bg-accent",
+              )}
             >
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <span className="font-bold">
                   {lt.title}
                   {lt.isTrial && (
                     <span className="ml-2 rounded-sm bg-accent px-1.5 py-0.5 text-xs font-bold text-accent-foreground">
-                      {t("trial")}
+                      {blocked ? t("trialUsedBadge") : t("trial")}
                     </span>
                   )}
                 </span>
@@ -436,8 +533,43 @@ function LessonPicker({
               </p>
             </button>
           </li>
-        ))}
+          );
+        })}
       </ul>
+    </div>
+  );
+}
+
+/** "You've already had your trial with X" — one trial per student per teacher. */
+function TrialUsedNotice({
+  teacherName,
+  bookingId,
+  className,
+}: {
+  teacherName: string;
+  /** "" when the rule surfaced from the create call and the id is unknown */
+  bookingId: string | null;
+  className?: string;
+}) {
+  const t = useTranslations("bookings");
+  return (
+    <div
+      role="status"
+      className={cn("flex gap-3 border border-border bg-muted p-4 text-sm", className)}
+    >
+      <Info className="mt-0.5 size-4 shrink-0 text-link" aria-hidden />
+      <div>
+        <p className="font-bold">{t("trialUsedTitle", { name: teacherName })}</p>
+        <p className="mt-1 text-muted-foreground">{t("trialUsedBody", { name: teacherName })}</p>
+        {bookingId && (
+          <Link
+            href={`/bookings/${bookingId}`}
+            className="mt-2 inline-block font-bold text-link hover:underline"
+          >
+            {t("trialUsedView")}
+          </Link>
+        )}
+      </div>
     </div>
   );
 }

@@ -19,6 +19,13 @@ import (
 // constraints when a lesson would double-book a teacher or student.
 const pgExclusionViolation = "23P01"
 
+// pgUniqueViolation is SQLSTATE 23505. On bookings the only unique index that
+// an insert can trip is the one-trial-per-student rule.
+const pgUniqueViolation = "23505"
+
+// oneTrialIndex is the partial unique index from migration 000026.
+const oneTrialIndex = "bookings_one_trial_per_student_idx"
+
 type repositoryPostgres struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
@@ -118,12 +125,28 @@ func (r *repositoryPostgres) CreateBooking(ctx context.Context, p CreateBookingP
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgExclusionViolation {
-			return Booking{}, ErrSlotTaken
+		if errors.As(err, &pgErr) {
+			switch {
+			case pgErr.Code == pgExclusionViolation:
+				return Booking{}, ErrSlotTaken
+			case pgErr.Code == pgUniqueViolation && pgErr.ConstraintName == oneTrialIndex:
+				return Booking{}, ErrTrialAlreadyBooked
+			}
 		}
 		return Booking{}, fmt.Errorf("create booking: %w", err)
 	}
 	return r.GetBooking(ctx, id)
+}
+
+func (r *repositoryPostgres) StudentTrialBooking(ctx context.Context, teacherID, studentID uuid.UUID) (uuid.UUID, bool, error) {
+	id, err := r.q.GetStudentTrialBooking(ctx, sqlc.GetStudentTrialBookingParams{TeacherID: teacherID, StudentID: studentID})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, false, nil
+		}
+		return uuid.Nil, false, fmt.Errorf("student trial booking: %w", err)
+	}
+	return id, true, nil
 }
 
 func (r *repositoryPostgres) GetBooking(ctx context.Context, id uuid.UUID) (Booking, error) {

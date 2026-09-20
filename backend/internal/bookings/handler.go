@@ -39,10 +39,27 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler, requireAuth gin.HandlerFunc
 	rg.POST("/:id/no-show", requireAuth, h.NoShow)
 }
 
-// RegisterTeacherSlotRoute mounts GET /:slug/slots onto the "/v1/teachers"
-// group, next to the teacher-profile and availability routes. Public.
-func RegisterTeacherSlotRoute(rg *gin.RouterGroup, h *Handler) {
+// RegisterTeacherSlotRoute mounts GET /:slug/slots (public) and
+// GET /:slug/trial-eligibility (signed-in students) onto the "/v1/teachers"
+// group, next to the teacher-profile and availability routes.
+func RegisterTeacherSlotRoute(rg *gin.RouterGroup, h *Handler, requireAuth gin.HandlerFunc) {
 	rg.GET("/:slug/slots", h.Slots)
+	rg.GET("/:slug/trial-eligibility", requireAuth, h.TrialEligibility)
+}
+
+// TrialEligibility handles GET /v1/teachers/:slug/trial-eligibility.
+func (h *Handler) TrialEligibility(c *gin.Context) {
+	uid, ok := auth.UserID(c)
+	if !ok {
+		web.Unauthorized(c, "A valid access token is required.")
+		return
+	}
+	slug := c.Param("slug")
+	e, err := h.svc.TrialEligibility(c.Request.Context(), uid, slug)
+	if h.rendered(c, err, "trial eligibility", slog.String("slug", slug)) {
+		return
+	}
+	c.JSON(http.StatusOK, toTrialEligibilityDTO(e))
 }
 
 // Slots handles GET /v1/teachers/:slug/slots?from&to&duration.
@@ -333,6 +350,8 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 		web.WriteError(c, http.StatusConflict, "slot_unavailable", "That start time is not currently bookable for this teacher.")
 	case errors.Is(err, ErrSlotTaken):
 		web.WriteError(c, http.StatusConflict, "slot_taken", "That slot was just taken. Pick another time.")
+	case errors.Is(err, ErrTrialAlreadyBooked):
+		web.WriteError(c, http.StatusConflict, "trial_already_booked", "You have already booked your trial lesson with this teacher. Book a regular lesson instead.")
 	case errors.Is(err, ErrAlreadyPaid):
 		web.WriteError(c, http.StatusConflict, "already_paid", "This booking has already been paid for.")
 	case errors.Is(err, ErrTooEarly):

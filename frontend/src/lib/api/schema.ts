@@ -437,6 +437,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/teachers/{slug}/trial-eligibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * May the caller still book a trial with this teacher?
+         * @description One trial per student per teacher. `eligible: false` comes with a `reason`: `already_booked` (the caller holds a non-cancelled trial with this teacher — `booking_id` points at it; a cancelled trial does not count) or `own_profile` (the caller owns the teacher profile). Whether the teacher offers a trial at all is answered by the offering list, not here. The same rule makes `POST /v1/bookings` answer 409 `trial_already_booked`.
+         */
+        get: operations["getTrialEligibility"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/teachers/{slug}/reviews": {
         parameters: {
             query?: never;
@@ -2379,6 +2399,19 @@ export interface components {
         };
         LessonTypeList: {
             lesson_types: components["schemas"]["LessonType"][];
+        };
+        TrialEligibility: {
+            eligible: boolean;
+            /**
+             * @description Present only when `eligible` is false.
+             * @enum {string}
+             */
+            reason?: "already_booked" | "own_profile";
+            /**
+             * Format: uuid
+             * @description The trial already held; present only with `already_booked`.
+             */
+            booking_id?: string;
         };
         LessonTypeWrite: {
             title: string;
@@ -4603,6 +4636,30 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    getTrialEligibility: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's trial eligibility for this teacher. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrialEligibility"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listTeacherReviews: {
         parameters: {
             query?: {
@@ -4679,7 +4736,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            /** @description The slot is not bookable (`slot_unavailable` — outside availability, misaligned, in the past, or already taken) or was taken by a concurrent request between the check and the insert (`slot_taken`). */
+            /** @description The slot is not bookable (`slot_unavailable` — outside availability, misaligned, in the past, or already taken), was taken by a concurrent request between the check and the insert (`slot_taken`), or the caller already holds a trial with this teacher (`trial_already_booked` — one per student per teacher; see `GET /v1/teachers/{slug}/trial-eligibility`). */
             409: {
                 headers: {
                     [name: string]: unknown;

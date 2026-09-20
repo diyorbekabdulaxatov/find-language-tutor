@@ -35,7 +35,7 @@ func newTestRouterGW(repo Repository, tm *auth.TokenManager, gw PaymentGateway) 
 	tg.GET("/me", ok)
 	tg.GET("/:slug", ok)
 	tg.GET("/:slug/availability", ok)
-	RegisterTeacherSlotRoute(tg, h)
+	RegisterTeacherSlotRoute(tg, h, auth.RequireAuth(tm))
 
 	RegisterRoutes(r.Group("/v1/bookings"), h, auth.RequireAuth(tm))
 	return r

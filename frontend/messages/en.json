@@ -439,6 +439,11 @@
     "stepLesson": "Choose a lesson",
     "chooseLesson": "What would you like to book?",
     "changeLesson": "Change lesson",
+    "trialUsedTitle": "You've already had your trial with {name}",
+    "trialUsedBody": "Each student can book one trial lesson per teacher. Pick one of {name}'s regular lessons instead.",
+    "trialUsedView": "View your trial lesson",
+    "trialUsedChoose": "Choose another lesson",
+    "trialUsedBadge": "Already booked",
     "fromPrice": "from {price}"
   },
   "dashboard": {

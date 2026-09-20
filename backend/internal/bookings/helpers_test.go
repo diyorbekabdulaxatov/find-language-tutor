@@ -49,6 +49,10 @@ type fakeRepo struct {
 	createErr error
 	created   *CreateBookingParams
 
+	// trialHeld is the trial booking StudentTrialBooking reports for every
+	// (teacher, student) pair; uuid.Nil means none.
+	trialHeld uuid.UUID
+
 	listResult []Booking
 	lastFilter ListFilter
 	statusErr  error
@@ -70,6 +74,10 @@ func (f *fakeRepo) WeeklyAvailability(context.Context, uuid.UUID) ([]Availabilit
 
 func (f *fakeRepo) BookedIntervals(context.Context, uuid.UUID, time.Time, time.Time) ([]Interval, error) {
 	return f.booked, nil
+}
+
+func (f *fakeRepo) StudentTrialBooking(context.Context, uuid.UUID, uuid.UUID) (uuid.UUID, bool, error) {
+	return f.trialHeld, f.trialHeld != uuid.Nil, nil
 }
 
 func (f *fakeRepo) CreateBooking(_ context.Context, p CreateBookingParams) (Booking, error) {

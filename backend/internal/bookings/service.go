@@ -30,6 +30,11 @@ var (
 	// booking we can see). Rendered as 409.
 	ErrSlotUnavailable = errors.New("requested slot is not available")
 
+	// ErrTrialAlreadyBooked means the student already holds a non-cancelled
+	// trial with this teacher (one per student per teacher, enforced by the
+	// bookings_one_trial_per_student_idx unique index).
+	ErrTrialAlreadyBooked = errors.New("trial lesson already booked with this teacher")
+
 	// ErrSlotTaken — the DB double-booking EXCLUDE constraint rejected the insert
 	// (lost a race). Rendered as 409 slot_taken.
 	ErrSlotTaken = errors.New("slot was just taken")
@@ -63,6 +68,22 @@ type CreateInput struct {
 	// pre-L1 path: priced from the teacher's hourly rate.
 	LessonTypeID uuid.UUID
 }
+
+// TrialEligibility is the answer to "may this student still book a trial with
+// this teacher?". BookingID is set only with TrialReasonAlreadyBooked.
+type TrialEligibility struct {
+	Eligible  bool
+	Reason    TrialIneligibleReason
+	BookingID uuid.UUID
+}
+
+// TrialIneligibleReason is the wire-level reason a trial cannot be booked.
+type TrialIneligibleReason string
+
+const (
+	TrialReasonAlreadyBooked TrialIneligibleReason = "already_booked"
+	TrialReasonOwnProfile    TrialIneligibleReason = "own_profile"
+)
 
 // ListFilter is passed to the repository. StudentFilter / TeacherFilter are
 // matched with OR; uuid.Nil means "do not match this dimension".
@@ -103,8 +124,13 @@ type Repository interface {
 	BookedIntervals(ctx context.Context, teacherID uuid.UUID, from, to time.Time) ([]Interval, error)
 
 	// CreateBooking inserts a pending_payment booking and returns it hydrated.
-	// It maps the double-booking EXCLUDE violation to ErrSlotTaken.
+	// It maps the double-booking EXCLUDE violation to ErrSlotTaken and the
+	// one-trial-per-student unique violation to ErrTrialAlreadyBooked.
 	CreateBooking(ctx context.Context, p CreateBookingParams) (Booking, error)
+
+	// StudentTrialBooking returns the non-cancelled trial the student already
+	// holds with the teacher. ok is false when there is none.
+	StudentTrialBooking(ctx context.Context, teacherID, studentID uuid.UUID) (id uuid.UUID, ok bool, err error)
 
 	// GetBooking returns one hydrated booking, or ErrBookingNotFound.
 	GetBooking(ctx context.Context, id uuid.UUID) (Booking, error)
@@ -414,6 +440,16 @@ func (s *Service) Create(ctx context.Context, studentID uuid.UUID, in CreateInpu
 		price = hourlyPrice(tc.PricePerHourMinor, duration, tc.Currency)
 	}
 
+	// One trial per student per teacher. This is the friendly early answer;
+	// the unique index behind CreateBooking is what settles a race.
+	if isTrial {
+		if _, used, err := s.repo.StudentTrialBooking(ctx, tc.ID, studentID); err != nil {
+			return Booking{}, err
+		} else if used {
+			return Booking{}, ErrTrialAlreadyBooked
+		}
+	}
+
 	// Re-check availability server-side.
 	spans, err := s.repo.WeeklyAvailability(ctx, tc.ID)
 	if err != nil {
@@ -451,6 +487,29 @@ func (s *Service) Create(ctx context.Context, studentID uuid.UUID, in CreateInpu
 		}
 	}
 	return b, nil
+}
+
+// TrialEligibility says whether studentID may still book a trial with the
+// teacher. Ineligible reasons: the student owns the profile, or already holds
+// a non-cancelled trial with this teacher (the booking id is returned so the
+// UI can link to it). Whether the teacher offers a trial at all is not this
+// call's concern — the offering list answers that.
+func (s *Service) TrialEligibility(ctx context.Context, studentID uuid.UUID, teacherSlug string) (TrialEligibility, error) {
+	tc, err := s.repo.TeacherContextBySlug(ctx, teacherSlug)
+	if err != nil {
+		return TrialEligibility{}, err
+	}
+	if tc.OwnerID != uuid.Nil && tc.OwnerID == studentID {
+		return TrialEligibility{Reason: TrialReasonOwnProfile}, nil
+	}
+	id, used, err := s.repo.StudentTrialBooking(ctx, tc.ID, studentID)
+	if err != nil {
+		return TrialEligibility{}, err
+	}
+	if used {
+		return TrialEligibility{Reason: TrialReasonAlreadyBooked, BookingID: id}, nil
+	}
+	return TrialEligibility{Eligible: true}, nil
 }
 
 // List returns the bookings the caller participates in, filtered by role and

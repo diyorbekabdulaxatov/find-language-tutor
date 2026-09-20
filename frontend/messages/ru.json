@@ -439,6 +439,11 @@
     "stepLesson": "Выберите урок",
     "chooseLesson": "Что вы хотите забронировать?",
     "changeLesson": "Изменить урок",
+    "trialUsedTitle": "У вас уже был пробный урок с {name}",
+    "trialUsedBody": "Каждый ученик может забронировать один пробный урок у преподавателя. Выберите обычный урок у {name}.",
+    "trialUsedView": "Открыть пробный урок",
+    "trialUsedChoose": "Выбрать другой урок",
+    "trialUsedBadge": "Уже забронирован",
     "fromPrice": "от {price}"
   },
   "dashboard": {

@@ -170,6 +170,57 @@ func TestBookings_StudentCannotBeInTwoLessonsAtOnce(t *testing.T) {
 	}
 }
 
+// TestBookings_OneTrialPerStudentPerTeacher pins migration 000026: the
+// partial unique index is what makes a second trial a 23505 (→ 409), a
+// cancelled trial frees the student to try again, and a regular lesson is
+// never affected.
+func TestBookings_OneTrialPerStudentPerTeacher(t *testing.T) {
+	pool := Pool(t)
+	f := seed(t, pool)
+	ctx := context.Background()
+	start := time.Date(2030, 1, 6, 9, 0, 0, 0, time.UTC)
+
+	trial := func(student uuid.UUID, start time.Time, status string) (uuid.UUID, error) {
+		var id uuid.UUID
+		err := pool.QueryRow(ctx, `
+			INSERT INTO bookings (teacher_id, student_id, start_at, end_at, duration_minutes, status, price_minor, currency, is_trial)
+			VALUES ($1, $2, $3, $4, 30, $5, 1, 'UZS', true)
+			RETURNING id`, f.teacher, student, start, start.Add(30*time.Minute), status).Scan(&id)
+		return id, err
+	}
+
+	first, err := trial(f.student, start, "pending_payment")
+	if err != nil {
+		t.Fatalf("first trial: %v", err)
+	}
+
+	// The same student, a different (non-overlapping) time → the trial rule,
+	// not the double-booking one, is what fires. Even a still-unpaid
+	// reservation counts.
+	var pgErr *pgconn.PgError
+	_, err = trial(f.student, start.Add(24*time.Hour), "pending_payment")
+	if !errors.As(err, &pgErr) || pgErr.Code != sqlstateUnique || pgErr.ConstraintName != "bookings_one_trial_per_student_idx" {
+		t.Fatalf("second trial: err=%v, want 23505 on bookings_one_trial_per_student_idx", err)
+	}
+
+	// Another student is free to take their own trial, and the first student
+	// may still book a regular lesson.
+	if _, err := trial(f.other, start.Add(24*time.Hour), "confirmed"); err != nil {
+		t.Fatalf("other student's trial: %v", err)
+	}
+	if _, err := f.booking(t, f.student, start.Add(48*time.Hour), 60, "confirmed"); err != nil {
+		t.Fatalf("regular lesson after a trial: %v", err)
+	}
+
+	// Cancelling the trial frees the student to book another.
+	if _, err := pool.Exec(ctx, `UPDATE bookings SET status = 'cancelled' WHERE id = $1`, first); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := trial(f.student, start.Add(72*time.Hour), "pending_payment"); err != nil {
+		t.Fatalf("trial after cancellation should be allowed: %v", err)
+	}
+}
+
 // TestPayments_WebhookReplayIsANoOp checks the insert-first idempotency
 // gate end to end through the real repository: the second delivery of the
 // same event id must neither error nor apply twice.

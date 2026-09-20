@@ -166,6 +166,7 @@
   "That lesson isn't offered at that length.": "Этот урок не предлагается такой длительности.",
   "That resource isn't one of your published resources.": "Этот материал не входит в ваши опубликованные материалы.",
   "That slot was just taken. Pick another time.": "Это время только что заняли. Выберите другое.",
+  "You have already booked your trial lesson with this teacher. Book a regular lesson instead.": "Вы уже забронировали пробный урок у этого преподавателя. Забронируйте обычный урок.",
   "That start time is not currently bookable for this teacher.": "Это время сейчас недоступно для записи к этому преподавателю.",
   "The %d-minute length is listed twice.": "Длительность %d минут указана дважды.",
   "The attachment id must be a UUID.": "id вложения должен быть UUID.",

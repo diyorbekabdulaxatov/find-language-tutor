@@ -294,6 +294,27 @@ export async function getSlots(
   };
 }
 
+/** One trial per student per teacher — what the checkout asks before offering the trial card. */
+export type TrialEligibility =
+  | { eligible: true }
+  | { eligible: false; reason: "already_booked"; bookingId: string }
+  | { eligible: false; reason: "own_profile" };
+
+export async function getTrialEligibility(slug: string): Promise<TrialEligibility> {
+  const { data, error, response } = await browserApi.GET(
+    "/v1/teachers/{slug}/trial-eligibility",
+    { params: { path: { slug } } },
+  );
+  if (error || !data) {
+    throw toError(error, response.status, "Could not check trial eligibility.");
+  }
+  if (data.eligible) return { eligible: true };
+  if (data.reason === "already_booked" && data.booking_id) {
+    return { eligible: false, reason: "already_booked", bookingId: data.booking_id };
+  }
+  return { eligible: false, reason: "own_profile" };
+}
+
 export async function createBooking(input: {
   teacherSlug: string;
   startAt: string;

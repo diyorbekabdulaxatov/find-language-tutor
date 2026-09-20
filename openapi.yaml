@@ -757,6 +757,32 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /v1/teachers/{slug}/trial-eligibility:
+    get:
+      tags: [bookings]
+      summary: May the caller still book a trial with this teacher?
+      description: >
+        One trial per student per teacher. `eligible: false` comes with a
+        `reason`: `already_booked` (the caller holds a non-cancelled trial with
+        this teacher — `booking_id` points at it; a cancelled trial does not
+        count) or `own_profile` (the caller owns the teacher profile). Whether
+        the teacher offers a trial at all is answered by the offering list, not
+        here. The same rule makes `POST /v1/bookings` answer 409
+        `trial_already_booked`.
+      operationId: getTrialEligibility
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The caller's trial eligibility for this teacher.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrialEligibility" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /v1/teachers/{slug}/reviews:
     get:
       tags: [reviews]
@@ -828,8 +854,11 @@ paths:
         "409":
           description: >
             The slot is not bookable (`slot_unavailable` — outside availability,
-            misaligned, in the past, or already taken) or was taken by a
-            concurrent request between the check and the insert (`slot_taken`).
+            misaligned, in the past, or already taken), was taken by a
+            concurrent request between the check and the insert (`slot_taken`),
+            or the caller already holds a trial with this teacher
+            (`trial_already_booked` — one per student per teacher; see
+            `GET /v1/teachers/{slug}/trial-eligibility`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -3944,6 +3973,20 @@ components:
         lesson_types:
           type: array
           items: { $ref: "#/components/schemas/LessonType" }
+
+    TrialEligibility:
+      type: object
+      required: [eligible]
+      properties:
+        eligible: { type: boolean }
+        reason:
+          type: string
+          enum: [already_booked, own_profile]
+          description: Present only when `eligible` is false.
+        booking_id:
+          type: string
+          format: uuid
+          description: The trial already held; present only with `already_booked`.
 
     LessonTypeWrite:
       type: object

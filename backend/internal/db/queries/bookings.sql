@@ -139,3 +139,16 @@ RETURNING id;
 -- Seed-only. bookings.teacher_id / student_id reference teachers / users with
 -- no ON DELETE CASCADE, so the seed must clear bookings before those tables.
 DELETE FROM bookings;
+
+-- name: GetStudentTrialBooking :one
+-- The trial a student already holds with a teacher, if any. Mirrors the
+-- partial unique index bookings_one_trial_per_student_idx: cancelled trials
+-- do not count, everything else does.
+SELECT id
+FROM bookings
+WHERE teacher_id = $1
+  AND student_id = $2
+  AND is_trial
+  AND status <> 'cancelled'
+ORDER BY created_at
+LIMIT 1;

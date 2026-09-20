@@ -234,6 +234,32 @@ func (q *Queries) GetBookingTeacherContext(ctx context.Context, slug string) (Ge
 	return i, err
 }
 
+const getStudentTrialBooking = `-- name: GetStudentTrialBooking :one
+SELECT id
+FROM bookings
+WHERE teacher_id = $1
+  AND student_id = $2
+  AND is_trial
+  AND status <> 'cancelled'
+ORDER BY created_at
+LIMIT 1
+`
+
+type GetStudentTrialBookingParams struct {
+	TeacherID uuid.UUID
+	StudentID uuid.UUID
+}
+
+// The trial a student already holds with a teacher, if any. Mirrors the
+// partial unique index bookings_one_trial_per_student_idx: cancelled trials
+// do not count, everything else does.
+func (q *Queries) GetStudentTrialBooking(ctx context.Context, arg GetStudentTrialBookingParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getStudentTrialBooking, arg.TeacherID, arg.StudentID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getTeacherIDByOwner = `-- name: GetTeacherIDByOwner :one
 SELECT id FROM teachers WHERE user_id = $1
 `
