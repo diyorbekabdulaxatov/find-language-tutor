@@ -107,6 +107,26 @@ func BookingConfirmedContent(loc string, li LessonInfo) (subject, html, text str
 	return subject, html, text
 }
 
+// BookingRescheduledContent is sent to the teacher when the student moves a
+// lesson. li carries the NEW time; previousStart the old one.
+func BookingRescheduledContent(loc string, li LessonInfo, previousStart time.Time) (subject, html, text string) {
+	was := li
+	was.StartAt = previousStart
+	subject = i18n.Tf(loc, "Lesson with %s moved — now %s", li.StudentName, li.when(loc))
+	lines := []string{
+		i18n.Tf(loc, "%s moved your lesson.", li.StudentName),
+		"",
+		i18n.Tf(loc, "Was: %s", was.when(loc)),
+		i18n.Tf(loc, "Now: %s", li.when(loc)),
+		i18n.Tf(loc, "Length: %d minutes", li.DurationMinutes),
+		meetingLine(loc, li.MeetingURL),
+		"",
+		i18n.T(loc, "The old time is open again in your calendar. If the new time does not work for you, cancel the lesson and the student is refunded in full."),
+	}
+	html, text = wrap(subject, lines)
+	return subject, html, text
+}
+
 // CancelOutcome mirrors bookings.CancellationOutcome for the cancellation
 // email: what happened to the student's payment.
 type CancelOutcome string

@@ -35,6 +35,7 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler, requireAuth gin.HandlerFunc
 	rg.POST("/:id/pay", requireAuth, h.Pay)
 	rg.POST("/:id/complete", requireAuth, h.Complete)
 	rg.POST("/:id/cancel", requireAuth, h.Cancel)
+	rg.POST("/:id/reschedule", requireAuth, h.Reschedule)
 	rg.PUT("/:id/meeting-link", requireAuth, h.SetMeetingLink)
 	rg.POST("/:id/no-show", requireAuth, h.NoShow)
 }
@@ -243,6 +244,25 @@ func (h *Handler) Cancel(c *gin.Context) {
 	c.JSON(http.StatusOK, h.annotate(c, toBookingDTO(b, uid), b, uid))
 }
 
+// Reschedule handles POST /v1/bookings/:id/reschedule. Body {"start_at"}.
+// Student-only; see Service.Reschedule for the rules.
+func (h *Handler) Reschedule(c *gin.Context) {
+	uid, id, ok := h.callerAndID(c)
+	if !ok {
+		return
+	}
+	var req rescheduleBookingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		web.BadRequest(c, `Request body must be {"start_at": RFC3339}.`)
+		return
+	}
+	b, err := h.svc.Reschedule(c.Request.Context(), uid, id, req.StartAt)
+	if h.rendered(c, err, "reschedule booking", slog.String("id", id.String())) {
+		return
+	}
+	c.JSON(http.StatusOK, h.annotate(c, toBookingDTO(b, uid), b, uid))
+}
+
 // SetMeetingLink handles PUT /v1/bookings/:id/meeting-link. Body {"url": "..."}.
 // Teacher-owner only; an empty url clears the per-booking override.
 func (h *Handler) SetMeetingLink(c *gin.Context) {
@@ -305,6 +325,7 @@ func (h *Handler) annotate(c *gin.Context, dto bookingDTO, b Booking, viewerID u
 	}
 	dto = withDispute(withReview(dto, b, viewerID, review), b, viewerID, dispute)
 	dto = withPolicy(dto, b, h.svc.Policy(b))
+	dto.CanReschedule = h.svc.CanReschedule(b, viewerID)
 	return withResources(dto, h.svc.ResourcesFor(ctx, b.ID, viewerID))
 }
 
@@ -335,9 +356,16 @@ func (h *Handler) rendered(c *gin.Context, err error, op string, attrs ...slog.A
 	var ve ValidationError
 	var payFailed PaymentFailedError
 	var late LateCancellationError
+	var lateMove LateRescheduleError
 	switch {
 	case errors.As(err, &late):
 		web.WriteErrorFrom(c, http.StatusConflict, "late_cancellation", late)
+	case errors.As(err, &lateMove):
+		web.WriteErrorFrom(c, http.StatusConflict, "late_reschedule", lateMove)
+	case errors.Is(err, ErrOnlyStudentReschedules):
+		web.Forbidden(c, "Only the student can move this lesson. If you cannot make it, cancel it and the student is refunded.")
+	case errors.Is(err, ErrRescheduleLimit):
+		web.WriteError(c, http.StatusConflict, "reschedule_limit", "This lesson has already been moved the maximum number of times.")
 	case errors.Is(err, ErrTeacherNotFound):
 		web.NotFound(c, "No teacher with that slug.")
 	case errors.Is(err, ErrBookingNotFound):

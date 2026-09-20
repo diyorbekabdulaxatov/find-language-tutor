@@ -48,4 +48,8 @@ type Notifier interface {
 	// BookingCancelled is sent to the OTHER party on a cancellation / teacher
 	// no-show. outcome says what happened to the student's payment.
 	BookingCancelled(ctx context.Context, b Booking, cancelledBy uuid.UUID, outcome CancellationOutcome)
+
+	// BookingRescheduled is sent to the teacher when the student moves the
+	// lesson; b already carries the new time, previousStart the old one.
+	BookingRescheduled(ctx context.Context, b Booking, previousStart time.Time)
 }

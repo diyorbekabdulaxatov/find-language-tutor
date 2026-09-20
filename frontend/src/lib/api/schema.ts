@@ -585,6 +585,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/bookings/{id}/reschedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a lesson to another time
+         * @description Student-only. Moves a `pending_payment` or `confirmed` lesson to another bookable start of the same teacher; length, price, payment and offering are unchanged and the booking keeps its id. The new start is validated exactly like a fresh booking (availability, 15-minute alignment, in the future, no clash — the lesson's own current slot does not count as taken) and the DB's EXCLUDE constraints settle a race (`slot_taken`). Allowed until `cancellation_policy.free_cancel_until` of the current start (`late_reschedule` after that — the only move left is a cancellation) and at most 3 times per booking (`reschedule_limit`). Reminders follow the lesson and the teacher is emailed; a teacher who cannot make the new time cancels, refunding the student in full. `can_reschedule` on the Booking says up front whether the call would be accepted.
+         */
+        post: operations["rescheduleBooking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/bookings/{id}/meeting-link": {
         parameters: {
             query?: never;
@@ -2522,6 +2542,15 @@ export interface components {
             cancellation_outcome?: "refunded" | "forfeited" | "unpaid" | null;
             /** @description Set while the booking is `pending_payment` or `confirmed`; null once completed or cancelled. */
             cancellation_policy?: components["schemas"]["CancellationPolicy"] | null;
+            /** @description How many times the student has moved this lesson (max 3). */
+            reschedule_count?: number;
+            /**
+             * Format: date-time
+             * @description The start the lesson was last moved away from; null if never moved.
+             */
+            rescheduled_from?: string | null;
+            /** @description True when the viewer is the student, the booking is live, the free-cancellation deadline has not passed and the cap is not reached — i.e. `POST /reschedule` would be accepted right now. */
+            can_reschedule?: boolean;
             /** @description The effective video link (the per-booking override if set, else the teacher's default `meeting_url`). Present ONLY when the caller is a participant AND `status` is `confirmed` or `completed`; omitted for everyone else (it never leaks to a `pending_payment` booking or a non-participant). */
             meeting_url?: string;
             /**
@@ -2668,6 +2697,13 @@ export interface components {
              * @default false
              */
             acknowledge_forfeit: boolean;
+        };
+        RescheduleBookingRequest: {
+            /**
+             * Format: date-time
+             * @description The new start (UTC instant). The length stays the booking's.
+             */
+            start_at: string;
         };
         /** @description The student-facing cancellation rule for one booking, present while it can still be cancelled. */
         CancellationPolicy: {
@@ -4942,6 +4978,53 @@ export interface operations {
             };
             /** @description The forfeit capture was refused by the provider (`capture_failed`); the booking stays `confirmed`. */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    rescheduleBooking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RescheduleBookingRequest"];
+            };
+        };
+        responses: {
+            /** @description The moved booking. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Booking"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The caller is not the student (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description `invalid_state` (completed / cancelled), `late_reschedule`, `reschedule_limit`, `slot_unavailable` (not a bookable start) or `slot_taken` (lost the race). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

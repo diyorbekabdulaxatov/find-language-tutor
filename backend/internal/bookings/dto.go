@@ -65,6 +65,14 @@ type bookingDTO struct {
 	// CancellationOutcome is null until cancelled, then refunded / forfeited /
 	// unpaid (null also for an operator cancel that settled the money elsewhere).
 	CancellationOutcome *string `json:"cancellation_outcome"`
+	// RescheduleCount is how many times the student has moved the lesson;
+	// RescheduledFrom is the start it was last moved away from (null if never).
+	RescheduleCount int        `json:"reschedule_count"`
+	RescheduledFrom *time.Time `json:"rescheduled_from"`
+	// CanReschedule is true when the viewer is the student, the booking is
+	// live, the free-cancellation deadline has not passed and the cap
+	// (MaxReschedules) is not reached.
+	CanReschedule bool `json:"can_reschedule"`
 	// CancellationPolicy is set while the booking can still be cancelled
 	// (pending_payment / confirmed): the free-cancellation deadline and whether
 	// it has passed. null once the lesson is completed or cancelled.
@@ -171,6 +179,10 @@ type cancelBookingRequest struct {
 	AcknowledgeForfeit bool `json:"acknowledge_forfeit"`
 }
 
+type rescheduleBookingRequest struct {
+	StartAt time.Time `json:"start_at" binding:"required"`
+}
+
 type payBookingRequest struct {
 	MethodToken string `json:"method_token"`
 }
@@ -217,6 +229,8 @@ func toBookingDTO(b Booking, viewerID uuid.UUID) bookingDTO {
 		CancellationReason:  b.CancellationReason,
 		CancelledBy:         b.CancelledBy,
 		CancellationOutcome: optString(string(b.CancellationOutcome)),
+		RescheduleCount:     b.RescheduleCount,
+		RescheduledFrom:     utcPtr(b.RescheduledFrom),
 		MeetingURL:          meetingURLFor(b, viewerID),
 		NoShowParty:         b.NoShowParty,
 		Teacher: teacherSummaryDTO{

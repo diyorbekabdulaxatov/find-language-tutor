@@ -242,6 +242,45 @@ func TestBookings_CancellationOutcomeIsConstrained(t *testing.T) {
 	}
 }
 
+// TestBookings_RescheduleIsGuardedByTheExcludeConstraints pins that moving a
+// lesson (an UPDATE of its range) is policed exactly like inserting one: onto
+// another lesson → 23P01; adjacent → fine; and the history columns advance.
+func TestBookings_RescheduleIsGuardedByTheExcludeConstraints(t *testing.T) {
+	pool := Pool(t)
+	f := seed(t, pool)
+	ctx := context.Background()
+	start := time.Date(2030, 1, 6, 9, 0, 0, 0, time.UTC)
+
+	mine, err := f.booking(t, f.student, start, 60, "confirmed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.booking(t, f.other, start.Add(2*time.Hour), 60, "confirmed"); err != nil {
+		t.Fatal(err)
+	}
+	move := func(to time.Time) error {
+		_, err := pool.Exec(ctx, `
+			UPDATE bookings SET rescheduled_from = start_at, start_at = $2, end_at = $3,
+			       reschedule_count = reschedule_count + 1 WHERE id = $1`,
+			mine, to, to.Add(time.Hour))
+		return err
+	}
+	if err := move(start.Add(2*time.Hour + 30*time.Minute)); pgCode(err) != sqlstateExclusion {
+		t.Fatalf("moving onto another lesson: err=%v, want %s", err, sqlstateExclusion)
+	}
+	if err := move(start.Add(3 * time.Hour)); err != nil {
+		t.Fatalf("back-to-back move should be allowed: %v", err)
+	}
+	var count int
+	var from time.Time
+	if err := pool.QueryRow(ctx, `SELECT reschedule_count, rescheduled_from FROM bookings WHERE id = $1`, mine).Scan(&count, &from); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 || !from.Equal(start) {
+		t.Fatalf("history: count=%d from=%s", count, from)
+	}
+}
+
 // TestPayments_WebhookReplayIsANoOp checks the insert-first idempotency
 // gate end to end through the real repository: the second delivery of the
 // same event id must neither error nor apply twice.

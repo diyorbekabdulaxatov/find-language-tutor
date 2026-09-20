@@ -1090,6 +1090,64 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /v1/bookings/{id}/reschedule:
+    post:
+      tags: [bookings]
+      summary: Move a lesson to another time
+      description: >
+        Student-only. Moves a `pending_payment` or `confirmed` lesson to
+        another bookable start of the same teacher; length, price, payment
+        and offering are unchanged and the booking keeps its id. The new
+        start is validated exactly like a fresh booking (availability,
+        15-minute alignment, in the future, no clash — the lesson's own
+        current slot does not count as taken) and the DB's EXCLUDE
+        constraints settle a race (`slot_taken`). Allowed until
+        `cancellation_policy.free_cancel_until` of the current start
+        (`late_reschedule` after that — the only move left is a
+        cancellation) and at most 3 times per booking (`reschedule_limit`).
+        Reminders follow the lesson and the teacher is emailed; a teacher who
+        cannot make the new time cancels, refunding the student in full.
+        `can_reschedule` on the Booking says up front whether the call would
+        be accepted.
+      operationId: rescheduleBooking
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RescheduleBookingRequest" }
+      responses:
+        "200":
+          description: The moved booking.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Booking" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is not the student (`forbidden`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            `invalid_state` (completed / cancelled), `late_reschedule`,
+            `reschedule_limit`, `slot_unavailable` (not a bookable start) or
+            `slot_taken` (lost the race).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /v1/bookings/{id}/meeting-link:
     put:
       tags: [bookings]
@@ -4143,6 +4201,20 @@ components:
           description: >
             Set while the booking is `pending_payment` or `confirmed`; null
             once completed or cancelled.
+        reschedule_count:
+          type: integer
+          description: How many times the student has moved this lesson (max 3).
+        rescheduled_from:
+          type: string
+          format: date-time
+          nullable: true
+          description: The start the lesson was last moved away from; null if never moved.
+        can_reschedule:
+          type: boolean
+          description: >
+            True when the viewer is the student, the booking is live, the
+            free-cancellation deadline has not passed and the cap is not
+            reached — i.e. `POST /reschedule` would be accepted right now.
         meeting_url:
           type: string
           description: >
@@ -4372,6 +4444,15 @@ components:
             `cancellation_policy.free_cancel_until`: confirms they accept that
             the full fee is charged. Ignored for teachers and for unpaid
             bookings.
+
+    RescheduleBookingRequest:
+      type: object
+      required: [start_at]
+      properties:
+        start_at:
+          type: string
+          format: date-time
+          description: The new start (UTC instant). The length stays the booking's.
 
     CancellationPolicy:
       type: object

@@ -114,6 +114,20 @@ func CancelledMessages(b bookings.Booking, cancelledBy uuid.UUID, outcome bookin
 	return out
 }
 
+// RescheduledMessages renders booking_rescheduled for the teacher only — the
+// student is the one who moved it.
+func RescheduledMessages(b bookings.Booking, previousStart time.Time) []email.Message {
+	var out []email.Message
+	for _, r := range recipients(b) {
+		if r.addr != b.TeacherEmail {
+			continue
+		}
+		subject, html, text := email.BookingRescheduledContent(r.locale, lessonInfo(b), previousStart)
+		out = append(out, email.Message{To: r.addr, ToName: r.name, Subject: subject, HTMLBody: html, TextBody: text})
+	}
+	return out
+}
+
 func fanOut(b bookings.Booking, render content) []email.Message {
 	var out []email.Message
 	for _, r := range recipients(b) {

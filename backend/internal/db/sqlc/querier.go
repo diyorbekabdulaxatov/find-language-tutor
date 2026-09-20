@@ -606,6 +606,9 @@ type Querier interface {
 	// service's check and this write (affected rows short of len(ids) surfaces
 	// to the caller as a write failure, never a silent partial reorder).
 	ReorderCourseSections(ctx context.Context, arg ReorderCourseSectionsParams) (int64, error)
+	// Moves a lesson. The EXCLUDE constraints re-check both parties' calendars on
+	// the UPDATE, so a clash surfaces as 23P01 exactly as on insert.
+	RescheduleBooking(ctx context.Context, arg RescheduleBookingParams) error
 	// Guarded UPDATE: only an OPEN dispute moves. No rows back means either "no such
 	// dispute" or "already resolved" — the repository re-reads the row to tell the
 	// two apart, so a lost race renders 409 already_resolved rather than clobbering

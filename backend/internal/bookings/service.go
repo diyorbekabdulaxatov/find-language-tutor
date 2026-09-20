@@ -37,6 +37,13 @@ var (
 	// bookings_one_trial_per_student_idx unique index).
 	ErrTrialAlreadyBooked = errors.New("trial lesson already booked with this teacher")
 
+	// ErrOnlyStudentReschedules — a teacher tried to move a lesson; their tool
+	// is cancel (full refund). 403.
+	ErrOnlyStudentReschedules = errors.New("only the student can reschedule this booking")
+
+	// ErrRescheduleLimit — the booking has been moved MaxReschedules times. 409.
+	ErrRescheduleLimit = errors.New("this lesson has been rescheduled too many times")
+
 	// ErrSlotTaken — the DB double-booking EXCLUDE constraint rejected the insert
 	// (lost a race). Rendered as 409 slot_taken.
 	ErrSlotTaken = errors.New("slot was just taken")
@@ -148,6 +155,10 @@ type Repository interface {
 	// happened to the money) and returns the hydrated booking.
 	Cancel(ctx context.Context, id uuid.UUID, reason, by string, outcome CancellationOutcome) (Booking, error)
 
+	// Reschedule moves a booking to [start, end), bumping reschedule_count and
+	// recording the previous start. Maps the EXCLUDE violation to ErrSlotTaken.
+	Reschedule(ctx context.Context, id uuid.UUID, start, end time.Time) (Booking, error)
+
 	// SetMeetingLinkOverride writes the per-booking meeting link ("" clears it)
 	// and returns the hydrated booking.
 	SetMeetingLinkOverride(ctx context.Context, id uuid.UUID, url string) (Booking, error)
@@ -213,6 +224,112 @@ type LateCancellationError struct {
 }
 
 func (e LateCancellationError) Error() string { return e.Msg.String() }
+
+// LateRescheduleError is returned when the free-cancellation deadline has
+// passed: the lesson can no longer be moved, only cancelled (forfeiting the
+// fee). 409 late_reschedule.
+type LateRescheduleError struct {
+	i18n.Msg
+	Policy CancellationPolicy
+}
+
+func (e LateRescheduleError) Error() string { return e.Msg.String() }
+
+// CanReschedule reports whether the viewer may still move the booking: the
+// student, on a live booking, before the free-cancellation deadline, under
+// the cap. The Reschedule call re-derives all of it; this feeds the DTO.
+func (s *Service) CanReschedule(b Booking, viewerID uuid.UUID) bool {
+	return b.Student.ID == viewerID &&
+		(b.Status == StatusPendingPayment || b.Status == StatusConfirmed) &&
+		!s.Policy(b).Late &&
+		b.RescheduleCount < MaxReschedules
+}
+
+// Reschedule moves a lesson to another bookable start of the same teacher.
+// Student-only (a teacher who cannot make it cancels, refunding in full).
+// Length, price, payment and offering are unchanged; the new start is
+// validated exactly like a fresh booking (availability, alignment, future,
+// no clash — the booking's own current slot does not count as taken) and the
+// EXCLUDE constraints settle a race on the UPDATE. Allowed until the
+// free-cancellation deadline of the CURRENT start and at most MaxReschedules
+// times; after that the only move is a cancellation.
+func (s *Service) Reschedule(ctx context.Context, callerID, bookingID uuid.UUID, newStart time.Time) (Booking, error) {
+	now := s.now().UTC()
+	b, err := s.repo.GetBooking(ctx, bookingID)
+	if err != nil {
+		return Booking{}, err
+	}
+	if !participant(b, callerID) {
+		return Booking{}, ErrForbidden
+	}
+	if b.Student.ID != callerID {
+		return Booking{}, ErrOnlyStudentReschedules
+	}
+	if b.Status != StatusPendingPayment && b.Status != StatusConfirmed {
+		return Booking{}, ErrInvalidTransition
+	}
+	if p := s.Policy(b); p.Late {
+		return Booking{}, LateRescheduleError{
+			Msg:    i18n.Message("Lessons can be moved until %d hours before the start. After that you can only cancel.", int(s.freeWindow().Hours())),
+			Policy: p,
+		}
+	}
+	if b.RescheduleCount >= MaxReschedules {
+		return Booking{}, ErrRescheduleLimit
+	}
+
+	start := newStart.UTC()
+	if !start.After(now) {
+		return Booking{}, invalid("`start_at` must be in the future.")
+	}
+	if start.Equal(b.StartAt) {
+		return Booking{}, invalid("`start_at` is the lesson's current time.")
+	}
+	end := start.Add(time.Duration(b.DurationMinutes) * time.Minute)
+
+	tc, err := s.repo.TeacherContextBySlug(ctx, b.Teacher.Slug)
+	if err != nil {
+		return Booking{}, err
+	}
+	spans, err := s.repo.WeeklyAvailability(ctx, tc.ID)
+	if err != nil {
+		return Booking{}, err
+	}
+	booked, err := s.repo.BookedIntervals(ctx, tc.ID, start, end)
+	if err != nil {
+		return Booking{}, err
+	}
+	// The lesson's own slot is free to move within / next to: drop it. Exact
+	// span match is unambiguous — the teacher EXCLUDE constraint means no
+	// other live booking can hold the same span.
+	own := booked[:0:0]
+	for _, iv := range booked {
+		if iv.Start.Equal(b.StartAt) && iv.End.Equal(b.EndAt) {
+			continue
+		}
+		own = append(own, iv)
+	}
+	if !isBookableStart(spans, own, start, b.DurationMinutes, now) {
+		return Booking{}, ErrSlotUnavailable
+	}
+
+	previous := b.StartAt
+	moved, err := s.repo.Reschedule(ctx, bookingID, start, end)
+	if err != nil {
+		return Booking{}, err
+	}
+
+	// Reminders follow the lesson (only a confirmed one has any); the teacher
+	// is told.
+	if moved.Status == StatusConfirmed {
+		s.cancelReminders(ctx, bookingID)
+		s.scheduleReminders(ctx, moved)
+	}
+	if s.notifier != nil {
+		s.notifier.BookingRescheduled(ctx, moved, previous)
+	}
+	return moved, nil
+}
 
 func NewService(repo Repository) *Service {
 	return &Service{repo: repo, now: time.Now, logger: slog.Default()}

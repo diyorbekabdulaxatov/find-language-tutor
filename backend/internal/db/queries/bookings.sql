@@ -45,6 +45,7 @@ SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
     b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.cancellation_outcome,
+    b.reschedule_count, b.rescheduled_from,
     b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
@@ -76,6 +77,7 @@ SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
     b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.cancellation_outcome,
+    b.reschedule_count, b.rescheduled_from,
     b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
@@ -100,6 +102,17 @@ LEFT JOIN users tu ON tu.id = t.user_id
 WHERE (b.student_id = sqlc.arg('student_filter') OR b.teacher_id = sqlc.arg('teacher_filter'))
   AND (sqlc.narg('status')::text IS NULL OR b.status = sqlc.narg('status')::text)
 ORDER BY b.start_at DESC, b.id;
+
+-- name: RescheduleBooking :exec
+-- Moves a lesson. The EXCLUDE constraints re-check both parties' calendars on
+-- the UPDATE, so a clash surfaces as 23P01 exactly as on insert.
+UPDATE bookings
+SET rescheduled_from = start_at,
+    start_at = $2,
+    end_at = $3,
+    reschedule_count = reschedule_count + 1,
+    updated_at = now()
+WHERE id = $1;
 
 -- name: SetBookingStatus :exec
 UPDATE bookings SET status = $2, updated_at = now() WHERE id = $1;

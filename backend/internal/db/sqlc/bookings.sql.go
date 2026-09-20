@@ -99,6 +99,7 @@ SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
     b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.cancellation_outcome,
+    b.reschedule_count, b.rescheduled_from,
     b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
@@ -138,6 +139,8 @@ type GetBookingByIDRow struct {
 	CancellationReason  string
 	CancelledBy         string
 	CancellationOutcome string
+	RescheduleCount     int32
+	RescheduledFrom     pgtype.Timestamptz
 	CreatedAt           pgtype.Timestamptz
 	UpdatedAt           pgtype.Timestamptz
 	MeetingUrlOverride  string
@@ -175,6 +178,8 @@ func (q *Queries) GetBookingByID(ctx context.Context, id uuid.UUID) (GetBookingB
 		&i.CancellationReason,
 		&i.CancelledBy,
 		&i.CancellationOutcome,
+		&i.RescheduleCount,
+		&i.RescheduledFrom,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.MeetingUrlOverride,
@@ -288,6 +293,7 @@ SELECT
     b.id, b.teacher_id, b.student_id, b.start_at, b.end_at,
     b.duration_minutes, b.status, b.price_minor, b.currency, b.is_trial,
     b.cancelled_at, b.cancellation_reason, b.cancelled_by, b.cancellation_outcome,
+    b.reschedule_count, b.rescheduled_from,
     b.created_at, b.updated_at,
     b.meeting_url_override,
     b.no_show_party,
@@ -335,6 +341,8 @@ type ListBookingsRow struct {
 	CancellationReason  string
 	CancelledBy         string
 	CancellationOutcome string
+	RescheduleCount     int32
+	RescheduledFrom     pgtype.Timestamptz
 	CreatedAt           pgtype.Timestamptz
 	UpdatedAt           pgtype.Timestamptz
 	MeetingUrlOverride  string
@@ -381,6 +389,8 @@ func (q *Queries) ListBookings(ctx context.Context, arg ListBookingsParams) ([]L
 			&i.CancellationReason,
 			&i.CancelledBy,
 			&i.CancellationOutcome,
+			&i.RescheduleCount,
+			&i.RescheduledFrom,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.MeetingUrlOverride,
@@ -450,6 +460,29 @@ func (q *Queries) ListTeacherBookingIntervals(ctx context.Context, arg ListTeach
 		return nil, err
 	}
 	return items, nil
+}
+
+const rescheduleBooking = `-- name: RescheduleBooking :exec
+UPDATE bookings
+SET rescheduled_from = start_at,
+    start_at = $2,
+    end_at = $3,
+    reschedule_count = reschedule_count + 1,
+    updated_at = now()
+WHERE id = $1
+`
+
+type RescheduleBookingParams struct {
+	ID      uuid.UUID
+	StartAt pgtype.Timestamptz
+	EndAt   pgtype.Timestamptz
+}
+
+// Moves a lesson. The EXCLUDE constraints re-check both parties' calendars on
+// the UPDATE, so a clash surfaces as 23P01 exactly as on insert.
+func (q *Queries) RescheduleBooking(ctx context.Context, arg RescheduleBookingParams) error {
+	_, err := q.db.Exec(ctx, rescheduleBooking, arg.ID, arg.StartAt, arg.EndAt)
+	return err
 }
 
 const seedInsertBooking = `-- name: SeedInsertBooking :one

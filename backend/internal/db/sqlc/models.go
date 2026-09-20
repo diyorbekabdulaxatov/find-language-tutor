@@ -215,6 +215,8 @@ type Booking struct {
 	CancelledBy         string
 	LessonTypeID        uuid.NullUUID
 	CancellationOutcome string
+	RescheduleCount     int32
+	RescheduledFrom     pgtype.Timestamptz
 }
 
 type BookingResource struct {

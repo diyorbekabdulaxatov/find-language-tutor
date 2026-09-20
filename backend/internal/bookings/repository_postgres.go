@@ -200,6 +200,17 @@ func (r *repositoryPostgres) Cancel(ctx context.Context, id uuid.UUID, reason, b
 	return r.GetBooking(ctx, id)
 }
 
+func (r *repositoryPostgres) Reschedule(ctx context.Context, id uuid.UUID, start, end time.Time) (Booking, error) {
+	if err := r.q.RescheduleBooking(ctx, sqlc.RescheduleBookingParams{ID: id, StartAt: ts(start), EndAt: ts(end)}); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgExclusionViolation {
+			return Booking{}, ErrSlotTaken
+		}
+		return Booking{}, fmt.Errorf("reschedule booking: %w", err)
+	}
+	return r.GetBooking(ctx, id)
+}
+
 func (r *repositoryPostgres) SetMeetingLinkOverride(ctx context.Context, id uuid.UUID, url string) (Booking, error) {
 	if err := r.q.SetBookingMeetingLinkOverride(ctx, sqlc.SetBookingMeetingLinkOverrideParams{ID: id, MeetingUrlOverride: url}); err != nil {
 		return Booking{}, fmt.Errorf("set meeting link: %w", err)
@@ -227,6 +238,7 @@ func rowToBooking(row sqlc.GetBookingByIDRow) Booking {
 		CancellationReason:  row.CancellationReason,
 		CancelledBy:         row.CancelledBy,
 		CancellationOutcome: CancellationOutcome(row.CancellationOutcome),
+		RescheduleCount:     int(row.RescheduleCount),
 		MeetingURLOverride:  row.MeetingUrlOverride,
 		TeacherMeetingURL:   row.TeacherMeetingUrl,
 		NoShowParty:         row.NoShowParty,
@@ -249,6 +261,10 @@ func rowToBooking(row sqlc.GetBookingByIDRow) Booking {
 	if row.CancelledAt.Valid {
 		t := row.CancelledAt.Time.UTC()
 		b.CancelledAt = &t
+	}
+	if row.RescheduledFrom.Valid {
+		t := row.RescheduledFrom.Time.UTC()
+		b.RescheduledFrom = &t
 	}
 	if row.TeacherUserID.Valid {
 		b.TeacherOwnerID = row.TeacherUserID.UUID

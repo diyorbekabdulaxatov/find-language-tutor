@@ -109,6 +109,12 @@ export interface Booking {
   cancellationOutcome: CancellationOutcome | null;
   /** the free-cancellation deadline; null once completed or cancelled */
   cancellationPolicy: { freeCancelUntil: string; late: boolean } | null;
+  /** how many times the student moved the lesson (max 3) */
+  rescheduleCount: number;
+  /** the start it was last moved away from; null if never moved */
+  rescheduledFrom: string | null;
+  /** true when POST /reschedule would be accepted for the viewer right now */
+  canReschedule: boolean;
   payment: PaymentInfo | null;
   /** Effective video link. Only populated for a participant once confirmed. */
   meetingUrl: string;
@@ -233,6 +239,9 @@ function toBooking(b: WireBooking): Booking {
           late: b.cancellation_policy.late,
         }
       : null,
+    rescheduleCount: b.reschedule_count ?? 0,
+    rescheduledFrom: b.rescheduled_from ?? null,
+    canReschedule: b.can_reschedule ?? false,
     payment: wp
       ? {
           status: wp.status,
@@ -476,6 +485,18 @@ export async function cancelBooking(
   );
   if (error || !data) {
     throw toError(error, response.status, "Could not cancel the booking.");
+  }
+  return toBooking(data);
+}
+
+/** Move a lesson to another bookable start of the same teacher (student-only). */
+export async function rescheduleBooking(id: string, startAt: string): Promise<Booking> {
+  const { data, error, response } = await browserApi.POST(
+    "/v1/bookings/{id}/reschedule",
+    { params: { path: { id } }, body: { start_at: startAt } },
+  );
+  if (error || !data) {
+    throw toError(error, response.status, "Could not move the lesson.");
   }
   return toBooking(data);
 }

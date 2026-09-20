@@ -3,6 +3,7 @@ package lessons
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -34,6 +35,10 @@ func (n *Notifier) BookingConfirmed(ctx context.Context, b bookings.Booking) {
 
 func (n *Notifier) BookingCancelled(ctx context.Context, b bookings.Booking, cancelledBy uuid.UUID, outcome bookings.CancellationOutcome) {
 	n.send(ctx, "booking_cancelled", b.ID, CancelledMessages(b, cancelledBy, outcome))
+}
+
+func (n *Notifier) BookingRescheduled(ctx context.Context, b bookings.Booking, previousStart time.Time) {
+	n.send(ctx, "booking_rescheduled", b.ID, RescheduledMessages(b, previousStart))
 }
 
 func (n *Notifier) send(ctx context.Context, kind string, bookingID uuid.UUID, msgs []email.Message) {

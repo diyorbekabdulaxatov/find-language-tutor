@@ -332,5 +332,15 @@
   "No payment had been taken for this lesson.": "Bu dars uchun to'lov olinmagan.",
   "Request body must be {\"reason\"?: string, \"acknowledge_forfeit\"?: boolean}.": "So'rov tanasi {\"reason\"?: string, \"acknowledge_forfeit\"?: boolean} bo'lishi kerak.",
   "The student has been refunded in full.": "O'quvchiga to'liq summa qaytarildi.",
-  "The time is open again in your calendar.": "Bu vaqt taqvimingizda yana bo'sh."
+  "The time is open again in your calendar.": "Bu vaqt taqvimingizda yana bo'sh.",
+  "%s moved your lesson.": "%s darsingizni ko'chirdi.",
+  "`start_at` is the lesson's current time.": "`start_at` darsning hozirgi vaqti bilan bir xil.",
+  "Lesson with %s moved — now %s": "%s bilan dars ko'chirildi — endi %s",
+  "Lessons can be moved until %d hours before the start. After that you can only cancel.": "Darsni boshlanishidan kamida %d soat oldin ko'chirish mumkin. Undan keyin faqat bekor qilish mumkin.",
+  "Now: %s": "Endi: %s",
+  "Only the student can move this lesson. If you cannot make it, cancel it and the student is refunded.": "Bu darsni faqat o'quvchi ko'chira oladi. Agar o'tkaza olmasangiz, darsni bekor qiling — o'quvchiga pul qaytariladi.",
+  "Request body must be {\"start_at\": RFC3339}.": "So'rov tanasi {\"start_at\": RFC3339} bo'lishi kerak.",
+  "The old time is open again in your calendar. If the new time does not work for you, cancel the lesson and the student is refunded in full.": "Avvalgi vaqt taqvimingizda yana bo'sh. Agar yangi vaqt sizga to'g'ri kelmasa, darsni bekor qiling — o'quvchiga to'liq summa qaytariladi.",
+  "This lesson has already been moved the maximum number of times.": "Bu dars allaqachon maksimal marta ko'chirilgan.",
+  "Was: %s": "Edi: %s"
 }

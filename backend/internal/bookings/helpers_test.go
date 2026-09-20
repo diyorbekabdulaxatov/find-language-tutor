@@ -53,6 +53,8 @@ type fakeRepo struct {
 	// (teacher, student) pair; uuid.Nil means none.
 	trialHeld uuid.UUID
 
+	rescheduleErr error
+
 	listResult []Booking
 	lastFilter ListFilter
 	statusErr  error
@@ -145,6 +147,23 @@ func (f *fakeRepo) Cancel(_ context.Context, id uuid.UUID, reason, by string, ou
 	return b, nil
 }
 
+func (f *fakeRepo) Reschedule(_ context.Context, id uuid.UUID, start, end time.Time) (Booking, error) {
+	if f.rescheduleErr != nil {
+		return Booking{}, f.rescheduleErr
+	}
+	b := f.store[id]
+	prev := b.StartAt
+	b.RescheduledFrom = &prev
+	b.StartAt, b.EndAt = start, end
+	b.RescheduleCount++
+	f.store[id] = b
+	return b, nil
+}
+
+func (n *fakeNotifier) BookingRescheduled(_ context.Context, b Booking, previousStart time.Time) {
+	n.rescheduled[b.ID] = previousStart
+}
+
 func (f *fakeRepo) SetMeetingLinkOverride(_ context.Context, id uuid.UUID, url string) (Booking, error) {
 	b := f.store[id]
 	b.MeetingURLOverride = url
@@ -182,10 +201,12 @@ type fakeNotifier struct {
 	cancelled []uuid.UUID
 	refunded  map[uuid.UUID]bool
 	outcomes  map[uuid.UUID]CancellationOutcome
+	// rescheduled records previousStart per booking id.
+	rescheduled map[uuid.UUID]time.Time
 }
 
 func newFakeNotifier() *fakeNotifier {
-	return &fakeNotifier{refunded: map[uuid.UUID]bool{}, outcomes: map[uuid.UUID]CancellationOutcome{}}
+	return &fakeNotifier{refunded: map[uuid.UUID]bool{}, outcomes: map[uuid.UUID]CancellationOutcome{}, rescheduled: map[uuid.UUID]time.Time{}}
 }
 
 func (n *fakeNotifier) BookingConfirmed(_ context.Context, b Booking) {

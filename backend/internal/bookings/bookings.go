@@ -59,6 +59,9 @@ const (
 	OutcomeUnpaid CancellationOutcome = "unpaid"
 )
 
+// MaxReschedules caps how many times one booking may be moved.
+const MaxReschedules = 3
+
 // DefaultFreeCancelWindow is how long before the start a student may still
 // cancel for a full refund. italki's rule; overridable per Service.
 const DefaultFreeCancelWindow = 24 * time.Hour
@@ -161,6 +164,10 @@ type Booking struct {
 	// CancellationOutcome is "" normally, or refunded / forfeited / unpaid once
 	// cancelled (see CancellationOutcome).
 	CancellationOutcome CancellationOutcome
+	// RescheduleCount is how many times the student moved the lesson;
+	// RescheduledFrom is the start it was last moved away from (nil if never).
+	RescheduleCount int
+	RescheduledFrom *time.Time
 
 	// MeetingURLOverride is an optional per-booking video link. When set it wins
 	// over the teacher's default; "" means "use the teacher default".

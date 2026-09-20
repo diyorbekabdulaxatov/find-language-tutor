@@ -332,5 +332,15 @@
   "No payment had been taken for this lesson.": "Оплата за этот урок не списывалась.",
   "Request body must be {\"reason\"?: string, \"acknowledge_forfeit\"?: boolean}.": "Тело запроса должно быть {\"reason\"?: string, \"acknowledge_forfeit\"?: boolean}.",
   "The student has been refunded in full.": "Ученику возвращена полная сумма.",
-  "The time is open again in your calendar.": "Это время снова свободно в вашем календаре."
+  "The time is open again in your calendar.": "Это время снова свободно в вашем календаре.",
+  "%s moved your lesson.": "%s перенёс(ла) ваш урок.",
+  "`start_at` is the lesson's current time.": "`start_at` совпадает с текущим временем урока.",
+  "Lesson with %s moved — now %s": "Урок с %s перенесён — теперь %s",
+  "Lessons can be moved until %d hours before the start. After that you can only cancel.": "Урок можно перенести не позднее чем за %d ч. до начала. После этого его можно только отменить.",
+  "Now: %s": "Теперь: %s",
+  "Only the student can move this lesson. If you cannot make it, cancel it and the student is refunded.": "Перенести урок может только ученик. Если вы не можете провести его, отмените урок — ученику вернут деньги.",
+  "Request body must be {\"start_at\": RFC3339}.": "Тело запроса должно быть {\"start_at\": RFC3339}.",
+  "The old time is open again in your calendar. If the new time does not work for you, cancel the lesson and the student is refunded in full.": "Прежнее время снова свободно в вашем календаре. Если новое время вам не подходит, отмените урок — ученику вернут полную сумму.",
+  "This lesson has already been moved the maximum number of times.": "Этот урок уже переносили максимальное число раз.",
+  "Was: %s": "Было: %s"
 }

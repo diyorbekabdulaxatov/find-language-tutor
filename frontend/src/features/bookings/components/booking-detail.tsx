@@ -11,7 +11,9 @@ import {
   cancelBooking,
   completeBooking,
   getBooking,
+  rescheduleBooking,
   reportNoShow,
+  type Duration,
   setMeetingLink,
   type Booking,
 } from "@/features/bookings/api";
@@ -23,6 +25,7 @@ import {
 import { BookingStatusBadge } from "./booking-status-badge";
 import { PaymentForm } from "./payment-form";
 import { LessonJoinCard } from "./lesson-join-card";
+import { SlotPicker, type SlotSelection } from "./slot-picker";
 import { DisputePanel } from "./dispute-panel";
 import { LessonResourcesPanel } from "./lesson-resources-panel";
 import { Button } from "@/components/ui/button";
@@ -35,11 +38,13 @@ export function BookingDetail({ id }: { id: string }) {
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<
-    "complete" | "cancel" | "no_show_student" | "no_show_teacher" | "link" | null
+    "complete" | "cancel" | "move" | "no_show_student" | "no_show_teacher" | "link" | null
   >(null);
   const [payOpen, setPayOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveTo, setMoveTo] = useState<SlotSelection | null>(null);
   const [linkDraft, setLinkDraft] = useState("");
   const [now] = useState(() => Date.now());
   const viewerTz = viewerTimezone();
@@ -131,6 +136,31 @@ export function BookingDetail({ id }: { id: string }) {
   const policy = booking.cancellationPolicy;
   const forfeits = isStudent && booking.status === "confirmed" && policy?.late === true;
 
+  async function confirmMove() {
+    if (!moveTo) return;
+    setBusy("move");
+    setErrorMsg(null);
+    try {
+      await rescheduleBooking(booking!.id, moveTo.slot.startAt);
+      setMoveOpen(false);
+      setMoveTo(null);
+      await refetch();
+    } catch (err) {
+      if (
+        err instanceof BookingError &&
+        (err.code === "slot_taken" || err.code === "slot_unavailable")
+      ) {
+        setMoveTo(null); // pick again; the picker reloads on remount
+        setErrorMsg(t("slotGone"));
+      } else {
+        setErrorMsg(err instanceof BookingError ? err.message : tCommon("somethingWrong"));
+        if (err instanceof BookingError) await refetch().catch(() => undefined);
+      }
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function confirmCancel() {
     setBusy("cancel");
     setErrorMsg(null);
@@ -205,6 +235,11 @@ export function BookingDetail({ id }: { id: string }) {
           {booking.status === "cancelled" && booking.cancellationOutcome && (
             <Row label={t("cancellationOutcome")}>
               {t(`outcome.${booking.cancellationOutcome}`)}
+            </Row>
+          )}
+          {booking.rescheduledFrom && booking.status !== "cancelled" && (
+            <Row label={t("movedFrom")}>
+              {formatFull(booking.rescheduledFrom, viewerTz, locale)}
             </Row>
           )}
           {canCancel && policy && booking.status === "confirmed" && (
@@ -308,7 +343,19 @@ export function BookingDetail({ id }: { id: string }) {
                 </Button>
               </>
             )}
-            {canCancel && !cancelOpen && (
+            {booking.canReschedule && !moveOpen && !cancelOpen && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setErrorMsg(null);
+                  setMoveOpen(true);
+                }}
+                disabled={busy !== null}
+              >
+                {t("moveLesson")}
+              </Button>
+            )}
+            {canCancel && !cancelOpen && !moveOpen && (
               <Button
                 variant="destructive"
                 onClick={() => {
@@ -320,6 +367,71 @@ export function BookingDetail({ id }: { id: string }) {
                 {t("cancelLesson")}
               </Button>
             )}
+          </div>
+        )}
+
+        {booking.canReschedule && moveOpen && (
+          <div
+            role="group"
+            aria-labelledby="move-heading"
+            className="mt-4 border border-border bg-muted p-5"
+          >
+            <h2 id="move-heading" className="font-display text-lg">
+              {t("moveHeading")}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t("moveNote", {
+                price: formatMoney(booking.price, locale),
+                left: 3 - booking.rescheduleCount,
+                when: policy ? formatFull(policy.freeCancelUntil, viewerTz, locale) : "",
+              })}
+            </p>
+            {!moveTo ? (
+              <div className="mt-4">
+                <SlotPicker
+                  slug={booking.teacher.slug}
+                  teacherTimezone={booking.teacher.timezone}
+                  isTrial={booking.isTrial}
+                  lessonTypeId={booking.lessonType?.id}
+                  durations={[booking.durationMinutes as Duration]}
+                  onPick={setMoveTo}
+                />
+              </div>
+            ) : (
+              <dl className="mt-4 divide-y divide-border border-y border-border text-sm">
+                <Row label={t("currentTime")}>
+                  {formatFull(booking.startAt, viewerTz, locale)}
+                </Row>
+                <Row label={t("newTime")}>{formatFull(moveTo.slot.startAt, viewerTz, locale)}</Row>
+                {viewerTz !== booking.teacher.timezone && (
+                  <Row label={t("teachersTime")}>
+                    {formatFull(moveTo.slot.startAt, booking.teacher.timezone, locale)}
+                  </Row>
+                )}
+              </dl>
+            )}
+            <div className="mt-4 flex flex-wrap gap-3">
+              {moveTo && (
+                <>
+                  <Button onClick={() => void confirmMove()} disabled={busy !== null}>
+                    {busy === "move" ? t("moving") : t("confirmMove")}
+                  </Button>
+                  <Button variant="outline" onClick={() => setMoveTo(null)} disabled={busy !== null}>
+                    {t("changeTime")}
+                  </Button>
+                </>
+              )}
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setMoveOpen(false);
+                  setMoveTo(null);
+                }}
+                disabled={busy !== null}
+              >
+                {t("keepTime")}
+              </Button>
+            </div>
           </div>
         )}
 
